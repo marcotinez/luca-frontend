@@ -28,7 +28,7 @@ export default function RegisterPage() {
 
     try {
       await register({ email, password, age, education_level, interests })
-      router.push('/dashboard')
+      router.push('/inicio')
     } catch (error) {
       setError('Error al registrar el usuario');
     }
