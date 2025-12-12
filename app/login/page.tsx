@@ -1,46 +1,57 @@
 'use client';
 
-import { login } from '@/lib/api';
+import { PublicRoute } from '@/components/PublicRoute';
+import { useAuth } from '@/hooks/useAuth';
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 export default function LoginPage() {
+  const { login } = useAuth();
+  const router = useRouter();
+
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const formData = new FormData(e.currentTarget);
+    setError('');
 
-    const email = formData.get('email') as string;
-    const password = formData.get('password') as string;
+    if (!email || !password) {
+      setError('Please fill in all fields');
+      return;
+    }
 
     try {
-      const data = await login(email, password);
-      console.log('Login exitoso:', data);
-      // TODO: Guardar token, redirigir, etc.
+      await login({ email, password });
+      router.push('/dashboard');
     } catch (error) {
-      console.error('Error en login:', error);
+      setError('Invalid email or password');
     }
-  };
+  }
 
   return (
-    <div className="min-h-screen flex items-center justify-center">
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <h1 className="text-2xl font-bold">Login</h1>
-        <input
-          name="email"
-          type="email"
-          placeholder="Email"
-          className="border p-2 rounded w-full"
-          required
-        />
-        <input
-          name="password"
-          type="password"
-          placeholder="Password"
-          className="border p-2 rounded w-full"
-          required
-        />
-        <button type="submit" className="bg-blue-500 text-white p-2 rounded w-full">
-          Iniciar Sesión
-        </button>
-      </form>
-    </div>
+    <PublicRoute>
+      <div>
+        <h1>Login</h1>
+        {error && <p>{error}</p>}
+        <form onSubmit={handleSubmit}>
+          <h3>Email</h3>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+          <h3>Password</h3>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          <button type="submit">Login</button>
+        </form>
+      </div>
+    </PublicRoute>
   );
 }
+
