@@ -1,4 +1,13 @@
-import type { LoginRequest, LoginResponse, RegisterRequest, RegisterResponse, UserResponse } from '@/types';
+import type {
+  LoginRequest,
+  LoginResponse,
+  RegisterRequest,
+  RegisterResponse,
+  UserResponse,
+  RefreshTokenResponse,
+  UpdatePasswordRequest,
+  UpdatePasswordResponse,
+} from '@/types';
 import axios from 'axios';
 
 const API_URL = `${process.env.NEXT_PUBLIC_API_URL}/auth` || 'http://localhost:8000/api/v1/auth';
@@ -46,16 +55,26 @@ axios.interceptors.response.use(
 // ============================================================================
 
 export async function login(credentials: LoginRequest): Promise<LoginResponse> {
-  const response = await axios.post(`${API_URL}/auth/login`, credentials);
+  const response = await axios.post(`${API_URL}/login`, credentials);
   return response.data;
 }
 
 export async function register(credentials: RegisterRequest): Promise<RegisterResponse> {
-  const response = await axios.post(`${API_URL}/auth/register`, credentials);
+  const response = await axios.post(`${API_URL}/register`, credentials);
   return response.data;
 }
 
 export async function me(): Promise<UserResponse> {
-  const response = await axios.get(`${API_URL}/auth/me`);
+  const response = await axios.get(`${API_URL}/me`);
+  return response.data;
+}
+
+export async function refreshToken(): Promise<RefreshTokenResponse> {
+  const response = await axios.post(`${API_URL}/refresh`);
+  return response.data;
+}
+
+export async function updatePassword(credentials: UpdatePasswordRequest): Promise<UpdatePasswordResponse> {
+  const response = await axios.post(`${API_URL}/update-password`, credentials);
   return response.data;
 }

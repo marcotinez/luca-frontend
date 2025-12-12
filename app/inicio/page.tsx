@@ -2,14 +2,16 @@
 
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { useAuth } from '@/hooks/useAuth';
+import { useRouter } from 'next/navigation';
 
-export default function DashboardPage() {
+export default function PaginaInicio() {
   const { user, logout } = useAuth();
+  const router = useRouter();
 
   return (
     <ProtectedRoute>
       <div>
-        <h1>Dashboard</h1>
+        <h1>Inicio</h1>
         <p>Bienvenido, {user?.email}</p>
 
         <div>
@@ -25,6 +27,7 @@ export default function DashboardPage() {
           <p>Racha máxima: {user?.gamification.max_streak}</p>
         </div>
 
+        <button onClick={() => router.push('/perfil')}>Perfil</button>
         <button onClick={logout}>Cerrar Sesión</button>
       </div>
     </ProtectedRoute>

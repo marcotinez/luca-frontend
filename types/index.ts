@@ -14,4 +14,7 @@ export type {
   LoginResponse,
   RegisterRequest,
   RegisterResponse,
+  RefreshTokenResponse,
+  UpdatePasswordRequest,
+  UpdatePasswordResponse,
 } from './auth.types';

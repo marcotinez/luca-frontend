@@ -32,3 +32,23 @@ export interface RegisterResponse {
   access_token: string;
   token_type: string;
 }
+
+export interface RefreshTokenResponse {
+  access_token: string;
+  token_type: string;
+  user_id: string;
+  email: string;
+}
+
+export interface UpdatePasswordRequest {
+  current_password: string;
+  new_password: string;
+  new_password_confirmation: string;
+}
+
+export interface UpdatePasswordResponse {
+  access_token: string;
+  token_type: string;
+  user_id: string;
+  email: string;
+}

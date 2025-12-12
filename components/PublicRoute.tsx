@@ -14,7 +14,7 @@ export function PublicRoute({ children }: PublicRouteProps) {
 
   useEffect(() => {
     if (!loading && user) {
-      router.push('/dashboard');
+      router.push('/inicio');
     }
   }, [user, loading, router]);
 

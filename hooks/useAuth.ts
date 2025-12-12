@@ -1,7 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { login as apiLogin, register as apiRegister, me as apiMe } from '@/lib/auth.api';
-import { UserResponse, LoginRequest, RegisterRequest } from '@/types';
+import {
+  login as apiLogin,
+  register as apiRegister,
+  me as apiMe,
+  refreshToken as apiRefreshToken,
+  updatePassword as apiUpdatePassword
+} from '@/lib/auth.api';
+import { UserResponse, LoginRequest, RegisterRequest, UpdatePasswordRequest } from '@/types';
 
 export function useAuth() {
   const [user, setUser] = useState<UserResponse | null>(null);
@@ -30,6 +36,12 @@ export function useAuth() {
     setUser(response.user);
   };
 
+  // Función para actualizar la contraseña
+  const updatePassword = async (data: UpdatePasswordRequest) => {
+    const response = await apiUpdatePassword(data);
+    setUser(response.user);
+  };
+
   // Función para cerrar sesión
   const logout = () => {
     setUser(null);
@@ -42,19 +54,18 @@ export function useAuth() {
   useEffect(() => {
     const validateSession = async () => {
       const token = localStorage.getItem('token');
-
       if (!token) {
         setLoading(false);
         return;
       }
-
       try {
+        // Intentamos obtener el usuario
         const userData = await apiMe();
         setUser(userData);
         localStorage.setItem('user', JSON.stringify(userData));
         setLoading(false);
       } catch (error) {
-        console.log('Sesión inválida, limpiando...');
+        // Si no hay sesión, limpiamos y redirigimos al login
         localStorage.removeItem('token');
         localStorage.removeItem('user');
         setUser(null);
@@ -64,6 +75,31 @@ export function useAuth() {
     };
     validateSession();
   }, []);
+
+  // Renovar el token automaticamente cada X minutos
+  useEffect(() => {
+    // ejecutamos la renovación solo si hay usuario
+    if(!user) return;
+
+    const refreshIntervalMinutes = Number(process.env.NEXT_PUBLIC_TOKEN_REFRESH_INTERVAL_MINUTES) || 29;
+    const refreshInterval = refreshIntervalMinutes * 60 * 1000;
+
+    const interval = setInterval( async () => {
+      try {
+        console.log('Renovando token...');
+        // renovar el token
+        const response = await apiRefreshToken();
+        localStorage.setItem('token', response.access_token);
+
+      } catch (error) {
+        console.log('Error al renovar el token', error);
+        logout();
+      }
+    }, refreshInterval);
+
+    // Limpiar intervalo al desmontar el componente
+    return () => clearInterval(interval);
+  }, [user]);
 
   return { user, login, register, logout, loading };
 }
