@@ -6,7 +6,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useRouter } from "next/navigation";
 import { EducationLevel, FinancialTopic } from "@/types/user.types";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
+import { useForm, SubmitHandler } from "react-hook-form";
 import * as z from "zod";
 import { toast } from "sonner";
 
@@ -23,9 +23,9 @@ import { UserPlus, Sparkles } from 'lucide-react';
 const registerSchema = z.object({
   email: z.email({ message: "Introduce un email válido" }),
   password: z.string().min(6, { message: "La contraseña debe tener al menos 6 caracteres" }),
-  age: z.coerce.number().min(18, { message: "Debes tener al menos 18 años" }).max(120),
-  education_level: z.string().min(1, { message: "Selecciona tu nivel educativo" }),
-  interests: z.array(z.string()).min(1, { message: "Selecciona al menos un interés" }),
+  age: z.number().min(18, { message: "Debes tener al menos 18 años" }).max(120),
+  education_level: z.enum(EducationLevel),
+  interests: z.array(z.enum(FinancialTopic)).min(1, { message: "Selecciona al menos un interés" }),
 });
 
 type RegisterFormValues = z.infer<typeof registerSchema>;
@@ -44,18 +44,14 @@ export default function RegisterPage() {
       email: "",
       password: "",
       age: 18,
-      education_level: EducationLevel.MEDIA_INCOMPLETA as string,
+      education_level: EducationLevel.MEDIA_INCOMPLETA,
       interests: [],
     },
   });
 
-  const onSubmit = async (values: RegisterFormValues) => {
+  const onSubmit: SubmitHandler<RegisterFormValues> = async (values) => {
     try {
-      await register({
-        ...values,
-        education_level: values.education_level as EducationLevel,
-        interests: values.interests as FinancialTopic[],
-      });
+      await register(values);
       toast.success("¡Cuenta creada con éxito!");
       router.push('/inicio');
     } catch (error) {
@@ -118,7 +114,11 @@ export default function RegisterPage() {
                           <FormItem>
                             <FormLabel>Edad</FormLabel>
                             <FormControl>
-                              <Input type="number" {...field} />
+                              <Input
+                                type="number"
+                                {...field}
+                                onChange={(e) => field.onChange(e.target.value === '' ? 0 : Number(e.target.value))}
+                              />
                             </FormControl>
                             <FormMessage />
                           </FormItem>

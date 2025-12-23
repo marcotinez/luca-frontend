@@ -9,9 +9,10 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { updatePassword } from "@/lib/auth.api";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
+import { useForm, SubmitHandler } from "react-hook-form";
 import * as z from "zod";
 import { toast } from "sonner";
+import axios from "axios";
 
 // Componentes Shadcn
 import { Button } from '@/components/ui/button';
@@ -76,20 +77,24 @@ export default function Perfil() {
     },
   });
 
-  const onSubmit = async (values: PasswordFormValues) => {
+  const onSubmit: SubmitHandler<PasswordFormValues> = async (values) => {
     try {
       const response = await updatePassword(values);
       localStorage.setItem('token', response.access_token);
       toast.success("Contraseña actualizada correctamente");
       setIsDialogOpen(false);
       form.reset();
-    } catch (error: any) {
+    } catch (error) {
       let errorMessage = 'Error al actualizar la contraseña';
-      if (error.response?.data?.detail) {
+      if (axios.isAxiosError(error) && error.response?.data?.detail) {
         const detail = error.response.data.detail;
-        errorMessage = typeof detail === 'string' ? detail :
-                       Array.isArray(detail) ? detail.map((err: any) => err.msg).join(', ') :
-                       detail.msg || errorMessage;
+        if (typeof detail === 'string') {
+          errorMessage = detail;
+        } else if (Array.isArray(detail)) {
+          errorMessage = detail.map((err) => err.msg).join(', ');
+        } else if (detail.msg) {
+          errorMessage = detail.msg;
+        }
       }
       toast.error(errorMessage);
     }

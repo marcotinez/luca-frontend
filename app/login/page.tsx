@@ -5,7 +5,7 @@ import { PublicRoute } from '@/components/PublicRoute';
 import { useAuth } from '@/hooks/useAuth';
 import { useRouter } from 'next/navigation';
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
+import { useForm, SubmitHandler } from "react-hook-form";
 import * as z from "zod";
 import { toast } from "sonner";
 
@@ -31,7 +31,7 @@ import {
 import { LogIn } from 'lucide-react';
 
 const loginSchema = z.object({
-  email: z.string().email({ message: "Introduce un email válido" }),
+  email: z.email({ message: "Introduce un email válido" }),
   password: z.string().min(6, { message: "La contraseña debe tener al menos 6 caracteres" }),
 });
 
@@ -49,7 +49,7 @@ export default function LoginPage() {
     },
   });
 
-  const onSubmit = async (values: LoginFormValues) => {
+  const onSubmit: SubmitHandler<LoginFormValues> = async (values) => {
     try {
       await login(values);
       toast.success("¡Bienvenido de nuevo!");

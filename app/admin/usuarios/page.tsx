@@ -5,7 +5,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { useState, useEffect } from "react";
 import { getUsers, deleteUser, toggleUserStatus, createUser, updateUser } from "@/lib/users.api";
-import { UserResponse, EducationLevel, FinancialTopic } from "@/types";
+import { UserResponse, EducationLevel, FinancialTopic, RegisterRequest } from "@/types";
 
 // Design Components
 import { Trash2, UserX, UserCheck, Mail, Calendar, Shield,
@@ -34,20 +34,22 @@ export default function UsuariosPage() {
   const [editingUser, setEditingUser] = useState<UserResponse | null>(null);
 
   const userSchema = z.object({
-    email: z.email("Email inválido"),
+    email: z.email({ message: "Email inválido" }),
     password: z.string().min(6, "Mínimo 6 caracteres").optional().or(z.literal("")),
     age: z.number().min(18).max(120),
-    education_level: z.string().min(1, "Requerido"),
-    interests: z.array(z.string()).min(1, "Selecciona al menos uno"),
+    education_level: z.enum(EducationLevel),
+    interests: z.array(z.enum(FinancialTopic)).min(1, "Selecciona al menos uno"),
   });
 
-  const form = useForm({
+  type UserFormValues = z.infer<typeof userSchema>;
+
+  const form = useForm<UserFormValues>({
     resolver: zodResolver(userSchema),
     defaultValues: {
       email: "",
       password: "",
       age: 18,
-      education_level: "",
+      education_level: EducationLevel.MEDIA_INCOMPLETA,
       interests: [],
     }
   });
@@ -90,11 +92,11 @@ export default function UsuariosPage() {
       setDeleteId(null);
     }
   };
-  const handleSaveUser = async (values: any) => {
+  const handleSaveUser = async (values: UserFormValues) => {
     try {
       if (editingUser) {
         // Actualizar
-        const updateData: any = { ...values };
+        const updateData = { ...values };
         if (!updateData.password) delete updateData.password;
         await updateUser(editingUser.id, updateData);
         toast.success("Usuario actualizado");
@@ -104,7 +106,7 @@ export default function UsuariosPage() {
           toast.error("La contraseña es requerida para nuevos usuarios");
           return;
         }
-        await createUser(values);
+        await createUser(values as RegisterRequest);
         toast.success("Usuario creado");
       }
       setIsUserDialogOpen(false);
@@ -136,7 +138,7 @@ export default function UsuariosPage() {
               email: "",
               password: "",
               age: 18,
-              education_level: "",
+              education_level: EducationLevel.MEDIA_INCOMPLETA,
               interests: [],
             });
             setIsUserDialogOpen(true);
@@ -328,19 +330,23 @@ export default function UsuariosPage() {
                 )}
               />
               <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="age"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Edad</FormLabel>
-                      <FormControl>
-                        <Input type="number" {...field} onChange={e => field.onChange(parseInt(e.target.value))} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                  <FormField
+                    control={form.control}
+                    name="age"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Edad</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            {...field}
+                            onChange={e => field.onChange(e.target.value === '' ? 0 : Number(e.target.value))}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                 <FormField
                   control={form.control}
                   name="education_level"
@@ -393,7 +399,7 @@ export default function UsuariosPage() {
                                       ? field.onChange([...field.value, topic])
                                       : field.onChange(
                                           field.value?.filter(
-                                            (value: any) => value !== topic
+                                            (value) => value !== topic
                                           )
                                         )
                                   }}
