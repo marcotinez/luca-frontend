@@ -1,7 +1,8 @@
 import axios from 'axios';
 import type { UserResponse, UserUpdate, RegisterRequest } from '@/types';
 
-const API_URL = `${process.env.NEXT_PUBLIC_API_URL}/api/v1/users` || 'http://localhost:8000/api/v1/users';
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_URL = `${BASE_URL}/api/v1/users`;
 
 export async function getUsers(): Promise<UserResponse[]> {
   const response = await axios.get(API_URL);
@@ -9,8 +10,9 @@ export async function getUsers(): Promise<UserResponse[]> {
 }
 
 export async function createUser(data: RegisterRequest): Promise<UserResponse> {
-  const response = await axios.post(API_URL, data);
-  return response.data;
+  const response = await axios.post(`${BASE_URL}/api/v1/auth/register`, data);
+  // RegisterResponse returns { user, access_token, token_type }
+  return response.data.user;
 }
 
 export async function getUser(id: string): Promise<UserResponse> {
