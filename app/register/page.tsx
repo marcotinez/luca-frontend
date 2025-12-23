@@ -9,6 +9,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, SubmitHandler } from "react-hook-form";
 import * as z from "zod";
 import { toast } from "sonner";
+import axios from "axios";
+import { useState } from "react";
 
 // Componentes Shadcn
 import { Button } from '@/components/ui/button';
@@ -18,14 +20,22 @@ import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, For
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { UserPlus, Sparkles } from 'lucide-react';
+import { UserPlus, Sparkles, Check, X } from 'lucide-react';
+
+// Validación de contraseña que coincide con el backend
+const passwordValidation = z.string()
+  .min(8, { message: "La contraseña debe tener al menos 8 caracteres" })
+  .regex(/[A-Z]/, { message: "Debe contener al menos una letra mayúscula" })
+  .regex(/[a-z]/, { message: "Debe contener al menos una letra minúscula" })
+  .regex(/[0-9]/, { message: "Debe contener al menos un número" })
+  .regex(/[!@#$%^&*(),.?":{}|<>_\-+=\[\]\/~`]/, { message: "Debe contener al menos un carácter especial" });
 
 const registerSchema = z.object({
-  email: z.email({ message: "Introduce un email válido" }),
-  password: z.string().min(6, { message: "La contraseña debe tener al menos 6 caracteres" }),
-  age: z.number().min(18, { message: "Debes tener al menos 18 años" }).max(120),
-  education_level: z.enum(EducationLevel),
-  interests: z.array(z.enum(FinancialTopic)).min(1, { message: "Selecciona al menos un interés" }),
+  email: z.string().email({ message: "Introduce un email válido" }),
+  password: passwordValidation,
+  age: z.number().int({ message: "La edad debe ser un número entero" }).min(18, { message: "Debes tener al menos 18 años" }).max(120),
+  education_level: z.string().min(1, { message: "Selecciona tu nivel educativo" }),
+  interests: z.array(z.string()).min(1, { message: "Selecciona al menos un interés" }),
 });
 
 type RegisterFormValues = z.infer<typeof registerSchema>;
@@ -33,6 +43,41 @@ type RegisterFormValues = z.infer<typeof registerSchema>;
 const educationLevels = Object.values(EducationLevel);
 const topics = Object.values(FinancialTopic);
 
+// Componente para mostrar los requisitos de contraseña
+interface PasswordRequirementsProps {
+  password: string;
+}
+
+const PasswordRequirements = ({ password }: PasswordRequirementsProps) => {
+  const requirements = [
+    { label: "Mínimo 8 caracteres", test: (pwd: string) => pwd.length >= 8 },
+    { label: "Al menos una letra mayúscula (A-Z)", test: (pwd: string) => /[A-Z]/.test(pwd) },
+    { label: "Al menos una letra minúscula (a-z)", test: (pwd: string) => /[a-z]/.test(pwd) },
+    { label: "Al menos un número (0-9)", test: (pwd: string) => /[0-9]/.test(pwd) },
+    { label: "Al menos un carácter especial (!@#$%^&*(),.?\":{}|<>_-+=[]/~`)", test: (pwd: string) => /[!@#$%^&*(),.?":{}|<>_\-+=\[\]\/~`]/.test(pwd) },
+  ];
+
+  return (
+    <div className="mt-3 space-y-2 p-3 rounded-md bg-muted/50 border border-border">
+      <p className="text-xs font-semibold text-muted-foreground mb-2">Tu contraseña debe contener:</p>
+      {requirements.map((req, index) => {
+        const isMet = req.test(password);
+        return (
+          <div key={index} className="flex items-start gap-2 text-xs">
+            <div className={`mt-0.5 flex-shrink-0 w-4 h-4 rounded-full flex items-center justify-center ${
+              isMet ? 'bg-green-500/20 text-green-600 dark:text-green-400' : 'bg-muted text-muted-foreground'
+            }`}>
+              {isMet ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
+            </div>
+            <span className={isMet ? 'text-foreground' : 'text-muted-foreground'}>
+              {req.label}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
 
 export default function RegisterPage() {
   const { register } = useAuth();
@@ -44,18 +89,32 @@ export default function RegisterPage() {
       email: "",
       password: "",
       age: 18,
-      education_level: EducationLevel.MEDIA_INCOMPLETA,
+      education_level: EducationLevel.MEDIA_INCOMPLETA as string,
       interests: [],
     },
   });
 
+  // Observar el valor de la contraseña en tiempo real
+  const passwordValue = form.watch("password") || "";
+
   const onSubmit: SubmitHandler<RegisterFormValues> = async (values) => {
     try {
-      await register(values);
+      await register(values as unknown as RegisterRequest);
       toast.success("¡Cuenta creada con éxito!");
       router.push('/inicio');
     } catch (error) {
-      toast.error("Error al registrar el usuario. Intenta con otro email.");
+      let errorMessage = "Error al registrar el usuario. Intenta con otro email.";
+      if (axios.isAxiosError(error) && error.response?.data?.detail) {
+        const detail = error.response.data.detail;
+        if (typeof detail === 'string') {
+          errorMessage = detail;
+        } else if (Array.isArray(detail)) {
+          errorMessage = detail.map((err: any) => `${err.loc.join('.')}: ${err.msg}`).join(', ');
+        } else if (detail.msg) {
+          errorMessage = detail.msg;
+        }
+      }
+      toast.error(errorMessage);
     }
   };
 
@@ -104,6 +163,8 @@ export default function RegisterPage() {
                               <Input type="password" placeholder="••••••••" {...field} />
                             </FormControl>
                             <FormMessage />
+                            {/* Componente de validación en tiempo real */}
+                            <PasswordRequirements password={passwordValue} />
                           </FormItem>
                         )}
                       />
