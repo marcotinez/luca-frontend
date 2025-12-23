@@ -14,16 +14,12 @@ export enum EducationLevel {
 
 // Son los posibles temas financieros
 export enum FinancialTopic {
-  PLANIFICACION = "Planificación y presupuesto",
-  AHORRO = "Ahorro y metas",
-  CREDITO = "El mundo del crédito",
-  DEUDAS = "Manejo de deudas",
-  PRODUCTOS_BANCARIOS = "Productos bancarios esenciales",
-  PRIMER_EMPLEO = "Primer empleo y conceptos laborales",
-  ECONOMIA = "Economía práctica",
-  INVERSION = "Introducción a la inversión y riesgo",
-  CONSUMO = "Consumo inteligente",
-  SEGURIDAD = "Seguridad financiera",
+    PLANIFICACION = "Planificación y presupuesto",
+    CREDITO = "El mundo del crédito",
+    ECONOMIA = "Economía práctica",
+    PRIMER_EMPLEO = "Primer empleo y conceptos laborales",
+    AHORRO = "Ahorro e inversión básica",
+    PRODUCTOS_BANCARIOS = "Productos bancarios y seguridad",
 }
 
 // ============================================================================

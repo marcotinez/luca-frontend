@@ -39,7 +39,16 @@ export function useAuth() {
   // Función para actualizar la contraseña
   const updatePassword = async (data: UpdatePasswordRequest) => {
     const response = await apiUpdatePassword(data);
-    setUser(response.user);
+
+    // Guardamos el nuevo token si se recibe uno
+    if (response.access_token) {
+      localStorage.setItem('token', response.access_token);
+    }
+
+    // Refrescamos los datos del usuario para mantener el estado sincronizado
+    const userData = await apiMe();
+    setUser(userData);
+    localStorage.setItem('user', JSON.stringify(userData));
   };
 
   // Función para cerrar sesión
@@ -101,5 +110,5 @@ export function useAuth() {
     return () => clearInterval(interval);
   }, [user]);
 
-  return { user, login, register, logout, loading };
+  return { user, login, register, logout, loading, updatePassword };
 }
