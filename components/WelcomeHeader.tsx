@@ -23,8 +23,8 @@ export function WelcomeHeader({ email, totalXp, currentStreak }: WelcomeHeaderPr
           </AvatarFallback>
         </Avatar>
         <div>
-          <h1 className="text-3xl font-bold text-foreground">Hola, {name}</h1>
-          <p className="text-muted-foreground text-lg">Bienvenido de vuelta a tu tablero personal.</p>
+          <h1 className="text-3xl font-bold text-foreground">Hola, {name} 👋</h1>
+          <p className="text-muted-foreground text-lg">Bienvenido nuevamente!</p>
         </div>
       </div>
       <div className="flex gap-2">

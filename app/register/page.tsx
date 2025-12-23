@@ -13,38 +13,17 @@ import { toast } from "sonner";
 // Componentes Shadcn
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Form,
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { UserPlus, Sparkles } from 'lucide-react';
 
 const registerSchema = z.object({
-  email: z.string().email({ message: "Introduce un email válido" }),
+  email: z.email({ message: "Introduce un email válido" }),
   password: z.string().min(6, { message: "La contraseña debe tener al menos 6 caracteres" }),
-  age: z.number().min(18, { message: "Debes tener al menos 18 años" }).max(120),
+  age: z.coerce.number().min(18, { message: "Debes tener al menos 18 años" }).max(120),
   education_level: z.string().min(1, { message: "Selecciona tu nivel educativo" }),
   interests: z.array(z.string()).min(1, { message: "Selecciona al menos un interés" }),
 });

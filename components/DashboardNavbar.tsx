@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from "next-themes";
-import { User, LogOut, Sun, Moon, ChevronDown, Settings } from 'lucide-react';
+import { User, LogOut, Sun, Moon, ChevronDown, Settings, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -78,6 +78,17 @@ export function DashboardNavbar() {
                   <User className="mr-2 h-4 w-4" />
                   <span>Perfil</span>
                 </DropdownMenuItem>
+
+                {/* 1.5 Modo Administrador (Solo si es superuser) */}
+                {user?.is_superuser && (
+                  <DropdownMenuItem
+                    onClick={() => router.push('/admin/usuarios')}
+                    className="cursor-pointer py-2.5 text-emerald-600 dark:text-emerald-400 font-medium"
+                  >
+                    <ShieldCheck className="mr-2 h-4 w-4" />
+                    <span>Modo Administrador</span>
+                  </DropdownMenuItem>
+                )}
 
                 {/* 2. Dark Mode */}
                 {mounted && (

@@ -1,0 +1,33 @@
+import axios from 'axios';
+import type { UserResponse, UserUpdate, RegisterRequest } from '@/types';
+
+const API_URL = `${process.env.NEXT_PUBLIC_API_URL}/api/v1/users` || 'http://localhost:8000/api/v1/users';
+
+export async function getUsers(): Promise<UserResponse[]> {
+  const response = await axios.get(API_URL);
+  return response.data;
+}
+
+export async function createUser(data: RegisterRequest): Promise<UserResponse> {
+  const response = await axios.post(API_URL, data);
+  return response.data;
+}
+
+export async function getUser(id: string): Promise<UserResponse> {
+  const response = await axios.get(`${API_URL}/${id}`);
+  return response.data;
+}
+
+export async function updateUser(id: string, data: UserUpdate): Promise<UserResponse> {
+  const response = await axios.patch(`${API_URL}/${id}`, data);
+  return response.data;
+}
+
+export async function deleteUser(id: string): Promise<void> {
+  await axios.delete(`${API_URL}/${id}`);
+}
+
+export async function toggleUserStatus(id: string): Promise<UserResponse> {
+  const response = await axios.post(`${API_URL}/${id}/toggle-status`);
+  return response.data;
+}
