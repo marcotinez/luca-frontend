@@ -1,12 +1,7 @@
 import type {
-  LoginRequest,
-  LoginResponse,
-  RegisterRequest,
-  RegisterResponse,
-  UserResponse,
-  RefreshTokenResponse,
-  UpdatePasswordRequest,
-  UpdatePasswordResponse,
+  LoginRequest, LoginResponse, RegisterRequest,
+  RegisterResponse, UserResponse, RefreshTokenResponse,
+  UpdatePasswordRequest, UpdatePasswordResponse,
 } from '@/types';
 import axios from 'axios';
 
@@ -18,11 +13,14 @@ const API_URL = `${BASE_URL}/api/v1/auth`;
 // ============================================================================
 axios.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('token'); // 1. Leer el token de localStorage
-    if (token) config.headers.Authorization = `Bearer ${token}`; // 2. Si existe, agregarlo al header Authorization
-    return config; // 3. Retornar la configuración modificada
+    // 1. Leer el token de localStorage
+    const token = localStorage.getItem('token');
+    // 2. Si existe, agregarlo al header Authorization
+    if (token) config.headers.Authorization = `Bearer ${token}`;
+    // 3. Retornar la configuración modificada
+    return config;
   },
-  (error) => { // Si hay error al preparar la petición, rechazarlo
+  (error) => {
     return Promise.reject(error);
   }
 );
@@ -31,10 +29,12 @@ axios.interceptors.request.use(
 // INTERCEPTOR DE RESPONSE - Maneja tokens expirados
 // ============================================================================
 axios.interceptors.response.use(
-  (response) => { // Si la respuesta es exitosa (200-299), simplemente retornarla
+  // Si la respuesta es exitosa (200-299), simplemente retornarla
+  (response) => {
     return response;
   },
-  (error) => { // Si hay un error, verificar si es 401 (Unauthorized)
+  // Si hay un error, verificar si es 401 (Unauthorized)
+  (error) => {
     if (error.response?.status === 401) {
       console.log('Token inválido o expirado');
 
@@ -47,6 +47,7 @@ axios.interceptors.response.use(
         window.location.href = '/login';
       }
     }
+    // Si no es 401, rechazar la petición
     return Promise.reject(error);
   }
 );

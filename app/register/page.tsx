@@ -1,105 +1,88 @@
 'use client';
 
-import { Navbar } from "@/components/Navbar";
-import { PublicRoute } from '@/components/PublicRoute';
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+
+// Hooks
 import { useAuth } from "@/hooks/useAuth";
-import { useRouter } from "next/navigation";
-import { EducationLevel, FinancialTopic } from "@/types/user.types";
+
+// Validación
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, SubmitHandler } from "react-hook-form";
 import * as z from "zod";
 import { toast } from "sonner";
 import axios from "axios";
-import { useState } from "react";
+
+// Tipos
+import { EducationLevel, FinancialTopic, RegisterRequest } from "@/types";
+
+// Componentes míos
+import { Navbar } from "@/components/Navbar";
+import { PublicRoute } from '@/components/PublicRoute';
+import { PasswordField, passwordValidation } from "@/components/PasswordField";
 
 // Componentes Shadcn
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Checkbox } from "@/components/ui/checkbox";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { UserPlus, Sparkles, Check, X } from 'lucide-react';
+import { UserPlus, Sparkles, ArrowLeft, ArrowRight, CheckCircle2 } from 'lucide-react';
 
-// Validación de contraseña que coincide con el backend
-const passwordValidation = z.string()
-  .min(8, { message: "La contraseña debe tener al menos 8 caracteres" })
-  .regex(/[A-Z]/, { message: "Debe contener al menos una letra mayúscula" })
-  .regex(/[a-z]/, { message: "Debe contener al menos una letra minúscula" })
-  .regex(/[0-9]/, { message: "Debe contener al menos un número" })
-  .regex(/[!@#$%^&*(),.?":{}|<>_\-+=\[\]\/~`]/, { message: "Debe contener al menos un carácter especial" });
+//////////////////////////////////////////////////////////////
 
+// Validación
 const registerSchema = z.object({
-  email: z.string().email({ message: "Introduce un email válido" }),
+  email: z.email({ message: "Introduce un email válido" }),
   password: passwordValidation,
   age: z.number().int({ message: "La edad debe ser un número entero" }).min(18, { message: "Debes tener al menos 18 años" }).max(120),
   education_level: z.string().min(1, { message: "Selecciona tu nivel educativo" }),
   interests: z.array(z.string()).min(1, { message: "Selecciona al menos un interés" }),
 });
-
 type RegisterFormValues = z.infer<typeof registerSchema>;
 
+// Valores
 const educationLevels = Object.values(EducationLevel);
 const topics = Object.values(FinancialTopic);
-
-// Componente para mostrar los requisitos de contraseña
-interface PasswordRequirementsProps {
-  password: string;
-}
-
-const PasswordRequirements = ({ password }: PasswordRequirementsProps) => {
-  const requirements = [
-    { label: "Mínimo 8 caracteres", test: (pwd: string) => pwd.length >= 8 },
-    { label: "Al menos una letra mayúscula (A-Z)", test: (pwd: string) => /[A-Z]/.test(pwd) },
-    { label: "Al menos una letra minúscula (a-z)", test: (pwd: string) => /[a-z]/.test(pwd) },
-    { label: "Al menos un número (0-9)", test: (pwd: string) => /[0-9]/.test(pwd) },
-    { label: "Al menos un carácter especial (!@#$%^&*(),.?\":{}|<>_-+=[]/~`)", test: (pwd: string) => /[!@#$%^&*(),.?":{}|<>_\-+=\[\]\/~`]/.test(pwd) },
-  ];
-
-  return (
-    <div className="mt-3 space-y-2 p-3 rounded-md bg-muted/50 border border-border">
-      <p className="text-xs font-semibold text-muted-foreground mb-2">Tu contraseña debe contener:</p>
-      {requirements.map((req, index) => {
-        const isMet = req.test(password);
-        return (
-          <div key={index} className="flex items-start gap-2 text-xs">
-            <div className={`mt-0.5 flex-shrink-0 w-4 h-4 rounded-full flex items-center justify-center ${
-              isMet ? 'bg-green-500/20 text-green-600 dark:text-green-400' : 'bg-muted text-muted-foreground'
-            }`}>
-              {isMet ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
-            </div>
-            <span className={isMet ? 'text-foreground' : 'text-muted-foreground'}>
-              {req.label}
-            </span>
-          </div>
-        );
-      })}
-    </div>
-  );
-};
 
 export default function RegisterPage() {
   const { register } = useAuth();
   const router = useRouter();
+  const [step, setStep] = useState(1);
 
   const form = useForm<RegisterFormValues>({
     resolver: zodResolver(registerSchema),
+    mode: "onSubmit",
+    reValidateMode: "onSubmit",
     defaultValues: {
       email: "",
       password: "",
       age: 18,
-      education_level: EducationLevel.MEDIA_INCOMPLETA as string,
+      education_level: EducationLevel.UNIVERSITARIA_INCOMPLETA as string,
       interests: [],
     },
   });
 
-  // Observar el valor de la contraseña en tiempo real
-  const passwordValue = form.watch("password") || "";
+  // Validamos solo los campos del primer paso
+  const nextStep = async () => {
+    const fieldsToValidate = ['email', 'password', 'age', 'education_level'] as const;
+    const isValid = await form.trigger(fieldsToValidate);
+    if (isValid) {
+      setStep(2);
+      setTimeout(() => form.clearErrors('interests'), 0);
+    }
+  };
+  // Validamos solo los campos del segundo paso
+  const prevStep = () => {
+    form.clearErrors();
+    setStep(1);
+  };
 
   const onSubmit: SubmitHandler<RegisterFormValues> = async (values) => {
     try {
-      await register(values as unknown as RegisterRequest);
+      await register(values as RegisterRequest);
       toast.success("¡Cuenta creada con éxito!");
       router.push('/inicio');
     } catch (error) {
@@ -123,23 +106,36 @@ export default function RegisterPage() {
       <div className="min-h-screen flex flex-col bg-background">
         <Navbar />
         <div className="flex-1 flex items-center justify-center p-4 pt-32 pb-10">
-          <Card className="w-full max-w-2xl shadow-xl border-border bg-card transition-colors">
+          <Card className="w-full max-w-lg shadow-xl border-border bg-card transition-all duration-300">
             <CardHeader className="space-y-1 flex flex-col items-center border-b border-border pb-8 mb-6">
-              <div className="w-14 h-14 bg-primary/10 rounded-full flex items-center justify-center mb-4">
-                <UserPlus className="text-primary w-7 h-7" />
+              {/* Stepper Indicator */}
+              <div className="flex items-center gap-4 mb-4">
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors font-bold ${step === 1 ? 'bg-primary text-primary-foreground' : 'bg-green-500 text-white'}`}>
+                  {step > 1 ? <CheckCircle2 className="w-6 h-6" /> : 1}
+                </div>
+                <div className="w-12 h-1 bg-muted rounded-full overflow-hidden">
+                  <div className={`h-full bg-primary transition-all duration-500 ${step === 2 ? 'w-full' : 'w-0'}`} />
+                </div>
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors font-bold ${step === 2 ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
+                  2
+                </div>
               </div>
-              <CardTitle className="text-3xl font-bold tracking-tight">Crear Cuenta</CardTitle>
-              <CardDescription className="text-muted-foreground text-center max-w-sm">
-                Únete a Luca y comienza tu camino hacia la libertad financiera con aprendizaje divertido
+
+              <CardTitle className="text-3xl font-bold tracking-tight">
+                {step === 1 ? "Crea tu Cuenta" : "Tus Intereses"}
+              </CardTitle>
+              <CardDescription className="text-muted-foreground text-center max-w-md">
+                {step === 1
+                  ? "Cuéntanos quién eres para personalizar tu experiencia en Luca"
+                  : "Selecciona los temas que más te apasionan para comenzar"}
               </CardDescription>
             </CardHeader>
             <CardContent>
               <Form {...form}>
-                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {/* Información Básica */}
-                    <div className="space-y-4">
-                      <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Datos Personales</h3>
+                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+                  {step === 1 && (
+                    <div className="space-y-4 animate-in fade-in slide-in-from-left-4 duration-500">
+                      <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground border-l-4 border-primary pl-3">Datos Personales</h3>
                       <FormField
                         control={form.control}
                         name="email"
@@ -153,109 +149,94 @@ export default function RegisterPage() {
                           </FormItem>
                         )}
                       />
-                      <FormField
+                      <PasswordField
                         control={form.control}
                         name="password"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Contraseña</FormLabel>
-                            <FormControl>
-                              <Input type="password" placeholder="••••••••" {...field} />
-                            </FormControl>
-                            <FormMessage />
-                            {/* Componente de validación en tiempo real */}
-                            <PasswordRequirements password={passwordValue} />
-                          </FormItem>
-                        )}
                       />
-                      <FormField
-                        control={form.control}
-                        name="age"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Edad</FormLabel>
-                            <FormControl>
-                              <Input
-                                type="number"
-                                {...field}
-                                onChange={(e) => field.onChange(e.target.value === '' ? 0 : Number(e.target.value))}
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="education_level"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Nivel Educativo</FormLabel>
-                            <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <div className="grid grid-cols-2 gap-4">
+                        <FormField
+                          control={form.control}
+                          name="age"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Edad</FormLabel>
                               <FormControl>
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Selecciona tu nivel" />
-                                </SelectTrigger>
+                                <Input
+                                  type="number"
+                                  {...field}
+                                  onChange={(e) => field.onChange(e.target.value === '' ? 0 : Number(e.target.value))}
+                                />
                               </FormControl>
-                              <SelectContent>
-                                {educationLevels.map((level) => (
-                                  <SelectItem key={level} value={level}>
-                                    {level}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name="education_level"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Nivel Educativo</FormLabel>
+                              <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                <FormControl>
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Selecciona" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  {educationLevels.map((level) => (
+                                    <SelectItem key={level} value={level}>
+                                      {level}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
                     </div>
+                  )}
 
-                    {/* Intereses */}
-                    <div className="space-y-4">
+                  {step === 2 && (
+                    <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-500">
                       <div className="flex items-center gap-2">
                          <Sparkles className="w-4 h-4 text-amber-500" />
-                         <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Tus Intereses</h3>
+                         <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground border-l-4 border-amber-500 pl-3">Temas de Interés</h3>
                        </div>
-                       <FormLabel className="text-xs text-muted-foreground">Selecciona temas que te gustaría aprender</FormLabel>
-                       <ScrollArea className="h-[280px] rounded-md border border-border p-4 bg-background/50">
+                       <FormLabel className="text-xs text-muted-foreground">Selecciona al menos un tema que te gustaría aprender</FormLabel>
+                       <ScrollArea className="h-[280px] rounded-md border border-border p-4 bg-background/50 shadow-inner">
                         <FormField
                           control={form.control}
                           name="interests"
-                          render={() => (
+                          render={({ field }) => (
                             <FormItem className="space-y-3">
                               {topics.map((topic) => (
-                                <FormField
+                                <div
                                   key={topic}
-                                  control={form.control}
-                                  name="interests"
-                                  render={({ field }) => {
-                                    return (
-                                      <FormItem
-                                        key={topic}
-                                        className="flex flex-row items-start space-x-3 space-y-0"
-                                      >
-                                        <FormControl>
-                                          <Checkbox
-                                            checked={field.value?.includes(topic)}
-                                            onCheckedChange={(checked) => {
-                                              return checked
-                                                ? field.onChange([...field.value, topic])
-                                                : field.onChange(
-                                                    field.value?.filter(
-                                                      (value) => value !== topic
-                                                    )
-                                                  )
-                                            }}
-                                          />
-                                        </FormControl>
-                                        <FormLabel className="font-normal text-sm cursor-pointer hover:text-primary transition-colors">
-                                          {topic}
-                                        </FormLabel>
-                                      </FormItem>
-                                    )
-                                  }}
-                                />
+                                  className="flex flex-row items-center space-x-3 space-y-0 p-1 rounded-lg hover:bg-muted/50 transition-colors group"
+                                >
+                                  <FormControl>
+                                    <Checkbox
+                                      id={`topic-${topic}`}
+                                      checked={field.value?.includes(topic)}
+                                      onCheckedChange={(checked) => {
+                                        const currentValues = field.value || [];
+                                        const newValue = checked
+                                          ? [...currentValues, topic]
+                                          : currentValues.filter((v: string) => v !== topic);
+                                        field.onChange(newValue);
+                                      }}
+                                    />
+                                  </FormControl>
+                                  <FormLabel
+                                    htmlFor={`topic-${topic}`}
+                                    className="font-normal text-sm cursor-pointer flex-1 py-1 group-hover:text-primary transition-colors"
+                                  >
+                                    {topic}
+                                  </FormLabel>
+                                </div>
                               ))}
                               <FormMessage />
                             </FormItem>
@@ -263,11 +244,25 @@ export default function RegisterPage() {
                         />
                       </ScrollArea>
                     </div>
-                  </div>
+                  )}
 
-                  <Button type="submit" className="w-full h-12 text-lg font-bold" disabled={form.formState.isSubmitting}>
-                    {form.formState.isSubmitting ? "Registrando..." : "Comenzar mi Aventura"}
-                  </Button>
+                  <div className="flex gap-4 pt-4">
+                    {step === 2 && (
+                      <Button type="button" variant="outline" onClick={prevStep} className="flex-1 h-12">
+                        <ArrowLeft className="mr-2 w-4 h-4" /> Atrás
+                      </Button>
+                    )}
+
+                    {step === 1 ? (
+                      <Button type="button" onClick={nextStep} className="w-full h-12 text-lg font-bold group">
+                        Siguiente <ArrowRight className="ml-2 w-4 h-4 transition-transform group-hover:translate-x-1" />
+                      </Button>
+                    ) : (
+                      <Button type="submit" className="flex-[2] h-12 text-lg font-bold" disabled={form.formState.isSubmitting}>
+                        {form.formState.isSubmitting ? "Registrando..." : "Comenzar mi Aventura"}
+                      </Button>
+                    )}
+                  </div>
                 </form>
               </Form>
             </CardContent>
@@ -282,4 +277,3 @@ export default function RegisterPage() {
     </PublicRoute>
   );
 }
-

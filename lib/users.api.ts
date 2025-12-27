@@ -11,8 +11,7 @@ export async function getUsers(): Promise<UserResponse[]> {
 
 export async function createUser(data: RegisterRequest): Promise<UserResponse> {
   const response = await axios.post(`${BASE_URL}/api/v1/auth/register`, data);
-  // RegisterResponse returns { user, access_token, token_type }
-  return response.data.user;
+  return response.data;
 }
 
 export async function getUser(id: string): Promise<UserResponse> {
@@ -27,9 +26,4 @@ export async function updateUser(id: string, data: UserUpdate): Promise<UserResp
 
 export async function deleteUser(id: string): Promise<void> {
   await axios.delete(`${API_URL}/${id}`);
-}
-
-export async function toggleUserStatus(id: string): Promise<UserResponse> {
-  const response = await axios.post(`${API_URL}/${id}/toggle-status`);
-  return response.data;
 }
