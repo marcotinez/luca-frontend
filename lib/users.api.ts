@@ -27,3 +27,8 @@ export async function updateUser(id: string, data: UserUpdate): Promise<UserResp
 export async function deleteUser(id: string): Promise<void> {
   await axios.delete(`${API_URL}/${id}`);
 }
+
+export async function toggleUserStatus(id: string): Promise<UserResponse> {
+  const response = await axios.patch(`${API_URL}/${id}/toggle-status`);
+  return response.data;
+}

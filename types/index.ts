@@ -18,3 +18,14 @@ export type {
   UpdatePasswordRequest,
   UpdatePasswordResponse,
 } from './auth.types';
+
+
+// Re-exportar todo desde question.types
+export { Difficulty, Status, SubTopic } from './question.types';
+export type {
+  Alternative,
+  PedagogicMetadata,
+  QuestionResponse,
+  QuestionCreate,
+  QuestionUpdate,
+} from './question.types';

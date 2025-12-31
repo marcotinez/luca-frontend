@@ -57,7 +57,16 @@ axios.interceptors.response.use(
 // ============================================================================
 
 export async function login(credentials: LoginRequest): Promise<LoginResponse> {
-  const response = await axios.post(`${API_URL}/login`, credentials);
+  // OAuth2 Password Flow requiere application/x-www-form-urlencoded
+  const formData = new URLSearchParams();
+  formData.append('username', credentials.email); // OAuth2 usa 'username' para el email
+  formData.append('password', credentials.password);
+
+  const response = await axios.post(`${API_URL}/login`, formData, {
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+  });
   return response.data;
 }
 
