@@ -28,7 +28,8 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { LogIn } from 'lucide-react';
+import { LogIn, ArrowLeft } from 'lucide-react';
+import Link from 'next/link';
 
 const loginSchema = z.object({
   email: z.email({ message: "Introduce un email válido" }),
@@ -63,7 +64,15 @@ export default function LoginPage() {
     <PublicRoute>
       <div className="min-h-screen flex flex-col bg-background">
         <Navbar />
-        <div className="flex-1 flex items-center justify-center p-4 pt-24">
+        <div className="flex-1 flex flex-col items-center justify-center px-6 pt-16 pb-10 sm:pt-24 sm:px-4">
+          <div className="w-full max-w-md mb-4">
+            <Button variant="ghost" asChild className="text-muted-foreground hover:text-foreground p-0 h-auto">
+              <Link href="/" className="flex items-center gap-2 text-sm font-medium">
+                <ArrowLeft className="w-4 h-4" />
+                Volver al inicio
+              </Link>
+            </Button>
+          </div>
           <Card className="w-full max-w-md shadow-lg border-border bg-card">
           <CardHeader className="space-y-1 flex flex-col items-center">
             <div className="w-12 h-12 bg-primary rounded-full flex items-center justify-center mb-4">

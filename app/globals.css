@@ -47,22 +47,22 @@
 :root {
   --radius: 0.75rem;
   --background: oklch(0.985 0.002 240);
-  --foreground: oklch(0.15 0.01 240);
+  --foreground: oklch(0.12 0.01 240); /* Un poco más oscuro */
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.15 0.01 240);
+  --card-foreground: oklch(0.12 0.01 240);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.15 0.01 240);
-  --primary: oklch(0.65 0.16 165); /* Un esmeralda más sofisticado */
+  --popover-foreground: oklch(0.12 0.01 240);
+  --primary: oklch(0.65 0.16 165);
   --primary-foreground: oklch(0.99 0.002 240);
-  --secondary: oklch(0.94 0.01 165);
-  --secondary-foreground: oklch(0.25 0.05 165);
-  --muted: oklch(0.94 0.005 240);
-  --muted-foreground: oklch(0.45 0.01 240);
-  --accent: oklch(0.94 0.01 165);
-  --accent-foreground: oklch(0.25 0.05 165);
+  --secondary: oklch(0.92 0.02 165); /* Más contraste para secciones secundarias */
+  --secondary-foreground: oklch(0.20 0.06 165);
+  --muted: oklch(0.90 0.01 240); /* Más oscuro para que se note el gris */
+  --muted-foreground: oklch(0.35 0.01 240); /* Texto muteado más legible */
+  --accent: oklch(0.92 0.02 165);
+  --accent-foreground: oklch(0.20 0.06 165);
   --destructive: oklch(0.55 0.22 25);
-  --border: oklch(0.90 0.01 240);
-  --input: oklch(0.90 0.01 240);
+  --border: oklch(0.85 0.02 240); /* Bordes más definidos */
+  --input: oklch(0.85 0.02 240);
   --ring: oklch(0.65 0.16 165 / 0.4);
   --chart-1: oklch(0.65 0.16 165);
   --chart-2: oklch(0.62 0.12 195);

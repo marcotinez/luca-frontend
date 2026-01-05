@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 
 // Hooks
 import { useAuth } from "@/hooks/useAuth";
@@ -105,7 +106,15 @@ export default function RegisterPage() {
     <PublicRoute>
       <div className="min-h-screen flex flex-col bg-background">
         <Navbar />
-        <div className="flex-1 flex items-center justify-center p-4 pt-32 pb-10">
+        <div className="flex-1 flex flex-col items-center justify-center px-6 pt-20 pb-10 sm:pt-32 sm:px-4">
+          <div className="w-full max-w-lg mb-4">
+            <Button variant="ghost" asChild className="text-muted-foreground hover:text-foreground p-0 h-auto">
+              <Link href="/" className="flex items-center gap-2 text-sm font-medium">
+                <ArrowLeft className="w-4 h-4" />
+                Volver al inicio
+              </Link>
+            </Button>
+          </div>
           <Card className="w-full max-w-lg shadow-xl border-border bg-card transition-all duration-300">
             <CardHeader className="space-y-1 flex flex-col items-center border-b border-border pb-8 mb-6">
               {/* Stepper Indicator */}
@@ -153,7 +162,7 @@ export default function RegisterPage() {
                         control={form.control}
                         name="password"
                       />
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <FormField
                           control={form.control}
                           name="age"
@@ -179,7 +188,7 @@ export default function RegisterPage() {
                               <FormLabel>Nivel Educativo</FormLabel>
                               <Select onValueChange={field.onChange} defaultValue={field.value}>
                                 <FormControl>
-                                  <SelectTrigger>
+                                  <SelectTrigger className="w-full">
                                     <SelectValue placeholder="Selecciona" />
                                   </SelectTrigger>
                                 </FormControl>
