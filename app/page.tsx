@@ -1,6 +1,7 @@
 import { Navbar } from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
-import { MoveRight, BrainCircuit, Trophy, Sparkles, BookOpen, Target, Zap } from "lucide-react";
+import { MoveRight, BrainCircuit, Trophy, Sparkles, BookOpen, Target, Zap, ChevronDown } from "lucide-react";
+
 import Link from "next/link";
 import Image from "next/image";
 
@@ -10,12 +11,12 @@ export default function Home() {
       <Navbar />
 
       {/* Hero Section: Two Columns */}
-      <section className="relative pt-32 pb-20 lg:pt-48 lg:pb-56 overflow-hidden">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <section className="relative min-h-screen flex flex-col justify-start lg:justify-center overflow-hidden pt-16">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full pt-8 lg:pt-0 pb-12 lg:pb-0">
           <div className="flex flex-col-reverse lg:grid lg:grid-cols-12 gap-12 lg:gap-8 items-center">
 
             {/* Left Column: Content (7 cols) */}
-            <div className="lg:col-span-7 text-center lg:text-left space-y-4 sm:space-y-8 animate-in fade-in slide-in-from-left-8 duration-1000 z-10 w-full">
+            <div className="lg:col-span-7 text-center lg:text-left space-y-4 sm:space-y-8 animate-in fade-in slide-in-from-left-8 duration-1000 z-10 w-full -mt-16 lg:mt-0">
               <h1 className="text-4xl sm:text-5xl md:text-8xl lg:text-[100px] font-black tracking-tighter text-foreground leading-[0.9] lg:leading-[0.8]">
                 Aprende <br />
                 <span className="text-primary italic">Luca</span> a
@@ -26,24 +27,24 @@ export default function Home() {
                 Luca es ese amigo que sabe mucho de finanzas y te ayuda a entender sobre economía sin tanto enredo. Te arma una ruta solo para ti, sin palabras raras ni clases aburridas.
               </p>
 
-              <div className="flex flex-col-reverse sm:flex-row justify-center lg:justify-start gap-4 pt-4">
-                <Button asChild variant="outline" size="lg" className="h-16 px-10 text-xl font-bold rounded-2xl border-2 border-border hover:bg-accent transition-all w-full sm:w-auto">
+              <div className="flex flex-col-reverse sm:flex-row justify-center lg:justify-start gap-3 pt-2">
+                <Button asChild variant="outline" size="lg" className="h-12 lg:h-16 px-6 lg:px-10 text-base lg:text-xl font-bold rounded-2xl border-2 border-border hover:bg-accent transition-all w-full sm:w-auto">
                   <Link href="/login">Ya tengo cuenta</Link>
                 </Button>
-                <Button asChild size="lg" className="h-16 px-10 text-xl font-black rounded-2xl shadow-2xl shadow-primary/20 hover:scale-105 transition-all w-full sm:w-auto">
+                <Button asChild size="lg" className="h-12 lg:h-16 px-6 lg:px-10 text-base lg:text-xl font-black rounded-2xl shadow-xl shadow-primary/20 hover:scale-105 transition-all w-full sm:w-auto">
                   <Link href="/register">
                     ¡Quiero empezar!
-                    <MoveRight className="ml-3 w-6 h-6" />
+                    <MoveRight className="ml-2 w-5 h-5 lg:w-6 lg:h-6" />
                   </Link>
                 </Button>
               </div>
             </div>
 
             {/* Right Column: Image/Mascot (5 cols) */}
-            <div className="lg:col-span-5 relative group animate-in fade-in zoom-in duration-1000 delay-200 lg:-ml-12 mt-0 lg:mt-0 mb-6 lg:mb-0 w-full max-w-[240px] lg:max-w-none mx-auto">
+            <div className="lg:col-span-5 relative group animate-in fade-in zoom-in duration-1000 delay-200 lg:-ml-12 mt-0 lg:mt-0 mb-6 lg:mb-0 w-full max-w-[320px] lg:max-w-none mx-auto">
 
               {/* Floating UI Widget 1: XP */}
-              <div className="absolute -top-6 left-0 sm:-left-4 bg-card/80 backdrop-blur-xl border border-border p-3 sm:p-4 rounded-xl sm:rounded-2xl shadow-2xl z-20 animate-bounce-slow transform scale-90 sm:scale-100 origin-left">
+              <div className="hidden lg:flex absolute -top-6 left-0 sm:-left-4 bg-card/80 backdrop-blur-xl border border-border p-3 sm:p-4 rounded-xl sm:rounded-2xl shadow-2xl z-20 animate-bounce-slow transform scale-90 sm:scale-100 origin-left">
                 <div className="flex items-center gap-2.5 sm:gap-3">
                   <div className="w-9 h-9 sm:w-10 sm:h-10 bg-amber-500/20 rounded-lg sm:rounded-xl flex items-center justify-center">
                     <Zap className="w-4.5 h-4.5 sm:w-5 h-5 text-amber-500 fill-current" />
@@ -56,7 +57,7 @@ export default function Home() {
               </div>
 
               {/* Floating UI Widget 2: Mastery */}
-              <div className="absolute -bottom-6 right-0 sm:-right-4 bg-card/80 backdrop-blur-xl border border-border p-3 sm:p-4 rounded-xl sm:rounded-2xl shadow-2xl z-20 animate-float transform scale-90 sm:scale-100 origin-right">
+              <div className="hidden lg:flex absolute -bottom-6 right-0 sm:-right-4 bg-card/80 backdrop-blur-xl border border-border p-3 sm:p-4 rounded-xl sm:rounded-2xl shadow-2xl z-20 animate-float transform scale-90 sm:scale-100 origin-right">
                 <div className="flex items-center gap-2.5 sm:gap-3">
                   <div className="w-9 h-9 sm:w-10 sm:h-10 bg-primary/20 rounded-lg sm:rounded-xl flex items-center justify-center">
                     <BrainCircuit className="w-4.5 h-4.5 sm:w-5 h-5 text-primary" />
@@ -77,6 +78,9 @@ export default function Home() {
                   priority
                   sizes="(max-width: 1024px) 100vw, 40vw"
                 />
+
+                {/* Mobile Bottom Fade */}
+                <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-background via-background/50 to-transparent lg:hidden" />
               </div>
 
               {/* Decorative Geometric Element */}
@@ -85,10 +89,20 @@ export default function Home() {
             </div>
           </div>
         </div>
+
+        {/* Scroll Indicator */}
+        <Link
+          href="#features"
+          className="absolute bottom-10 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 animate-bounce hover:opacity-80 transition-opacity cursor-pointer z-20"
+        >
+          <span className="text-[10px] font-black tracking-[0.2em] text-muted-foreground/50 uppercase whitespace-nowrap">Desliza para explorar</span>
+          <ChevronDown className="w-5 h-5 text-primary" />
+        </Link>
       </section>
 
       {/* Project Explanation: The "Memoria" Section */}
-      <section className="py-24 bg-secondary/50 relative">
+      <section id="features" className="py-24 bg-secondary/50 relative">
+
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-16">
 
