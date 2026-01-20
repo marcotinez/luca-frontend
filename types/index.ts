@@ -29,3 +29,14 @@ export type {
   QuestionCreate,
   QuestionUpdate,
 } from './question.types';
+
+
+// Re-exportar todo desde ingestion.types
+export type {
+  IngestionStatus,
+  IngestionLogEntry,
+  IngestionConfig,
+  IngestionJob,
+  RestoreResponse,
+  JobsHistoryParams,
+} from './ingestion.types';
