@@ -1,76 +1,60 @@
-import type { IngestionJob, IngestionConfig, RestoreResponse, JobsHistoryParams } from '@/types/ingestion.types';
+import type { IngestionJob, UploadResponse } from '@/types/ingestion.types';
 import axios from 'axios';
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 const API_URL = `${BASE_URL}/api/v1/ingestion`;
 
 /**
- * Sube un documento PDF e inicia el proceso de ingesta
+ * Sube un documento PDF al webhook de n8n
+ * @param file El archivo PDF
+ * @param chunks Cantidad de chunks (se enviará como form-data si es necesario,
+ *               aunque el user request solo especifica 'file' en los parametros curl,
+ *               la UI pide seleccionar cantidad de chunks. Asumiremos que se envia o se usa solo para calculo local.
+ *               Revisando el request del usuario: "La idea es que al seleccionar la cantidad de chunks nos muestre la cantidad de paginas que quedarán por chunk."
+ *               Pero el endpoint solo muestra 'file'.
+ *               Voy a enviar 'chunks' también por si acaso el backend lo soporta, o solo 'file' si es estricto.
+ *               El curl del usuario solo muestra -F "file=@...".
+ *               Seguiré ESTRICTAMENTE el curl del usuario para evitar errores 422.
  */
 export async function uploadDocument(
   file: File,
-  config: IngestionConfig,
-  force: boolean = false
-): Promise<IngestionJob> {
+  chunks?: number
+): Promise<UploadResponse> {
   const formData = new FormData();
   formData.append('file', file);
 
-  // Construir query params
-  const params = new URLSearchParams();
-  params.append('force', String(force));
-  params.append('chunk_size', String(config.chunk_size));
-
-  if (config.display_name) {
-    params.append('display_name', config.display_name);
-  }
-  if (config.start_page) {
-    params.append('start_page', String(config.start_page));
-  }
-  if (config.end_page) {
-    params.append('end_page', String(config.end_page));
+  // Nota: El usuario pidió seleccionar chunks en UI, pero la doc de API
+  // proporcionada SOLO menciona el campo 'file'.
+  // Si el backend soportara 'chunks', lo agregariamos aqui:
+  if (chunks) {
+     formData.append('chunks', String(chunks));
   }
 
-  const response = await axios.post(`${API_URL}/process?${params.toString()}`, formData);
+  const response = await axios.post(`${API_URL}/upload-pdf`, formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
   return response.data;
 }
 
 /**
- * Obtiene el estado actual de un trabajo de ingesta
+ * Obtiene el historial de ingesta (Jobs)
  */
-export async function getJobStatus(jobId: string): Promise<IngestionJob> {
-  const response = await axios.get(`${API_URL}/jobs/${jobId}`);
+export async function getJobsHistory(): Promise<IngestionJob[]> {
+  const response = await axios.get(`${API_URL}/jobs`);
   return response.data;
 }
 
 /**
- * Obtiene el historial de trabajos de ingesta
+ * Elimina todos los jobs asociados a un nombre de archivo
  */
-export async function getJobsHistory(params?: JobsHistoryParams): Promise<IngestionJob[]> {
-  const queryParams = new URLSearchParams();
-  if (params?.limit) queryParams.append('limit', String(params.limit));
-  if (params?.status) queryParams.append('status', params.status);
-
-  const url = queryParams.toString() ? `${API_URL}/jobs?${queryParams.toString()}` : `${API_URL}/jobs`;
-  const response = await axios.get(url);
+export async function deleteJobsByFile(fileName: string): Promise<{ message: string }> {
+  // curl -X DELETE "http://localhost:8000/api/v1/ingestion/jobs?file_name=documento.pdf"
+  const response = await axios.delete(`${API_URL}/jobs`, {
+    params: { file_name: fileName },
+  });
   return response.data;
 }
 
-/**
- * Elimina un trabajo de ingesta
- */
-export async function deleteJob(jobId: string): Promise<void> {
-  await axios.delete(`${API_URL}/jobs/${jobId}`);
-}
-
-/**
- * Restaura la base de datos de grafos usando un archivo Cypher
- */
-export async function restoreDatabase(file: File, clearDb: boolean = false): Promise<RestoreResponse> {
-  const formData = new FormData();
-  formData.append('file', file);
-  formData.append('clear_db', String(clearDb));
-
-  const response = await axios.post(`${API_URL}/restore`, formData);
-  return response.data;
-}
 

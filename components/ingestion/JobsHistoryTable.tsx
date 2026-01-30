@@ -1,123 +1,204 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import type { IngestionJob, IngestionStatus } from '@/types/ingestion.types';
-import { getJobsHistory, deleteJob } from '@/lib/ingestion.api';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { FileText, Loader2, CheckCircle2, XCircle, SkipForward, Clock, RefreshCw, Eye, Trash2, AlertCircle } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { toast } from 'sonner';
+import { useEffect, useState, useCallback, Fragment } from 'react';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { RefreshCw, ExternalLink, ChevronDown, ChevronRight, FileText, Layers, Folder, Trash2 } from "lucide-react";
+import { getJobsHistory, deleteJobsByFile } from "@/lib/ingestion.api";
+import type { IngestionJob, IngestionStatus } from "@/types/ingestion.types";
 
 interface JobsHistoryTableProps {
   onViewJob?: (job: IngestionJob) => void;
   refreshTrigger?: number;
 }
 
-const statusConfig: Record<IngestionStatus, { label: string; color: string; icon: React.ReactNode }> = {
-  PENDING: { label: 'En Cola', color: 'text-amber-600 dark:text-amber-400 bg-amber-500/10', icon: <Clock className="w-3.5 h-3.5" /> },
-  PROCESSING: { label: 'Procesando', color: 'text-blue-600 dark:text-blue-400 bg-blue-500/10', icon: <Loader2 className="w-3.5 h-3.5 animate-spin" /> },
-  COMPLETED: { label: 'Completado', color: 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10', icon: <CheckCircle2 className="w-3.5 h-3.5" /> },
-  COMPLETED_WITH_ERRORS: { label: 'Parcial', color: 'text-amber-600 dark:text-amber-400 bg-amber-500/10', icon: <AlertCircle className="w-3.5 h-3.5" /> },
-  ERROR: { label: 'Error', color: 'text-red-600 dark:text-red-400 bg-red-500/10', icon: <XCircle className="w-3.5 h-3.5" /> },
-  SKIPPED: { label: 'Omitido', color: 'text-slate-600 dark:text-slate-400 bg-slate-500/10', icon: <SkipForward className="w-3.5 h-3.5" /> }
-};
-
 export function JobsHistoryTable({ onViewJob, refreshTrigger }: JobsHistoryTableProps) {
   const [jobs, setJobs] = useState<IngestionJob[]>([]);
   const [loading, setLoading] = useState(true);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [expandedFiles, setExpandedFiles] = useState<Record<string, boolean>>({});
+  const [isDeleting, setIsDeleting] = useState(false);
 
-  const fetchJobs = async () => {
-    setLoading(true);
+  const fetchJobs = useCallback(async () => {
     try {
-      const params = statusFilter !== 'all' ? { status: statusFilter as IngestionStatus } : {};
-      const data = await getJobsHistory({ ...params, limit: 20 });
-      setJobs(data);
+      setLoading(true);
+      const data = await getJobsHistory();
+      if (Array.isArray(data)) {
+        setJobs(data);
+      } else {
+        console.error("Data received is not an array:", data);
+        setJobs([]);
+      }
     } catch (error) {
-      console.error('Error fetching jobs:', error);
+      console.error("Error fetching jobs:", error);
+      setJobs([]);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  useEffect(() => { fetchJobs(); }, [statusFilter, refreshTrigger]);
+  useEffect(() => {
+    fetchJobs();
+  }, [fetchJobs, refreshTrigger]);
 
-  const handleDelete = async (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
-    if (!confirm('¿Estás seguro de que quieres eliminar este historial?')) return;
-
-    setDeletingId(id);
-    try {
-      await deleteJob(id);
-      toast.success('Historial eliminado correctamente');
-      fetchJobs();
-    } catch (error) {
-      toast.error('Error al eliminar el historial');
-    } finally {
-      setDeletingId(null);
+  const getStatusBadge = (status?: IngestionStatus) => {
+    // ... (same as before)
+    switch (status) {
+      case 'FINISHED':
+        return <Badge className="bg-green-500 hover:bg-green-600">Finished</Badge>;
+      case 'PROCESSING':
+        return <Badge className="bg-blue-500 hover:bg-blue-600">Processing</Badge>;
+      case 'PENDING':
+        return <Badge variant="secondary">Pending</Badge>;
+      case 'ERROR':
+        return <Badge variant="destructive">Error</Badge>;
+      default:
+        return status ? <Badge variant="outline">{status}</Badge> : <Badge variant="outline">Unknown</Badge>;
     }
   };
 
-  const formatDate = (dateString: string): string => new Date(dateString).toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const toggleFile = (fileName: string) => {
+    setExpandedFiles(prev => ({
+      ...prev,
+      [fileName]: !prev[fileName]
+    }));
+  };
+
+  const handleDeleteFile = async (fileName: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // Evitar expandir/colapsar al hacer click en borrar
+    if (!confirm(`¿Estás seguro de que quieres eliminar todos los registros de "${fileName}"? Esta acción no se puede deshacer.`)) {
+      return;
+    }
+
+    try {
+      setIsDeleting(true);
+      await deleteJobsByFile(fileName);
+      await fetchJobs(); // Recargar la lista
+    } catch (error) {
+      console.error("Error deleting file jobs:", error);
+      alert("Error al eliminar los registros.");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  // Agrupar jobs por nombre de archivo...
+  const groupedJobs = jobs.reduce((acc, job) => {
+    const fileName = job.file_name || 'Sin Nombre';
+    if (!acc[fileName]) {
+      acc[fileName] = [];
+    }
+    acc[fileName].push(job);
+    return acc;
+  }, {} as Record<string, IngestionJob[]>);
+
+  const fileNames = Object.keys(groupedJobs);
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-4">
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[180px]"><SelectValue placeholder="Filtrar" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todos</SelectItem>
-            <SelectItem value="COMPLETED">Completados</SelectItem>
-            <SelectItem value="PROCESSING">En proceso</SelectItem>
-            <SelectItem value="ERROR">Con errores</SelectItem>
-          </SelectContent>
-        </Select>
-        <Button variant="outline" size="sm" onClick={fetchJobs} disabled={loading} className="gap-2">
-          <RefreshCw className={cn("w-4 h-4", loading && "animate-spin")} />Actualizar
+      {/* ... Header ... */}
+      <div className="flex justify-between items-center">
+        <h3 className="text-sm font-medium text-muted-foreground">Historial de Procesamiento</h3>
+        <Button variant="ghost" size="sm" onClick={fetchJobs} disabled={loading || isDeleting}>
+          <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+          Actualizar
         </Button>
       </div>
-      <div className="border rounded-lg overflow-hidden">
+
+      <div className="rounded-md border bg-card">
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/50">
+              <TableHead className="w-[50px]"></TableHead>
               <TableHead>Archivo</TableHead>
-              <TableHead>Estado</TableHead>
-              <TableHead>Fecha</TableHead>
+              <TableHead className="text-center">Chunks</TableHead>
+              <TableHead className="text-center">Nodos Totales</TableHead>
+              <TableHead className="text-center">Relaciones Totales</TableHead>
               <TableHead className="text-right">Acciones</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {loading ? (
-              <TableRow><TableCell colSpan={4} className="h-32 text-center"><Loader2 className="w-5 h-5 animate-spin mx-auto" /></TableCell></TableRow>
-            ) : jobs.length === 0 ? (
-              <TableRow><TableCell colSpan={4} className="h-32 text-center text-muted-foreground">No hay documentos</TableCell></TableRow>
-            ) : jobs.map((job) => {
-              const status = statusConfig[job.status] || statusConfig['ERROR'];
-              return (
-                <TableRow key={job._id} className="group cursor-pointer hover:bg-muted/50" onClick={() => onViewJob?.(job)}>
-                  <TableCell>
-                    <div className="flex flex-col">
-                      <span className="font-medium truncate max-w-[200px]">{job.display_name || job.file_name}</span>
-                      {job.display_name && <span className="text-xs text-muted-foreground truncate max-w-[200px]">{job.file_name}</span>}
-                    </div>
-                  </TableCell>
-                  <TableCell><Badge variant="outline" className={cn("gap-1.5", status.color)}>{status.icon}{status.label}</Badge></TableCell>
-                  <TableCell className="text-muted-foreground text-sm">{formatDate(job.created_at)}</TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      {onViewJob && <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); onViewJob(job); }}><Eye className="w-4 h-4 text-muted-foreground hover:text-primary" /></Button>}
-                      <Button variant="ghost" size="icon" onClick={(e) => handleDelete(e, job._id)} disabled={deletingId === job._id}>
-                        {deletingId === job._id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4 text-muted-foreground hover:text-red-500" />}
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              );
-            })}
+            {jobs.length === 0 && !loading ? (
+              <TableRow>
+                <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                  No hay registros de ingesta.
+                </TableCell>
+              </TableRow>
+            ) : (
+              fileNames.map((fileName) => {
+                const fileJobs = groupedJobs[fileName];
+                const isExpanded = expandedFiles[fileName];
+
+                // Buscar si existe un job con chunk_id 'TOTAL'
+                const totalJob = fileJobs.find(job => String(job.chunk_id).toUpperCase() === 'TOTAL');
+
+                // Si existe el job TOTAL, usamos sus valores. Si no, calculamos la suma (excluyendo cualquier posible fila llamada TOTAL si la lógica falló antes, aunque aquí asumimos que si no lo encontramos con find, es seguro sumar).
+                // Nota: Si el backend envía 'TOTAL' y nosotros sumamos ciegamente, duplicamos. Por eso preferimos el totalJob.
+                const totalNodes = totalJob ? (totalJob.nodes || 0) : fileJobs.reduce((acc, job) => acc + (job.nodes || 0), 0);
+                const totalRelations = totalJob ? (totalJob.relations || 0) : fileJobs.reduce((acc, job) => acc + (job.relations || 0), 0);
+
+                return (
+                  <Fragment key={fileName}>
+                    <TableRow
+                      className="cursor-pointer hover:bg-muted/30 group"
+                      onClick={() => toggleFile(fileName)}
+                    >
+                      <TableCell>
+                        {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                      </TableCell>
+                      <TableCell className="font-medium flex items-center gap-2">
+                        <FileText className="w-4 h-4 text-primary" />
+                        {fileName}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant="secondary" className="font-mono">
+                          {totalJob ? (fileJobs.length - 1) : fileJobs.length}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-center text-muted-foreground">{totalNodes}</TableCell>
+                      <TableCell className="text-center text-muted-foreground">{totalRelations}</TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-muted-foreground hover:text-red-600 hover:bg-red-100 dark:hover:bg-red-900/20 opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={(e) => handleDeleteFile(fileName, e)}
+                          title="Eliminar historial de este archivo"
+                          disabled={isDeleting}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+
+                    {/* ... Child rows ... */}
+
+                    {isExpanded && fileJobs.map((job, index) => (
+                      <TableRow key={`job-${job.chunk_id}-${index}`} className="bg-muted/10 border-b-0">
+                        <TableCell></TableCell>
+                        <TableCell className="pl-10 flex items-center gap-2">
+                          <Layers className="w-3 h-3 text-muted-foreground" />
+                          <span className="text-sm text-muted-foreground">Chunk {job.chunk_id}</span>
+                        </TableCell>
+                        <TableCell className="text-center text-xs text-muted-foreground">{job.file_size || '-'}</TableCell>
+                        <TableCell className="text-center text-sm">{job.nodes}</TableCell>
+                        <TableCell className="text-center text-sm">{job.relations}</TableCell>
+                        <TableCell className="text-right">
+                           {getStatusBadge(job.status)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </Fragment>
+                );
+              })
+            )}
           </TableBody>
         </Table>
       </div>
