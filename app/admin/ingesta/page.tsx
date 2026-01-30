@@ -4,6 +4,7 @@ import { useState, useCallback } from 'react';
 import { uploadDocument } from '@/lib/ingestion.api';
 import { IngestionConfigurator } from '@/components/ingestion/IngestionConfigurator';
 import { JobsHistoryTable } from '@/components/ingestion/JobsHistoryTable';
+import { BackupManager } from '@/components/admin/BackupManager';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Database, History, Upload } from 'lucide-react';
 import { toast } from 'sonner';
@@ -63,6 +64,9 @@ export default function IngestaPage() {
             <JobsHistoryTable refreshTrigger={refreshTrigger} />
           </CardContent>
         </Card>
+
+        {/* Panel de Administración de Base de Datos */}
+        <BackupManager />
       </div>
     </div>
   );
