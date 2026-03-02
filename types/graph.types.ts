@@ -1,11 +1,5 @@
-/**
- * Tipos para la API de Graph Neo4j
- * Base URL: /api/v1/graph
- */
 
-/**
- * Propiedades adicionales de una entidad o relación
- */
+// Propiedades adicionales de una entidad o relación
 export interface EntityProperties {
   id?: string;
   file_origin?: string;
@@ -14,9 +8,7 @@ export interface EntityProperties {
   [key: string]: unknown;
 }
 
-/**
- * Resultado de búsqueda de entidad (nodo)
- */
+// Resultado de búsqueda de entidad (nodo)
 export interface EntityResult {
   id: string;
   labels: string[];
@@ -25,9 +17,7 @@ export interface EntityResult {
   properties: EntityProperties;
 }
 
-/**
- * Resultado de búsqueda de relación
- */
+// Resultado de búsqueda de relación
 export interface RelationshipResult {
   id: string;
   type: string;
@@ -41,9 +31,7 @@ export interface RelationshipResult {
   };
 }
 
-/**
- * Respuesta de búsqueda combinada
- */
+// Respuesta de búsqueda combinada
 export interface SearchResponse {
   query: string;
   entities: EntityResult[];
@@ -52,9 +40,7 @@ export interface SearchResponse {
   total_relationships: number;
 }
 
-/**
- * Estadísticas del grafo
- */
+// Estadísticas del grafo
 export interface GraphStats {
   total_nodes: number;
   total_relationships: number;

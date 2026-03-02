@@ -1,33 +1,22 @@
-/**
- * Estados posibles del proceso de ingesta
- */
+// Estados posibles del proceso de ingesta
 export type IngestionStatus =
   | 'PENDING'     // En cola
   | 'PROCESSING'  // Procesando
   | 'FINISHED'    // Finalizado
   | 'ERROR';      // Error
 
-/**
- * Modelo de Datos (IngestionJob)
- * Basado en la respuesta de /jobs
- */
+// Modelo de Datos
 export interface IngestionJob {
-  file_name: string;      // Nombre del archivo PDF
-  file_size?: string;     // Tamaño del archivo (opcional)
-  directory?: string;     // URL o ruta de origen (opcional)
-  chunk_id: number | string; // Identificador del chunk
-  nodes: number;          // Cantidad de nodos extraídos
-  relations: number;      // Cantidad de relaciones extraídas
-  status?: IngestionStatus; // Estado del procesamiento
-
-  // Agregamos campos opcionales por si la API los devuelve en el futuro o para compatibilidad
-  message?: string;
-  webhook_status?: number;
+  file_name: string;
+  file_size?: string;
+  directory?: string;
+  chunk_id: number | string;
+  nodes: number;
+  relations: number;
+  status?: IngestionStatus;
 }
 
-/**
- * Respuesta del endpoint de Upload
- */
+// Respuesta del endpoint de Upload
 export interface UploadResponse {
     message: string;
     filename: string;
