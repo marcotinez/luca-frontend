@@ -13,7 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Search, Database, GitBranch, Layers, Loader2, AlertCircle } from 'lucide-react';
+import { Search, Database, GitBranch, Layers, Loader2, AlertCircle, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { GraphStats } from '@/components/graph/GraphStats';
@@ -79,6 +79,15 @@ export default function ConsultasPage() {
       setLoading(false);
     }
   }, [query, limit, searchMode]);
+
+  const handleClear = useCallback(() => {
+    setQuery('');
+    setHasSearched(false);
+    setEntities([]);
+    setRelationships([]);
+    setTotalEntities(0);
+    setTotalRelationships(0);
+  }, []);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
@@ -149,6 +158,17 @@ export default function ConsultasPage() {
                 </>
               )}
             </Button>
+            {hasSearched && (
+              <Button
+                variant="outline"
+                onClick={handleClear}
+                className="h-10 px-3 flex items-center gap-2"
+                title="Limpiar búsqueda"
+              >
+                <RotateCcw className="w-4 h-4" />
+                Limpiar
+              </Button>
+            )}
           </div>
 
           {/* Tabs de modo */}
