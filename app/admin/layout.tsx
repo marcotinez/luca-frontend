@@ -2,7 +2,7 @@
 
 import { AdminRoute } from "@/components/AdminRoute";
 import { DashboardNavbar } from "@/components/DashboardNavbar";
-import { ShieldCheck, Users, Sparkles, LayoutDashboard } from "lucide-react";
+import { ShieldCheck, Users, Sparkles, LayoutDashboard, Database, Search } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -24,6 +24,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       label: "Preguntas",
       href: "/admin/preguntas",
       icon: <Sparkles className="w-4 h-4" />
+    },
+    {
+      label: "Ingesta",
+      href: "/admin/ingesta",
+      icon: <Database className="w-4 h-4" />
+    },
+    {
+      label: "Consultas",
+      href: "/admin/consultas",
+      icon: <Search className="w-4 h-4" />
     }
   ];
 
