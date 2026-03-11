@@ -169,7 +169,7 @@ export function SemanticResultCard({ result, rank }: SemanticResultCardProps) {
               className="w-full flex items-center justify-between gap-2 text-sm font-medium text-foreground/80 hover:text-foreground transition-colors"
             >
               <span>
-                {totalEdges} relación{totalEdges !== 1 ? 'es' : ''} en el subgrafo
+                {totalEdges} {totalEdges === 1 ? 'relación' : 'relaciones'} en el subgrafo
                 {depthLevels.length > 1 && ` · ${depthLevels.length} niveles`}
               </span>
               {subgraphOpen
