@@ -9,7 +9,6 @@ import {
   LayoutDashboard,
   Database,
   Search,
-  FileText,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -46,11 +45,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     {
       title: "Generación",
       items: [
-        {
-          label: "Editor de prompts",
-          href: "/admin/banco",
-          icon: <FileText className="w-4 h-4" />,
-        },
         {
           label: "Generador de preguntas",
           href: "/admin/generador",
