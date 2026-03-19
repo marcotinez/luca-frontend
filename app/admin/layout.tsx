@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   Database,
   Search,
+  FileSearch,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -49,6 +50,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           label: "Generador de preguntas",
           href: "/admin/generador",
           icon: <Sparkles className="w-4 h-4" />,
+        },
+        {
+          label: "Trazas OpenAI",
+          href: "/admin/openai-logs",
+          icon: <FileSearch className="w-4 h-4" />,
         },
       ],
     },
