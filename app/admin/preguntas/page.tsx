@@ -3,7 +3,7 @@
 import * as z from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { getQuestions, deleteQuestion, createQuestion, updateQuestion } from "@/lib/questions.api";
 import { QuestionResponse, QuestionCreate, FinancialTopic, Difficulty, Status, SubTopic } from "@/types";
 
@@ -54,7 +54,7 @@ const CATEGORY_SUBTOPICS: Record<FinancialTopic, SubTopic[]> = {
 
 // Design Components
 import { Trash2, MoreVertical, Search, RefreshCcw, Plus, Pencil, CheckCircle2, XCircle, Clock } from "lucide-react";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -71,10 +71,16 @@ import { Checkbox } from "@/components/ui/checkbox";
 export default function PreguntasPage() {
   const [preguntas, setPreguntas] = useState<QuestionResponse[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isDeletingBulk, setIsDeletingBulk] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterCategory, setFilterCategory] = useState<string>("");
   const [filterStatus, setFilterStatus] = useState<string>("");
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [hasNextPage, setHasNextPage] = useState(false);
 
   // Estados para Creación/Edición
   const [isQuestionDialogOpen, setIsQuestionDialogOpen] = useState(false);
@@ -123,30 +129,42 @@ export default function PreguntasPage() {
     }
   });
 
-  const fetchPreguntas = async () => {
+  const fetchPreguntas = useCallback(async () => {
     try {
       setLoading(true);
       const statusFilter = filterStatus ? (filterStatus as Status) : undefined;
-      const data = await getQuestions(0, 100, filterCategory || undefined, statusFilter);
-      setPreguntas(data);
-    } catch (error) {
+      const skip = (page - 1) * pageSize;
+      const data = await getQuestions(skip, pageSize + 1, filterCategory || undefined, statusFilter);
+      setHasNextPage(data.length > pageSize);
+      setPreguntas(data.slice(0, pageSize));
+    } catch {
       toast.error("Error al cargar las preguntas");
     } finally {
       setLoading(false);
     }
-  };
+  }, [filterCategory, filterStatus, page, pageSize]);
 
   useEffect(() => {
     fetchPreguntas();
-  }, [filterCategory, filterStatus]);
+  }, [fetchPreguntas]);
+
+  useEffect(() => {
+    setPage(1);
+    setSelectedIds(new Set());
+  }, [filterCategory, filterStatus, pageSize]);
 
   const handleDelete = async () => {
     if (!deleteId) return;
     try {
       await deleteQuestion(deleteId);
       toast.success("Pregunta eliminada");
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(deleteId);
+        return next;
+      });
       fetchPreguntas();
-    } catch (error) {
+    } catch {
       toast.error("Error al eliminar la pregunta");
     } finally {
       setDeleteId(null);
@@ -177,14 +195,64 @@ export default function PreguntasPage() {
       }
       setIsQuestionDialogOpen(false);
       fetchPreguntas();
-    } catch (error) {
+    } catch {
       toast.error("Error al guardar pregunta");
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+
+    const ids = Array.from(selectedIds);
+    try {
+      setIsDeletingBulk(true);
+      const results = await Promise.allSettled(ids.map((id) => deleteQuestion(id)));
+      const deletedCount = results.filter((result) => result.status === "fulfilled").length;
+      const failedCount = results.length - deletedCount;
+
+      if (deletedCount > 0) {
+        toast.success(`${deletedCount} pregunta(s) eliminada(s)`);
+      }
+      if (failedCount > 0) {
+        toast.error(`${failedCount} pregunta(s) no se pudieron eliminar`);
+      }
+
+      setSelectedIds(new Set());
+      setBulkDeleteOpen(false);
+      fetchPreguntas();
+    } catch {
+      toast.error("Error al eliminar preguntas seleccionadas");
+    } finally {
+      setIsDeletingBulk(false);
     }
   };
 
   const filteredPreguntas = preguntas.filter(p =>
     p.question.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const allFilteredSelected =
+    filteredPreguntas.length > 0 && filteredPreguntas.every((p) => selectedIds.has(p.id));
+
+  const toggleSelectAllFiltered = (checked: boolean) => {
+    const next = new Set(selectedIds);
+    if (checked) {
+      filteredPreguntas.forEach((p) => next.add(p.id));
+    } else {
+      filteredPreguntas.forEach((p) => next.delete(p.id));
+    }
+    setSelectedIds(next);
+  };
+
+  const toggleSelectQuestion = (id: string, checked: boolean) => {
+    const next = new Set(selectedIds);
+    if (checked) {
+      next.add(id);
+    } else {
+      next.delete(id);
+    }
+    setSelectedIds(next);
+  };
 
   const getStatusBadge = (status: Status) => {
     switch (status) {
@@ -220,6 +288,14 @@ export default function PreguntasPage() {
             <RefreshCcw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
             Actualizar
           </Button>
+          <Button
+            variant="destructive"
+            disabled={selectedIds.size === 0 || loading || isDeletingBulk}
+            onClick={() => setBulkDeleteOpen(true)}
+          >
+            <Trash2 className="w-4 h-4 mr-2" />
+            Eliminar seleccionadas ({selectedIds.size})
+          </Button>
           <Button variant="default" onClick={() => {
             setEditingQuestion(null);
             form.reset({
@@ -250,7 +326,9 @@ export default function PreguntasPage() {
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
               <CardTitle>Listado de Preguntas</CardTitle>
-              <CardDescription>Total: {preguntas.length} preguntas en el banco.</CardDescription>
+              <CardDescription>
+                Página {page}. Mostrando {filteredPreguntas.length} de {preguntas.length} preguntas cargadas.
+              </CardDescription>
             </div>
             <div className="flex flex-col md:flex-row gap-2">
               <div className="relative w-full md:w-64">
@@ -284,6 +362,17 @@ export default function PreguntasPage() {
                   <SelectItem value={Status.EN_REVISION}>En Revisión</SelectItem>
                 </SelectContent>
               </Select>
+              <Select value={String(pageSize)} onValueChange={(value) => setPageSize(Number(value))}>
+                <SelectTrigger className="w-full md:w-36">
+                  <SelectValue placeholder="Tamaño" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="10">10 / página</SelectItem>
+                  <SelectItem value="20">20 / página</SelectItem>
+                  <SelectItem value="50">50 / página</SelectItem>
+                  <SelectItem value="100">100 / página</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </CardHeader>
@@ -292,6 +381,13 @@ export default function PreguntasPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border text-muted-foreground">
+                  <th className="text-left font-medium py-4 px-2 w-10">
+                    <Checkbox
+                      checked={allFilteredSelected}
+                      onCheckedChange={(checked) => toggleSelectAllFiltered(checked === true)}
+                      aria-label="Seleccionar todas las preguntas visibles"
+                    />
+                  </th>
                   <th className="text-left font-medium py-4 px-2">Pregunta</th>
                   <th className="text-left font-medium py-4 px-2">Categoría</th>
                   <th className="text-left font-medium py-4 px-2">Dificultad</th>
@@ -303,19 +399,26 @@ export default function PreguntasPage() {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={6} className="py-10 text-center text-muted-foreground">
+                    <td colSpan={7} className="py-10 text-center text-muted-foreground">
                       Cargando preguntas...
                     </td>
                   </tr>
                 ) : filteredPreguntas.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="py-10 text-center text-muted-foreground">
+                    <td colSpan={7} className="py-10 text-center text-muted-foreground">
                       No se encontraron preguntas.
                     </td>
                   </tr>
                 ) : (
                   filteredPreguntas.map((p) => (
                     <tr key={p.id} className="border-b border-border/50 hover:bg-muted/50 transition-colors">
+                      <td className="py-4 px-2">
+                        <Checkbox
+                          checked={selectedIds.has(p.id)}
+                          onCheckedChange={(checked) => toggleSelectQuestion(p.id, checked === true)}
+                          aria-label={`Seleccionar pregunta ${p.id}`}
+                        />
+                      </td>
                       <td className="py-4 px-2 max-w-md">
                         <span className="font-medium text-foreground line-clamp-2">{p.question}</span>
                         <span className="text-xs text-muted-foreground block mt-1">{p.subtopic}</span>
@@ -377,6 +480,30 @@ export default function PreguntasPage() {
               </tbody>
             </table>
           </div>
+          <div className="mt-4 flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">
+              Seleccionadas: {selectedIds.size}
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={loading || page === 1}
+                onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+              >
+                Anterior
+              </Button>
+              <Badge variant="outline">Página {page}</Badge>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={loading || !hasNextPage}
+                onClick={() => setPage((prev) => prev + 1)}
+              >
+                Siguiente
+              </Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
@@ -392,6 +519,25 @@ export default function PreguntasPage() {
           <DialogFooter className="gap-2 sm:gap-0">
             <Button variant="outline" onClick={() => setDeleteId(null)}>Cancelar</Button>
             <Button variant="destructive" onClick={handleDelete}>Confirmar Eliminación</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>¿Eliminar preguntas seleccionadas?</DialogTitle>
+            <DialogDescription>
+              Esta acción no se puede deshacer. Se eliminarán {selectedIds.size} pregunta(s) seleccionada(s).
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setBulkDeleteOpen(false)} disabled={isDeletingBulk}>
+              Cancelar
+            </Button>
+            <Button variant="destructive" onClick={handleBulkDelete} disabled={isDeletingBulk}>
+              {isDeletingBulk ? "Eliminando..." : "Confirmar Eliminación"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -417,7 +563,6 @@ export default function PreguntasPage() {
                     control={form.control}
                     name="category"
                     render={({ field }) => {
-                      const selectedCategory = form.watch("category");
                       return (
                         <FormItem>
                           <FormLabel>Categoría</FormLabel>
