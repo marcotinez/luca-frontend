@@ -47,6 +47,18 @@ export interface GenerationQuestionResponse {
   raw_output: string;
 }
 
+export type GenerationJobStatus = 'queued' | 'running' | 'completed' | 'failed';
+
+export interface GenerationJobState {
+  job_id: string;
+  status: GenerationJobStatus;
+  progress: number;
+  stage: string;
+  message?: string | null;
+  error?: string | null;
+  result?: GenerationQuestionResponse | null;
+}
+
 function getAuthHeaders() {
   if (typeof window === 'undefined') {
     return {
@@ -73,4 +85,39 @@ export async function generateQuestion(data: GenerationQuestionRequest): Promise
     headers: getAuthHeaders(),
   });
   return response.data;
+}
+
+function normalizeGenerationJobState(data: Partial<GenerationJobState> & { job_id: string }): GenerationJobState {
+  return {
+    job_id: data.job_id,
+    status: (data.status || 'queued') as GenerationJobStatus,
+    progress: typeof data.progress === 'number' ? data.progress : 0,
+    stage: data.stage || 'queued',
+    message: data.message ?? null,
+    error: data.error ?? null,
+    result: data.result ?? null,
+  };
+}
+
+export async function startGenerationJob(data: GenerationQuestionRequest): Promise<GenerationJobState> {
+  const payload: GenerationQuestionRequest = {
+    ...data,
+    category: data.category || 'Planificación y presupuesto',
+    subtopic: data.subtopic || 'Diferenciar Gastos Fijos vs. Variables',
+  };
+
+  const response = await axios.post(`${API_BASE}/generation/questions/jobs`, payload, {
+    headers: getAuthHeaders(),
+  });
+
+  const body = response.data as Partial<GenerationJobState> & { job_id: string };
+  return normalizeGenerationJobState(body);
+}
+
+export async function getGenerationJob(jobId: string): Promise<GenerationJobState> {
+  const response = await axios.get(`${API_BASE}/generation/questions/jobs/${jobId}`, {
+    headers: getAuthHeaders(),
+  });
+  const body = response.data as Partial<GenerationJobState> & { job_id: string };
+  return normalizeGenerationJobState(body);
 }
