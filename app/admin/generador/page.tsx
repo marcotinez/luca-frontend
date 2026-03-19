@@ -1,12 +1,10 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { Difficulty, FinancialTopic, SubTopic } from '@/types';
+import { useMemo, useState } from 'react';
+import { Difficulty } from '@/types';
 import {
   generateQuestion,
   GenerationQuestionResponse,
-  getLatestPrompts,
-  LatestPromptsResponse,
 } from '@/lib/prompt-generation.api';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -15,52 +13,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Sparkles, AlertTriangle, RefreshCcw } from 'lucide-react';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { Loader2, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import axios from 'axios';
 
-const CATEGORY_SUBTOPICS: Record<FinancialTopic, SubTopic[]> = {
-  [FinancialTopic.PLANIFICACION]: [
-    SubTopic.GASTOS_FIJOS_VARIABLES,
-    SubTopic.PRESUPUESTO_MENSUAL,
-    SubTopic.METAS_FINANCIERAS,
-    SubTopic.CONTROL_GASTOS,
-  ],
-  [FinancialTopic.CREDITO]: [
-    SubTopic.QUE_ES_CREDITO,
-    SubTopic.TIPOS_CREDITO,
-    SubTopic.TASA_INTERES,
-    SubTopic.HISTORIAL_CREDITICIO,
-    SubTopic.DEUDAS_RESPONSABLES,
-  ],
-  [FinancialTopic.ECONOMIA]: [
-    SubTopic.INFLACION,
-    SubTopic.OFERTA_DEMANDA,
-    SubTopic.IMPUESTOS_BASICOS,
-    SubTopic.ECONOMIA_PERSONAL,
-  ],
-  [FinancialTopic.PRIMER_EMPLEO]: [
-    SubTopic.CONTRATO_TRABAJO,
-    SubTopic.LIQUIDACION_SUELDO,
-    SubTopic.AFP_SALUD,
-    SubTopic.DERECHOS_LABORALES,
-    SubTopic.FINIQUITO,
-  ],
-  [FinancialTopic.AHORRO]: [
-    SubTopic.HABITO_AHORRO,
-    SubTopic.FONDO_EMERGENCIA,
-    SubTopic.INSTRUMENTOS_AHORRO,
-    SubTopic.INVERSION_BASICA,
-    SubTopic.RIESGO_RENTABILIDAD,
-  ],
-  [FinancialTopic.PRODUCTOS_BANCARIOS]: [
-    SubTopic.CUENTA_CORRIENTE_VISTA,
-    SubTopic.TARJETAS_DEBITO_CREDITO,
-    SubTopic.SEGURIDAD_BANCARIA,
-    SubTopic.FRAUDES_ESTAFAS,
-    SubTopic.BANCA_DIGITAL,
-  ],
-};
+const QUESTION_COUNT_OPTIONS = Array.from({ length: 20 }, (_, i) => String(i + 1));
+const SEMANTIC_LIMIT_OPTIONS = Array.from({ length: 20 }, (_, i) => String(i + 1));
 
 function getErrorMessage(error: unknown) {
   if (axios.isAxiosError(error)) {
@@ -81,82 +40,25 @@ function getErrorMessage(error: unknown) {
   return 'No se pudo generar la pregunta';
 }
 
-function hasDifficultyPrompt(latestPrompts: LatestPromptsResponse | null, difficulty: Difficulty) {
-  if (!latestPrompts) return false;
-  if (difficulty === Difficulty.FACIL) return !!latestPrompts.facil;
-  if (difficulty === Difficulty.MEDIO) return !!latestPrompts.medio;
-  return !!latestPrompts.dificil;
-}
-
-function getDifficultyPromptsStatus(latestPrompts: LatestPromptsResponse | null) {
-  if (!latestPrompts) {
-    return {
-      facil: false,
-      medio: false,
-      dificil: false,
-    };
-  }
-
-  return {
-    facil: !!latestPrompts.facil,
-    medio: !!latestPrompts.medio,
-    dificil: !!latestPrompts.dificil,
-  };
-}
-
 export default function GeneradorPreguntasPage() {
-  const [category, setCategory] = useState<FinancialTopic>(FinancialTopic.PLANIFICACION);
-  const [subtopic, setSubtopic] = useState<SubTopic>(SubTopic.GASTOS_FIJOS_VARIABLES);
   const [difficulty, setDifficulty] = useState<Difficulty>(Difficulty.FACIL);
   const [userInput, setUserInput] = useState('');
+  const [questionCount, setQuestionCount] = useState(1);
 
   const [semanticLimit, setSemanticLimit] = useState(5);
   const [semanticDepth, setSemanticDepth] = useState<1 | 2>(1);
   const [model, setModel] = useState('gpt-4o-mini');
 
-  const [latestPrompts, setLatestPrompts] = useState<LatestPromptsResponse | null>(null);
-  const [loadingPrompts, setLoadingPrompts] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [result, setResult] = useState<GenerationQuestionResponse | null>(null);
 
-  const subtopics = CATEGORY_SUBTOPICS[category] || [];
-
-  useEffect(() => {
-    if (!subtopics.includes(subtopic)) {
-      setSubtopic(subtopics[0]);
-    }
-  }, [category]);
-
-  const fetchLatestPrompts = async () => {
-    try {
-      setLoadingPrompts(true);
-      const data = await getLatestPrompts();
-      setLatestPrompts(data);
-    } catch (error) {
-      toast.error('No se pudieron cargar los prompts activos');
-    } finally {
-      setLoadingPrompts(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchLatestPrompts();
-  }, []);
-
-  const promptBaseReady = !!latestPrompts?.base;
-  const promptDifficultyReady = hasDifficultyPrompt(latestPrompts, difficulty);
-  const canGenerateByPrompts = promptBaseReady && promptDifficultyReady;
-  const difficultyPromptsStatus = getDifficultyPromptsStatus(latestPrompts);
-  const hasAnyDifficultyPrompt =
-    difficultyPromptsStatus.facil || difficultyPromptsStatus.medio || difficultyPromptsStatus.dificil;
-
   const canGenerate = useMemo(() => {
-    return canGenerateByPrompts && userInput.trim().length > 0 && !!category && !!subtopic && !!difficulty;
-  }, [canGenerateByPrompts, userInput, category, subtopic, difficulty]);
+    return userInput.trim().length > 0 && !!difficulty;
+  }, [userInput, difficulty]);
 
   const handleGenerate = async () => {
     if (!canGenerate) {
-      toast.error('Completa los campos y verifica prompts activos antes de generar');
+      toast.error('Completa los campos antes de generar');
       return;
     }
 
@@ -164,16 +66,15 @@ export default function GeneradorPreguntasPage() {
       setIsGenerating(true);
       const response = await generateQuestion({
         user_input: userInput.trim(),
-        category,
-        subtopic,
         difficulty,
+        question_count: questionCount,
         semantic_limit: semanticLimit,
         semantic_depth: semanticDepth,
         model: model.trim() || 'gpt-4o-mini',
       });
 
       setResult(response);
-      toast.success('Pregunta generada y guardada en revisión');
+      toast.success(`${response.generated_count} pregunta(s) generada(s) y guardada(s) en revisión`);
     } catch (error) {
       toast.error(getErrorMessage(error));
     } finally {
@@ -190,100 +91,23 @@ export default function GeneradorPreguntasPage() {
             Genera preguntas con OpenAI + búsqueda semántica para revisión admin.
           </p>
         </div>
-
-        <Button variant="outline" onClick={fetchLatestPrompts} disabled={loadingPrompts}>
-          <RefreshCcw className={`w-4 h-4 mr-2 ${loadingPrompts ? 'animate-spin' : ''}`} />
-          Refrescar prompts
-        </Button>
       </div>
-
-      <Card className={!canGenerateByPrompts ? 'border-yellow-500/40' : ''}>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <AlertTriangle className={`w-5 h-5 ${canGenerateByPrompts ? 'text-green-600' : 'text-yellow-600'}`} />
-            Estado de prompts requeridos
-          </CardTitle>
-          <CardDescription>
-            Para generar: deben existir prompt `base` y prompt de la dificultad seleccionada.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-wrap gap-2">
-          <Badge variant={promptBaseReady ? 'default' : 'destructive'}>
-            base: {promptBaseReady ? 'OK' : 'Faltante'}
-          </Badge>
-          <Badge variant={promptDifficultyReady ? 'default' : 'destructive'}>
-            difficulty seleccionada ({difficulty}): {promptDifficultyReady ? 'OK' : 'Faltante'}
-          </Badge>
-          <Badge variant={difficultyPromptsStatus.facil ? 'outline' : 'secondary'}>
-            Fácil: {difficultyPromptsStatus.facil ? 'OK' : 'Sin prompt'}
-          </Badge>
-          <Badge variant={difficultyPromptsStatus.medio ? 'outline' : 'secondary'}>
-            Medio: {difficultyPromptsStatus.medio ? 'OK' : 'Sin prompt'}
-          </Badge>
-          <Badge variant={difficultyPromptsStatus.dificil ? 'outline' : 'secondary'}>
-            Difícil: {difficultyPromptsStatus.dificil ? 'OK' : 'Sin prompt'}
-          </Badge>
-          {!hasAnyDifficultyPrompt && (
-            <p className="w-full text-sm text-muted-foreground">
-              No hay prompts de dificultad activos actualmente.
-            </p>
-          )}
-        </CardContent>
-      </Card>
 
       <Card>
         <CardHeader>
           <CardTitle>Formulario de generación</CardTitle>
-          <CardDescription>Selecciona categoría, subtópico, dificultad y contexto del usuario.</CardDescription>
+          <CardDescription>Define el tema, dificultad y parámetros de generación.</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-5">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-2">
-              <Label>Categoría</Label>
-              <Select
-                value={category}
-                onValueChange={(value) => setCategory(value as FinancialTopic)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecciona categoría" />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.values(FinancialTopic).map((categoryItem) => (
-                    <SelectItem key={categoryItem} value={categoryItem}>
-                      {categoryItem}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Subtópico</Label>
-              <Select
-                value={subtopic}
-                onValueChange={(value) => setSubtopic(value as SubTopic)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecciona subtópico" />
-                </SelectTrigger>
-                <SelectContent>
-                  {subtopics.map((subtopicItem) => (
-                    <SelectItem key={subtopicItem} value={subtopicItem}>
-                      {subtopicItem}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Dificultad</Label>
+              <Label>Nivel de dificultad</Label>
               <Select
                 value={difficulty}
                 onValueChange={(value) => setDifficulty(value as Difficulty)}
               >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecciona dificultad" />
+                <SelectTrigger className="h-12 border-2">
+                  <SelectValue placeholder="Selecciona un nivel" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={Difficulty.FACIL}>{Difficulty.FACIL}</SelectItem>
@@ -292,53 +116,90 @@ export default function GeneradorPreguntasPage() {
                 </SelectContent>
               </Select>
             </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label>user_input</Label>
-            <Textarea
-              value={userInput}
-              onChange={(event) => setUserInput(event.target.value)}
-              rows={5}
-              placeholder="Ej: Quiero una pregunta sobre presupuesto para universitarios"
-            />
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="space-y-2">
-              <Label>Cantidad de resultados semánticos (1..20)</Label>
-              <Input
-                type="number"
-                min={1}
-                max={20}
-                value={semanticLimit}
-                onChange={(event) => {
-                  const value = Number(event.target.value);
-                  if (Number.isNaN(value)) return;
-                  setSemanticLimit(Math.max(1, Math.min(20, value)));
-                }}
-              />
-            </div>
 
             <div className="space-y-2">
-              <Label>Profundidad del contexto semántico (1..2)</Label>
+              <Label>Cantidad de preguntas</Label>
               <Select
-                value={String(semanticDepth)}
-                onValueChange={(value) => setSemanticDepth(Number(value) as 1 | 2)}
+                value={String(questionCount)}
+                onValueChange={(value) => setQuestionCount(Number(value))}
               >
-                <SelectTrigger>
-                  <SelectValue />
+                <SelectTrigger className="h-12 border-2">
+                  <SelectValue placeholder="Selecciona cantidad" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="1">1</SelectItem>
-                  <SelectItem value="2">2</SelectItem>
+                  {QUESTION_COUNT_OPTIONS.map((option) => (
+                    <SelectItem key={option} value={option}>
+                      {option}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
 
             <div className="space-y-2">
-              <Label>model</Label>
+              <Label>Modelo de generación</Label>
               <Input value={model} onChange={(event) => setModel(event.target.value)} placeholder="gpt-4o-mini" />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Tema o contexto de la pregunta</Label>
+            <Textarea
+              value={userInput}
+              onChange={(event) => setUserInput(event.target.value)}
+              rows={5}
+              placeholder="Ej: Quiero preguntas sobre presupuesto para estudiantes universitarios"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="flex items-center gap-3 bg-muted/20 rounded-lg px-4 py-3 border border-dashed">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium">Resultados semánticos</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Número de coincidencias usadas para construir contexto
+                </p>
+              </div>
+              <Select
+                value={String(semanticLimit)}
+                onValueChange={(value) => setSemanticLimit(Number(value))}
+              >
+                <SelectTrigger className="w-[100px] h-12 border-2 shrink-0">
+                  <SelectValue placeholder="Límite" />
+                </SelectTrigger>
+                <SelectContent>
+                  {SEMANTIC_LIMIT_OPTIONS.map((option) => (
+                    <SelectItem key={option} value={option}>
+                      {option}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex items-center gap-3 bg-muted/20 rounded-lg px-4 py-3 border border-dashed">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium">Profundidad semántica</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {semanticDepth === 1 ? 'Contexto directo' : 'Contexto con vecinos'}
+                </p>
+              </div>
+              <div className="flex rounded-md border border-border overflow-hidden shrink-0">
+                {[1, 2].map((depthOption) => (
+                  <button
+                    key={depthOption}
+                    onClick={() => setSemanticDepth(depthOption as 1 | 2)}
+                    type="button"
+                    className={`w-9 h-9 text-sm font-semibold transition-all ${
+                      semanticDepth === depthOption
+                        ? 'bg-foreground text-background'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-muted/40'
+                    }`}
+                  >
+                    {depthOption}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -348,7 +209,7 @@ export default function GeneradorPreguntasPage() {
             ) : (
               <Sparkles className="w-4 h-4 mr-2" />
             )}
-            Generar pregunta
+            Generar preguntas
           </Button>
         </CardContent>
       </Card>
@@ -357,48 +218,67 @@ export default function GeneradorPreguntasPage() {
         <Card>
           <CardHeader>
             <CardTitle>Resultado de generación</CardTitle>
-            <CardDescription>Pregunta creada y guardada con estado en revisión.</CardDescription>
+            <CardDescription>Preguntas creadas y guardadas con estado en revisión.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
             <div className="flex flex-wrap gap-2">
-              <Badge>{result.question.status}</Badge>
-              <Badge variant="outline">{result.question.category}</Badge>
-              <Badge variant="outline">{result.question.subtopic}</Badge>
-              <Badge variant="outline">{result.question.difficulty}</Badge>
+              <Badge variant="outline">
+                generated_count: {result.generated_count}
+              </Badge>
             </div>
 
-            <div>
-              <h3 className="font-semibold mb-2">Pregunta</h3>
-              <p className="text-muted-foreground">{result.question.question}</p>
-            </div>
+            <div className="space-y-6">
+              <Accordion type="multiple" className="w-full border border-border rounded-md px-4">
+                {result.questions.map((question, questionIndex) => (
+                  <AccordionItem key={question.id} value={`question-${question.id}`}>
+                    <AccordionTrigger className="hover:no-underline">
+                      <div className="flex flex-wrap items-center gap-2 pr-3">
+                        <Badge variant="outline">#{questionIndex + 1}</Badge>
+                        <Badge>{question.status}</Badge>
+                        <Badge variant="outline">{question.difficulty}</Badge>
+                        <span className="text-sm text-muted-foreground line-clamp-1">
+                          {question.question}
+                        </span>
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="space-y-4">
+                      <div>
+                        <h3 className="font-semibold mb-2">Pregunta</h3>
+                        <p className="text-muted-foreground">{question.question}</p>
+                      </div>
 
-            <div>
-              <h3 className="font-semibold mb-2">Alternativas</h3>
-              <div className="space-y-2">
-                {result.question.alternatives.map((alternative, index) => (
-                  <div key={`${alternative.text}-${index}`} className="border border-border rounded-md p-3">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Badge variant={alternative.is_correct ? 'default' : 'secondary'}>
-                        {alternative.is_correct ? 'Correcta' : 'Incorrecta'}
-                      </Badge>
-                    </div>
-                    <p className="font-medium">{alternative.text}</p>
-                    <p className="text-sm text-muted-foreground mt-1">Feedback: {alternative.feedback}</p>
-                  </div>
+                      <div>
+                        <h3 className="font-semibold mb-2">Alternativas</h3>
+                        <div className="space-y-2">
+                          {question.alternatives.map((alternative, alternativeIndex) => (
+                            <div key={`${question.id}-${alternativeIndex}`} className="border border-border rounded-md p-3">
+                              <div className="flex items-center gap-2 mb-1">
+                                <Badge variant={alternative.is_correct ? 'default' : 'secondary'}>
+                                  {alternative.is_correct ? 'Correcta' : 'Incorrecta'}
+                                </Badge>
+                              </div>
+                              <p className="font-medium">{alternative.text}</p>
+                              <p className="text-sm text-muted-foreground mt-1">Feedback: {alternative.feedback}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <h3 className="font-semibold">Metadata pedagógica</h3>
+                        <p className="text-sm text-muted-foreground">
+                          <span className="font-medium text-foreground">rag_reference:</span>{' '}
+                          {question.pedagogic_metadata.rag_reference}
+                        </p>
+                        <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                          <span className="font-medium text-foreground">complete_explanation:</span>{' '}
+                          {question.pedagogic_metadata.complete_explanation}
+                        </p>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
                 ))}
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <h3 className="font-semibold">Metadata pedagógica</h3>
-              <p className="text-sm text-muted-foreground">
-                <span className="font-medium text-foreground">rag_reference:</span>{' '}
-                {result.question.pedagogic_metadata.rag_reference}
-              </p>
-              <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                <span className="font-medium text-foreground">complete_explanation:</span>{' '}
-                {result.question.pedagogic_metadata.complete_explanation}
-              </p>
+              </Accordion>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm text-muted-foreground">
@@ -409,17 +289,23 @@ export default function GeneradorPreguntasPage() {
                 <span className="font-medium text-foreground">used_model:</span> {result.used_model}
               </p>
               <p>
-                <span className="font-medium text-foreground">created_at:</span>{' '}
-                {new Date(result.question.created_at).toLocaleString('es-CL')}
+                <span className="font-medium text-foreground">primera pregunta creada:</span>{' '}
+                {result.questions[0] ? new Date(result.questions[0].created_at).toLocaleString('es-CL') : '-'}
               </p>
             </div>
 
-            <div>
-              <h3 className="font-semibold mb-1">raw_output</h3>
-              <pre className="text-xs bg-muted/50 border border-border rounded-md p-3 overflow-x-auto">
-                {result.raw_output}
-              </pre>
-            </div>
+            <Accordion type="single" collapsible className="w-full border border-border rounded-md px-4">
+              <AccordionItem value="raw-output">
+                <AccordionTrigger className="hover:no-underline">
+                  <span className="font-semibold">Raw Output</span>
+                </AccordionTrigger>
+                <AccordionContent>
+                  <pre className="text-xs bg-muted/50 border border-border rounded-md p-3 overflow-x-auto">
+                    {result.raw_output}
+                  </pre>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
           </CardContent>
         </Card>
       )}
