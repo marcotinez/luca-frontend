@@ -1,20 +1,22 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Difficulty } from '@/types';
 import {
-  generateQuestion,
+  getGenerationJob,
+  GenerationJobState,
   GenerationQuestionRequest,
   GenerationQuestionResponse,
+  startGenerationJob,
 } from '@/lib/prompt-generation.api';
 import { addOpenAILog, getOpenAILogs } from '@/lib/openai-logs.storage';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Loader2, Sparkles, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
@@ -23,6 +25,22 @@ import axios from 'axios';
 const QUESTION_COUNT_OPTIONS = Array.from({ length: 20 }, (_, i) => String(i + 1));
 const SEMANTIC_LIMIT_OPTIONS = Array.from({ length: 20 }, (_, i) => String(i + 1));
 const GENERATOR_STATE_STORAGE_KEY = 'admin_generador_state_v1';
+const MODEL_OPTIONS = ['gpt-5.4-nano', 'gpt-5-nano', 'gpt-5-mini', 'o4-mini'] as const;
+const JOB_POLL_INTERVAL_MS = 800;
+const STAGE_LABELS: Record<string, string> = {
+  queued: 'En cola',
+  starting: 'Iniciando',
+  semantic_search: 'Buscando contexto semántico',
+  semantic_search_done: 'Contexto listo',
+  prompt_ready: 'Preparando instrucciones',
+  llm_attempt_1: 'Generando preguntas (intento 1)',
+  llm_attempt_2: 'Reintentando por calidad (intento 2)',
+  llm_attempt_3: 'Último intento de generación',
+  validation_passed: 'Validación superada',
+  saving_questions: 'Guardando preguntas',
+  completed: 'Completado',
+  failed: 'Error',
+};
 const FIXED_OUTPUT_SCHEMA: Record<string, unknown> = {
   type: 'object',
   additionalProperties: false,
@@ -85,6 +103,11 @@ function getErrorMessage(error: unknown) {
   return 'No se pudo generar la pregunta';
 }
 
+function getStageLabel(stage: string | undefined) {
+  if (!stage) return '';
+  return STAGE_LABELS[stage] || stage;
+}
+
 export default function GeneradorPreguntasPage() {
   const [difficulty, setDifficulty] = useState<Difficulty>(Difficulty.FACIL);
   const [userInput, setUserInput] = useState('');
@@ -92,17 +115,68 @@ export default function GeneradorPreguntasPage() {
 
   const [semanticLimit, setSemanticLimit] = useState(5);
   const [semanticDepth, setSemanticDepth] = useState<1 | 2>(1);
-  const [model, setModel] = useState('gpt-4o-mini');
+  const [model, setModel] = useState<string>('gpt-5.4-nano');
 
-  const [isGenerating, setIsGenerating] = useState(false);
+  const [job, setJob] = useState<GenerationJobState | null>(null);
+  const [lastRequestPayload, setLastRequestPayload] = useState<GenerationQuestionRequest | null>(null);
   const [result, setResult] = useState<GenerationQuestionResponse | null>(null);
   const [hasHydratedState, setHasHydratedState] = useState(false);
+  const pollTimerRef = useRef<number | null>(null);
 
   const canGenerate = useMemo(() => {
     return userInput.trim().length > 0 && !!difficulty;
   }, [userInput, difficulty]);
 
   const displayedGeneratedCount = result ? result.questions.length : 0;
+  const isGenerating = job?.status === 'queued' || job?.status === 'running';
+
+  const stopPolling = () => {
+    if (pollTimerRef.current) {
+      window.clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+  };
+
+  const applyCompletedResult = (
+    currentJob: GenerationJobState,
+    requestPayload: GenerationQuestionRequest | null
+  ) => {
+    const completedResult = currentJob.result;
+    if (completedResult?.questions) {
+      setResult(completedResult);
+      toast.success(`${completedResult.questions.length} pregunta(s) generada(s) y guardada(s) en revisión`);
+      if (requestPayload) {
+        addOpenAILog({ request: requestPayload, response: completedResult });
+      }
+    } else {
+      toast.error('El job finalizó sin resultado de preguntas');
+    }
+  };
+
+  const pollJob = async (jobId: string, requestPayload: GenerationQuestionRequest | null) => {
+    try {
+      const state = await getGenerationJob(jobId);
+      setJob(state);
+
+      if (state.status === 'completed') {
+        stopPolling();
+        applyCompletedResult(state, requestPayload);
+      } else if (state.status === 'failed') {
+        stopPolling();
+        toast.error(state.error || state.message || 'La generación falló');
+      }
+    } catch {
+      stopPolling();
+      toast.error('No se pudo consultar el progreso del job');
+    }
+  };
+
+  const startPolling = (jobId: string, requestPayload: GenerationQuestionRequest | null) => {
+    stopPolling();
+    pollTimerRef.current = window.setInterval(() => {
+      void pollJob(jobId, requestPayload);
+    }, JOB_POLL_INTERVAL_MS);
+  };
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -121,6 +195,8 @@ export default function GeneradorPreguntasPage() {
         semanticLimit?: number;
         semanticDepth?: 1 | 2;
         model?: string;
+        job?: GenerationJobState | null;
+        lastRequestPayload?: GenerationQuestionRequest | null;
         result?: GenerationQuestionResponse | null;
       };
 
@@ -129,7 +205,11 @@ export default function GeneradorPreguntasPage() {
       if (typeof parsedState.questionCount === 'number') setQuestionCount(parsedState.questionCount);
       if (typeof parsedState.semanticLimit === 'number') setSemanticLimit(parsedState.semanticLimit);
       if (parsedState.semanticDepth === 1 || parsedState.semanticDepth === 2) setSemanticDepth(parsedState.semanticDepth);
-      if (typeof parsedState.model === 'string') setModel(parsedState.model);
+      if (typeof parsedState.model === 'string' && MODEL_OPTIONS.includes(parsedState.model as (typeof MODEL_OPTIONS)[number])) {
+        setModel(parsedState.model);
+      }
+      if (parsedState.job) setJob(parsedState.job);
+      if (parsedState.lastRequestPayload) setLastRequestPayload(parsedState.lastRequestPayload);
       if (parsedState.result) {
         setResult(parsedState.result);
       } else {
@@ -141,11 +221,16 @@ export default function GeneradorPreguntasPage() {
     } catch {
       window.localStorage.removeItem(GENERATOR_STATE_STORAGE_KEY);
     } finally {
-      // Nunca restauramos "generando" desde storage, porque una promesa en curso no se puede rehidratar.
-      setIsGenerating(false);
       setHasHydratedState(true);
     }
   }, []);
+
+  useEffect(() => {
+    if (!hasHydratedState || !job) return;
+    if (job.status === 'queued' || job.status === 'running') {
+      startPolling(job.job_id, lastRequestPayload);
+    }
+  }, [hasHydratedState, job?.job_id, job?.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!hasHydratedState || typeof window === 'undefined') return;
@@ -157,11 +242,19 @@ export default function GeneradorPreguntasPage() {
       semanticLimit,
       semanticDepth,
       model,
+      job,
+      lastRequestPayload,
       result,
     };
 
     window.localStorage.setItem(GENERATOR_STATE_STORAGE_KEY, JSON.stringify(persistedState));
-  }, [hasHydratedState, difficulty, userInput, questionCount, semanticLimit, semanticDepth, model, isGenerating, result]);
+  }, [hasHydratedState, difficulty, userInput, questionCount, semanticLimit, semanticDepth, model, job, lastRequestPayload, result]);
+
+  useEffect(() => {
+    return () => {
+      stopPolling();
+    };
+  }, []);
 
   const handleGenerate = async () => {
     if (!canGenerate) {
@@ -170,37 +263,45 @@ export default function GeneradorPreguntasPage() {
     }
 
     try {
-      setIsGenerating(true);
+      stopPolling();
       const requestPayload: GenerationQuestionRequest = {
         user_input: userInput.trim(),
         difficulty,
         question_count: questionCount,
         semantic_limit: semanticLimit,
         semantic_depth: semanticDepth,
-        model: model.trim() || 'gpt-4o-mini',
+        model,
         output_schema: FIXED_OUTPUT_SCHEMA,
       };
 
-      const response = await generateQuestion(requestPayload);
+      setLastRequestPayload(requestPayload);
+      const createdJob = await startGenerationJob(requestPayload);
+      setJob(createdJob);
+      setResult(null);
+      toast.success('Generación iniciada');
 
-      setResult(response);
-      addOpenAILog({ request: requestPayload, response });
-      toast.success(`${response.questions.length} pregunta(s) generada(s) y guardada(s) en revisión`);
+      if (createdJob.status === 'completed') {
+        applyCompletedResult(createdJob, requestPayload);
+      } else if (createdJob.status === 'failed') {
+        toast.error(createdJob.error || createdJob.message || 'La generación falló al iniciar');
+      } else {
+        startPolling(createdJob.job_id, requestPayload);
+      }
     } catch (error) {
       toast.error(getErrorMessage(error));
-    } finally {
-      setIsGenerating(false);
     }
   };
 
   const handleClearGeneratorState = () => {
+    stopPolling();
     setDifficulty(Difficulty.FACIL);
     setUserInput('');
     setQuestionCount(1);
     setSemanticLimit(5);
     setSemanticDepth(1);
-    setModel('gpt-4o-mini');
-    setIsGenerating(false);
+    setModel('gpt-5.4-nano');
+    setJob(null);
+    setLastRequestPayload(null);
     setResult(null);
 
     if (typeof window !== 'undefined') {
@@ -266,7 +367,18 @@ export default function GeneradorPreguntasPage() {
 
             <div className="space-y-2">
               <Label>Modelo de generación</Label>
-              <Input value={model} onChange={(event) => setModel(event.target.value)} placeholder="gpt-4o-mini" />
+              <Select value={model} onValueChange={setModel}>
+                <SelectTrigger className="h-12 border-2">
+                  <SelectValue placeholder="Selecciona modelo" />
+                </SelectTrigger>
+                <SelectContent>
+                  {MODEL_OPTIONS.map((modelOption) => (
+                    <SelectItem key={modelOption} value={modelOption}>
+                      {modelOption}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
@@ -330,6 +442,33 @@ export default function GeneradorPreguntasPage() {
               </div>
             </div>
           </div>
+
+          {job && (
+            <div className="space-y-2 border border-border rounded-md p-4 bg-muted/20">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline">
+                    {job.status === 'queued'
+                      ? 'En cola'
+                      : job.status === 'running'
+                        ? 'En progreso'
+                        : job.status === 'completed'
+                          ? 'Completado'
+                          : 'Error'}
+                  </Badge>
+                  <Badge variant="outline">{job.progress}%</Badge>
+                </div>
+                <span className="text-sm text-muted-foreground">job_id: {job.job_id}</span>
+              </div>
+              <Progress value={Math.max(0, Math.min(100, job.progress || 0))} />
+              <p className="text-sm text-muted-foreground">
+                {job.message || getStageLabel(job.stage)}
+              </p>
+              {job.status === 'failed' && job.error && (
+                <p className="text-sm text-destructive">{job.error}</p>
+              )}
+            </div>
+          )}
 
           <div className="flex flex-wrap gap-2 justify-between">
             <Button variant="outline" onClick={handleClearGeneratorState} disabled={isGenerating}>
