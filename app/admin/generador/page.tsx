@@ -1,11 +1,13 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Difficulty } from '@/types';
 import {
   generateQuestion,
+  GenerationQuestionRequest,
   GenerationQuestionResponse,
 } from '@/lib/prompt-generation.api';
+import { addOpenAILog, getOpenAILogs } from '@/lib/openai-logs.storage';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -14,24 +16,67 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import { Loader2, Sparkles } from 'lucide-react';
+import { Loader2, Sparkles, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import axios from 'axios';
 
 const QUESTION_COUNT_OPTIONS = Array.from({ length: 20 }, (_, i) => String(i + 1));
 const SEMANTIC_LIMIT_OPTIONS = Array.from({ length: 20 }, (_, i) => String(i + 1));
+const GENERATOR_STATE_STORAGE_KEY = 'admin_generador_state_v1';
+const FIXED_OUTPUT_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    questions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          question: { type: 'string' },
+          alternatives: {
+            type: 'array',
+            minItems: 4,
+            maxItems: 4,
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                text: { type: 'string' },
+                is_correct: { type: 'boolean' },
+                feedback: { type: 'string' },
+              },
+              required: ['text', 'is_correct', 'feedback'],
+            },
+          },
+          pedagogic_metadata: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              rag_reference: { type: 'string' },
+              complete_explanation: { type: 'string' },
+            },
+            required: ['rag_reference', 'complete_explanation'],
+          },
+        },
+        required: ['question', 'alternatives', 'pedagogic_metadata'],
+      },
+    },
+  },
+  required: ['questions'],
+};
 
 function getErrorMessage(error: unknown) {
   if (axios.isAxiosError(error)) {
     const statusCode = error.response?.status;
     const backendMessage = error.response?.data?.detail || error.response?.data?.message;
 
-    if (statusCode === 500) {
-      return 'Error interno del flujo de generación. Verifica configuración de OpenAI y contacta soporte interno.';
-    }
-
     if (statusCode === 400 && backendMessage) {
       return backendMessage;
+    }
+
+    if (statusCode === 500) {
+      return backendMessage || 'Error interno del flujo de generación. Verifica configuración de OpenAI y contacta soporte interno.';
     }
 
     return backendMessage || 'No se pudo generar la pregunta';
@@ -51,10 +96,72 @@ export default function GeneradorPreguntasPage() {
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [result, setResult] = useState<GenerationQuestionResponse | null>(null);
+  const [hasHydratedState, setHasHydratedState] = useState(false);
 
   const canGenerate = useMemo(() => {
     return userInput.trim().length > 0 && !!difficulty;
   }, [userInput, difficulty]);
+
+  const displayedGeneratedCount = result ? result.questions.length : 0;
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    try {
+      const rawState = window.localStorage.getItem(GENERATOR_STATE_STORAGE_KEY);
+      if (!rawState) {
+        setHasHydratedState(true);
+        return;
+      }
+
+      const parsedState = JSON.parse(rawState) as {
+        difficulty?: Difficulty;
+        userInput?: string;
+        questionCount?: number;
+        semanticLimit?: number;
+        semanticDepth?: 1 | 2;
+        model?: string;
+        result?: GenerationQuestionResponse | null;
+      };
+
+      if (parsedState.difficulty) setDifficulty(parsedState.difficulty);
+      if (typeof parsedState.userInput === 'string') setUserInput(parsedState.userInput);
+      if (typeof parsedState.questionCount === 'number') setQuestionCount(parsedState.questionCount);
+      if (typeof parsedState.semanticLimit === 'number') setSemanticLimit(parsedState.semanticLimit);
+      if (parsedState.semanticDepth === 1 || parsedState.semanticDepth === 2) setSemanticDepth(parsedState.semanticDepth);
+      if (typeof parsedState.model === 'string') setModel(parsedState.model);
+      if (parsedState.result) {
+        setResult(parsedState.result);
+      } else {
+        const latestLog = getOpenAILogs()[0];
+        if (latestLog?.response) {
+          setResult(latestLog.response);
+        }
+      }
+    } catch {
+      window.localStorage.removeItem(GENERATOR_STATE_STORAGE_KEY);
+    } finally {
+      // Nunca restauramos "generando" desde storage, porque una promesa en curso no se puede rehidratar.
+      setIsGenerating(false);
+      setHasHydratedState(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!hasHydratedState || typeof window === 'undefined') return;
+
+    const persistedState = {
+      difficulty,
+      userInput,
+      questionCount,
+      semanticLimit,
+      semanticDepth,
+      model,
+      result,
+    };
+
+    window.localStorage.setItem(GENERATOR_STATE_STORAGE_KEY, JSON.stringify(persistedState));
+  }, [hasHydratedState, difficulty, userInput, questionCount, semanticLimit, semanticDepth, model, isGenerating, result]);
 
   const handleGenerate = async () => {
     if (!canGenerate) {
@@ -64,22 +171,43 @@ export default function GeneradorPreguntasPage() {
 
     try {
       setIsGenerating(true);
-      const response = await generateQuestion({
+      const requestPayload: GenerationQuestionRequest = {
         user_input: userInput.trim(),
         difficulty,
         question_count: questionCount,
         semantic_limit: semanticLimit,
         semantic_depth: semanticDepth,
         model: model.trim() || 'gpt-4o-mini',
-      });
+        output_schema: FIXED_OUTPUT_SCHEMA,
+      };
+
+      const response = await generateQuestion(requestPayload);
 
       setResult(response);
-      toast.success(`${response.generated_count} pregunta(s) generada(s) y guardada(s) en revisión`);
+      addOpenAILog({ request: requestPayload, response });
+      toast.success(`${response.questions.length} pregunta(s) generada(s) y guardada(s) en revisión`);
     } catch (error) {
       toast.error(getErrorMessage(error));
     } finally {
       setIsGenerating(false);
     }
+  };
+
+  const handleClearGeneratorState = () => {
+    setDifficulty(Difficulty.FACIL);
+    setUserInput('');
+    setQuestionCount(1);
+    setSemanticLimit(5);
+    setSemanticDepth(1);
+    setModel('gpt-4o-mini');
+    setIsGenerating(false);
+    setResult(null);
+
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem(GENERATOR_STATE_STORAGE_KEY);
+    }
+
+    toast.success('Estado de generación limpiado');
   };
 
   return (
@@ -203,14 +331,20 @@ export default function GeneradorPreguntasPage() {
             </div>
           </div>
 
-          <Button onClick={handleGenerate} disabled={!canGenerate || isGenerating}>
-            {isGenerating ? (
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-            ) : (
-              <Sparkles className="w-4 h-4 mr-2" />
-            )}
-            Generar preguntas
-          </Button>
+          <div className="flex flex-wrap gap-2 justify-between">
+            <Button variant="outline" onClick={handleClearGeneratorState} disabled={isGenerating}>
+              <RotateCcw className="w-4 h-4 mr-2" />
+              Limpiar
+            </Button>
+            <Button onClick={handleGenerate} disabled={!canGenerate || isGenerating}>
+              {isGenerating ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Sparkles className="w-4 h-4 mr-2" />
+              )}
+              Generar preguntas
+            </Button>
+          </div>
         </CardContent>
       </Card>
 
@@ -223,7 +357,7 @@ export default function GeneradorPreguntasPage() {
           <CardContent className="space-y-5">
             <div className="flex flex-wrap gap-2">
               <Badge variant="outline">
-                generated_count: {result.generated_count}
+                Preguntas generadas: {displayedGeneratedCount}
               </Badge>
             </div>
 
@@ -234,7 +368,6 @@ export default function GeneradorPreguntasPage() {
                     <AccordionTrigger className="hover:no-underline">
                       <div className="flex flex-wrap items-center gap-2 pr-3">
                         <Badge variant="outline">#{questionIndex + 1}</Badge>
-                        <Badge>{question.status}</Badge>
                         <Badge variant="outline">{question.difficulty}</Badge>
                         <span className="text-sm text-muted-foreground line-clamp-1">
                           {question.question}

@@ -13,6 +13,8 @@ export interface GenerationQuestionRequest {
   semantic_limit?: number;
   semantic_depth?: 1 | 2;
   model?: string;
+  output_schema?: Record<string, unknown>;
+  output_contract?: Record<string, unknown>;
 }
 
 export interface GeneratedAlternative {
@@ -41,6 +43,7 @@ export interface GenerationQuestionResponse {
   generated_count: number;
   semantic_total: number;
   used_model: string;
+  final_prompt?: string;
   raw_output: string;
 }
 
