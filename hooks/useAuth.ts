@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   me as apiMe,
@@ -35,18 +35,22 @@ export function useAuth() {
     const response = await apiUpdatePassword(data);
     if (response.access_token) localStorage.setItem('token', response.access_token);
 
+    await refreshUser();
+  };
+
+  const refreshUser = useCallback(async () => {
     const userData = await apiMe();
     localStorage.setItem('user', JSON.stringify(userData));
     setUser(userData);
-  };
+  }, []);
 
   // Función para cerrar sesión
-  const logout = () => {
+  const logout = useCallback(() => {
     setUser(null);
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     router.push('/login');
-  };
+  }, [router]);
 
   // Verificar si hay sesión al cargar
   useEffect(() => {
@@ -58,11 +62,9 @@ export function useAuth() {
       }
       try {
         // Intentamos obtener el usuario
-        const userData = await apiMe();
-        setUser(userData);
-        localStorage.setItem('user', JSON.stringify(userData));
+        await refreshUser();
         setLoading(false);
-      } catch (error) {
+      } catch {
         // Si no hay sesión, limpiamos y redirigimos al login
         localStorage.removeItem('token');
         localStorage.removeItem('user');
@@ -72,7 +74,7 @@ export function useAuth() {
       }
     };
     validateSession();
-  }, []);
+  }, [refreshUser]);
 
   // Renovar el token automaticamente cada X minutos
   useEffect(() => {
@@ -92,7 +94,7 @@ export function useAuth() {
     }, refreshInterval);
 
     return () => clearInterval(interval);
-  }, [user]);
+  }, [user, logout]);
 
-  return { user, login, register, logout, loading, updatePassword };
+  return { user, login, register, logout, loading, updatePassword, refreshUser };
 }
