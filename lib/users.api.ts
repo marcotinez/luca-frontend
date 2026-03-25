@@ -1,5 +1,11 @@
 import axios from 'axios';
-import type { UserResponse, UserUpdate, RegisterRequest } from '@/types';
+import type {
+  UserLearningProfile,
+  UserResponse,
+  UserUpdate,
+  RegisterRequest,
+  RegisterPracticeAttemptRequest,
+} from '@/types';
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 const API_URL = `${BASE_URL}/api/v1/users`;
@@ -30,5 +36,18 @@ export async function deleteUser(id: string): Promise<void> {
 
 export async function toggleUserStatus(id: string): Promise<UserResponse> {
   const response = await axios.patch(`${API_URL}/${id}/toggle-status`);
+  return response.data;
+}
+
+export async function getLearningProfile(id: string): Promise<UserLearningProfile> {
+  const response = await axios.get(`${API_URL}/${id}/learning-profile`);
+  return response.data;
+}
+
+export async function registerPracticeAttempt(
+  id: string,
+  data: RegisterPracticeAttemptRequest,
+): Promise<UserLearningProfile> {
+  const response = await axios.post(`${API_URL}/${id}/practice-attempt`, data);
   return response.data;
 }
