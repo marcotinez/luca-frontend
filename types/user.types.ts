@@ -1,3 +1,5 @@
+import type { PracticeHistorySummary, UserLearningProfile } from "./learning.types";
+
 // ============================================================================
 // ENUMS
 // ============================================================================
@@ -49,6 +51,8 @@ export interface UserResponse {
   is_superuser: boolean;
   profile: UserProfile;
   gamification: UserGamification;
+  learning_profile?: UserLearningProfile;
+  practice_history_summary?: PracticeHistorySummary[];
   created_at: string;
 }
 

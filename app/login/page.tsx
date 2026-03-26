@@ -54,7 +54,7 @@ export default function LoginPage() {
     try {
       await login(values);
       toast.success("¡Bienvenido de nuevo!");
-      router.push('/inicio');
+      router.push('/dashboard');
     } catch (error) {
       toast.error("Email o contraseña incorrectos");
     }
@@ -129,4 +129,3 @@ export default function LoginPage() {
     </PublicRoute>
   );
 }
-

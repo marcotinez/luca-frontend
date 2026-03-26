@@ -37,3 +37,21 @@ export type {
   IngestionJob,
   UploadResponse,
 } from './ingestion.types';
+
+
+// Re-exportar todo desde learning.types
+export type {
+  PracticeTestStatus,
+  PracticeDifficulty,
+  DomainKnowledge,
+  PracticeHistoryEntry,
+  PracticeHistorySummary,
+  UserLearningProfile,
+  PracticeTestCreateRequest,
+  PracticeTestQuestionPublic,
+  PracticeTestDetailResponse,
+  PracticeTestSummaryResponse,
+  SubmitAnswerRequest,
+  SubmitAnswerResponse,
+  RegisterPracticeAttemptRequest,
+} from './learning.types';

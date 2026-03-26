@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from "next-themes";
-import { User, LogOut, Sun, Moon, ChevronDown, Settings, ShieldCheck } from 'lucide-react';
+import { User, LogOut, Sun, Moon, ChevronDown, ShieldCheck, BarChart3 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -28,12 +28,7 @@ export function DashboardNavbar() {
   const { user, logout } = useAuth();
   const router = useRouter();
   const { theme, setTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   const userInitials = user?.email?.substring(0, 2).toUpperCase() || 'LU';
 
@@ -43,7 +38,7 @@ export function DashboardNavbar() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div
             className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
-            onClick={() => router.push('/inicio')}
+            onClick={() => router.push('/dashboard')}
           >
             <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
               <span className="text-primary-foreground font-bold italic">L</span>
@@ -79,6 +74,11 @@ export function DashboardNavbar() {
                   <span>Perfil</span>
                 </DropdownMenuItem>
 
+                <DropdownMenuItem onClick={() => router.push('/profile/progress')} className="cursor-pointer py-2.5">
+                  <BarChart3 className="mr-2 h-4 w-4" />
+                  <span>Progreso</span>
+                </DropdownMenuItem>
+
                 {/* 1.5 Modo Administrador (Solo si es superuser) */}
                 {user?.is_superuser && (
                   <DropdownMenuItem
@@ -91,24 +91,22 @@ export function DashboardNavbar() {
                 )}
 
                 {/* 2. Dark Mode */}
-                {mounted && (
-                  <DropdownMenuItem
-                    onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-                    className="cursor-pointer py-2.5"
-                  >
-                    {theme === "dark" ? (
-                      <>
-                        <Sun className="mr-2 h-4 w-4 text-amber-500" />
-                        <span>Modo Claro</span>
-                      </>
-                    ) : (
-                      <>
-                        <Moon className="mr-2 h-4 w-4 text-slate-600" />
-                        <span>Modo Oscuro</span>
-                      </>
-                    )}
-                  </DropdownMenuItem>
-                )}
+                <DropdownMenuItem
+                  onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+                  className="cursor-pointer py-2.5"
+                >
+                  {theme === "dark" ? (
+                    <>
+                      <Sun className="mr-2 h-4 w-4 text-amber-500" />
+                      <span>Modo Claro</span>
+                    </>
+                  ) : (
+                    <>
+                      <Moon className="mr-2 h-4 w-4 text-slate-600" />
+                      <span>Modo Oscuro</span>
+                    </>
+                  )}
+                </DropdownMenuItem>
 
                 <DropdownMenuSeparator />
 

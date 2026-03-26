@@ -31,13 +31,43 @@ export interface RelationshipResult {
   };
 }
 
-// Respuesta de búsqueda combinada
+// Respuesta de búsqueda combinada (textual)
 export interface SearchResponse {
   query: string;
   entities: EntityResult[];
   relationships: RelationshipResult[];
   total_entities: number;
   total_relationships: number;
+}
+
+// Una arista del subgrafo expandido, con nivel de profundidad
+export interface SubgraphEdge {
+  source: string;
+  relation: string;
+  rel_description?: string | null;
+  target: string;
+  target_description?: string | null;
+  depth: number; // 1 = directo, 2 = segundo salto, etc.
+}
+
+// Resultado individual de búsqueda semántica (nuevo formato)
+export interface SemanticResult {
+  concepto: string;
+  definicion?: string | null;
+  tipo?: string | null;
+  source_context?: string | null;
+  file_origin?: string | null;
+  subgraph: SubgraphEdge[];
+  score: number;
+  search_type: 'vector' | 'fulltext';
+}
+
+// Respuesta completa del endpoint /semantic-search
+export interface SemanticSearchResponse {
+  query: string;
+  total: number;
+  depth: number;
+  results: SemanticResult[];
 }
 
 // Estadísticas del grafo

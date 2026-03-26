@@ -85,7 +85,7 @@ export default function RegisterPage() {
     try {
       await register(values as RegisterRequest);
       toast.success("¡Cuenta creada con éxito!");
-      router.push('/inicio');
+      router.push('/dashboard');
     } catch (error) {
       let errorMessage = "Error al registrar el usuario. Intenta con otro email.";
       if (axios.isAxiosError(error) && error.response?.data?.detail) {
@@ -93,7 +93,15 @@ export default function RegisterPage() {
         if (typeof detail === 'string') {
           errorMessage = detail;
         } else if (Array.isArray(detail)) {
-          errorMessage = detail.map((err: any) => `${err.loc.join('.')}: ${err.msg}`).join(', ');
+          errorMessage = detail
+            .map((err) => {
+              if (!err || typeof err !== "object") return "";
+              const item = err as { loc?: unknown[]; msg?: string };
+              const location = Array.isArray(item.loc) ? item.loc.join(".") : "request";
+              return item.msg ? `${location}: ${item.msg}` : "";
+            })
+            .filter(Boolean)
+            .join(", ");
         } else if (detail.msg) {
           errorMessage = detail.msg;
         }
