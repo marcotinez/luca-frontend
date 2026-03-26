@@ -34,8 +34,9 @@ export type {
 // Re-exportar todo desde ingestion.types
 export type {
   IngestionStatus,
-  IngestionJob,
-  UploadResponse,
+  IngestionEvent,
+  IngestionRun,
+  StartIngestionResponse,
 } from './ingestion.types';
 
 

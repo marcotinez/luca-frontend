@@ -28,6 +28,9 @@ export default function PracticeTestRunnerPage() {
     feedback: string;
     correctOptionId: number;
   } | null>(null);
+  const [pendingNextTest, setPendingNextTest] = useState<PracticeTestDetailResponse | null>(null);
+  const [currentStreak, setCurrentStreak] = useState(0);
+  const [bestStreak, setBestStreak] = useState(0);
   const questionStartRef = useRef<number>(Date.now());
   const nullQuestionRetryRef = useRef(0);
 
@@ -50,6 +53,10 @@ export default function PracticeTestRunnerPage() {
       }
       setTest(response);
       setSelectedOptionId(null);
+      setFeedback(null);
+      setPendingNextTest(null);
+      setCurrentStreak(0);
+      setBestStreak(0);
       questionStartRef.current = Date.now();
     } catch (error) {
       if (axios.isAxiosError(error) && error.response?.status === 403) {
@@ -72,12 +79,6 @@ export default function PracticeTestRunnerPage() {
     loadTest();
   }, [loadTest]);
 
-  useEffect(() => {
-    if (!feedback) return;
-    const timeout = setTimeout(() => setFeedback(null), 1800);
-    return () => clearTimeout(timeout);
-  }, [feedback]);
-
   const currentQuestion = useMemo(() => test?.current_question || null, [test]);
 
   const handleSelectOption = async (optionId: number) => {
@@ -97,13 +98,16 @@ export default function PracticeTestRunnerPage() {
         feedback: response.feedback,
         correctOptionId: response.correct_option_id,
       });
-      setTest(response.test);
-      if (response.test.status === "completed") {
-        router.replace(`/practice/test/${response.test.id}/result`);
-        return;
+      if (response.is_correct) {
+        setCurrentStreak((prev) => {
+          const next = prev + 1;
+          setBestStreak((bestPrev) => Math.max(bestPrev, next));
+          return next;
+        });
+      } else {
+        setCurrentStreak(0);
       }
-      questionStartRef.current = Date.now();
-      setSelectedOptionId(null);
+      setPendingNextTest(response.test);
     } catch (error) {
       if (axios.isAxiosError(error)) {
         const status = error.response?.status;
@@ -124,6 +128,19 @@ export default function PracticeTestRunnerPage() {
     }
   };
 
+  const handleNextQuestion = () => {
+    if (!pendingNextTest) return;
+    if (pendingNextTest.status === "completed") {
+      router.replace(`/practice/test/${pendingNextTest.id}/result`);
+      return;
+    }
+    setTest(pendingNextTest);
+    setPendingNextTest(null);
+    setFeedback(null);
+    setSelectedOptionId(null);
+    questionStartRef.current = Date.now();
+  };
+
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-background pb-14">
@@ -132,7 +149,7 @@ export default function PracticeTestRunnerPage() {
           <section className="space-y-1">
             <h1 className="text-2xl font-black tracking-tight">Runner de práctica</h1>
             <p className="text-sm text-muted-foreground">
-              Responde y avanza. El backend gestiona la siguiente pregunta automáticamente.
+              Responde cada pregunta y avanza manualmente cuando quieras.
             </p>
           </section>
 
@@ -154,20 +171,35 @@ export default function PracticeTestRunnerPage() {
             </Card>
           ) : (
             <>
-              <TestProgressBar answered={test.answered_questions} total={test.total_questions} />
+              <TestProgressBar
+                answered={test.answered_questions}
+                total={test.total_questions}
+                streak={currentStreak}
+                bestStreak={bestStreak}
+              />
               <QuestionCard question={currentQuestion} />
               <AlternativesList
                 alternatives={currentQuestion.alternatives}
-                disabled={submitting}
+                disabled={submitting || !!feedback}
                 selectedOptionId={selectedOptionId}
                 onSelect={handleSelectOption}
               />
               {feedback ? (
-                <AnswerFeedbackPanel
-                  isCorrect={feedback.isCorrect}
-                  feedback={feedback.feedback}
-                  correctOptionId={feedback.correctOptionId}
-                />
+                <div className="space-y-3">
+                  <AnswerFeedbackPanel
+                    isCorrect={feedback.isCorrect}
+                    feedback={feedback.feedback}
+                    correctOptionId={feedback.correctOptionId}
+                  />
+                  <div className="flex justify-end">
+                    <Button
+                      onClick={handleNextQuestion}
+                      disabled={!pendingNextTest}
+                    >
+                      {pendingNextTest?.status === "completed" ? "Ver resultado" : "Siguiente pregunta"}
+                    </Button>
+                  </div>
+                </div>
               ) : null}
             </>
           )}

@@ -6,8 +6,9 @@ import { DashboardNavbar } from "@/components/DashboardNavbar";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useAuth } from "@/hooks/useAuth";
 import { getLearningProfile } from "@/lib/users.api";
+import { getPracticeTests } from "@/lib/learning.api";
 import { apiErrorMessage } from "@/lib/learning.utils";
-import type { UserLearningProfile } from "@/types";
+import type { PracticeTestSummaryResponse, UserLearningProfile } from "@/types";
 import { LearningStatsHeader } from "@/components/learning/LearningStatsHeader";
 import { DomainProgressList } from "@/components/learning/DomainProgressList";
 import { PracticeHistoryTable } from "@/components/learning/PracticeHistoryTable";
@@ -18,6 +19,7 @@ export default function ProfileProgressPage() {
   const [profile, setProfile] = useState<UserLearningProfile | null>(
     user?.learning_profile || null,
   );
+  const [tests, setTests] = useState<PracticeTestSummaryResponse[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -25,8 +27,12 @@ export default function ProfileProgressPage() {
     const run = async () => {
       setLoading(true);
       try {
-        const response = await getLearningProfile(user.id);
-        setProfile(response);
+        const [profileResponse, testsResponse] = await Promise.all([
+          getLearningProfile(user.id),
+          getPracticeTests(),
+        ]);
+        setProfile(profileResponse);
+        setTests(testsResponse);
       } catch (error) {
         toast.error(apiErrorMessage(error, "No se pudo cargar el progreso"));
       } finally {
@@ -65,7 +71,10 @@ export default function ProfileProgressPage() {
                 <DomainProgressList domains={profile?.domain_knowledge || []} />
                 <RecentAccuracyChart summary={user.practice_history_summary || []} />
               </section>
-              <PracticeHistoryTable history={profile?.practice_history || []} />
+              <PracticeHistoryTable
+                history={profile?.practice_history || []}
+                tests={tests}
+              />
             </>
           )}
         </main>
