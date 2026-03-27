@@ -10,6 +10,17 @@ function getErrorMessage(error: unknown, fallback: string): string {
     if (typeof detail === 'string' && detail.trim().length > 0) {
       return detail;
     }
+    if (Array.isArray(detail) && detail.length > 0) {
+      const firstIssue = detail[0];
+      if (
+        typeof firstIssue === 'object' &&
+        firstIssue !== null &&
+        'msg' in firstIssue &&
+        typeof firstIssue.msg === 'string'
+      ) {
+        return firstIssue.msg;
+      }
+    }
 
     const message = error.response?.data?.message;
     if (typeof message === 'string' && message.trim().length > 0) {
@@ -28,7 +39,6 @@ export async function startIngestion(file: File, chunks = 8): Promise<StartInges
   const formData = new FormData();
   formData.append('file', file);
   formData.append('chunks', String(chunks));
-  formData.append('execution_mode', 'async');
 
   try {
     const response = await axios.post<StartIngestionResponse>(`${API_URL}/upload-pdf`, formData, {

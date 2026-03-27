@@ -20,29 +20,27 @@ export async function getGraphStats(): Promise<GraphStats> {
 }
 
 /**
- * Busca entidades por nombre o descripción (case-insensitive, CONTAINS)
+ * Compatibilidad: desde el refactor backend la búsqueda textual se unificó en /search.
+ * Este helper mantiene la firma previa y extrae solo entidades.
  */
 export async function searchEntities(
   query: string,
   limit: number = 50
 ): Promise<EntityResult[]> {
-  const response = await axios.get(`${API_URL}/entities`, {
-    params: { query, limit: Math.min(limit, 200) },
-  });
-  return response.data;
+  const result = await searchGraph(query, limit);
+  return result.entities ?? [];
 }
 
 /**
- * Busca relaciones por tipo o descripción (case-insensitive, CONTAINS)
+ * Compatibilidad: desde el refactor backend la búsqueda textual se unificó en /search.
+ * Este helper mantiene la firma previa y extrae solo relaciones.
  */
 export async function searchRelationships(
   query: string,
   limit: number = 50
 ): Promise<RelationshipResult[]> {
-  const response = await axios.get(`${API_URL}/relationships`, {
-    params: { query, limit: Math.min(limit, 200) },
-  });
-  return response.data;
+  const result = await searchGraph(query, limit);
+  return result.relationships ?? [];
 }
 
 /**

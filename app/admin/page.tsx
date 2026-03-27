@@ -17,6 +17,12 @@ import {
 import { Badge } from "@/components/ui/badge";
 
 export default function AdminDashboardPage() {
+  type RecentAction = {
+    action: string;
+    user: string;
+    time: string;
+  };
+
   const stats = [
     {
       title: "Usuarios Totales",
@@ -44,12 +50,12 @@ export default function AdminDashboardPage() {
     }
   ];
 
-  const recentActions: any[] = [];
+  const recentActions: RecentAction[] = [];
 
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Panel de Control</h1>
+        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Panel de Control</h1>
         <p className="text-muted-foreground">Bienvenido al centro de administración de Luca.</p>
       </div>
 

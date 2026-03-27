@@ -311,7 +311,7 @@ export default function PreguntasPage() {
     <div className="space-y-6">
       <div className="space-y-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Gestión de Preguntas</h1>
+          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Gestión de Preguntas</h1>
           <p className="text-muted-foreground">Administra el banco de preguntas de educación financiera.</p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -319,7 +319,7 @@ export default function PreguntasPage() {
             value={bulkStatus || "none"}
             onValueChange={(val) => setBulkStatus(val === "none" ? "" : val)}
           >
-            <SelectTrigger className="w-[190px]">
+            <SelectTrigger className="w-full sm:w-[190px]">
               <SelectValue placeholder="Cambiar estado" />
             </SelectTrigger>
             <SelectContent>
@@ -331,24 +331,26 @@ export default function PreguntasPage() {
           </Select>
           <Button
             variant="secondary"
+            className="w-full sm:w-auto"
             disabled={selectedIds.size === 0 || !bulkStatus || loading || isUpdatingBulkStatus || isDeletingBulk}
             onClick={handleBulkStatusUpdate}
           >
             {isUpdatingBulkStatus ? "Aplicando..." : `Aplicar estado (${selectedIds.size})`}
           </Button>
-          <Button variant="outline" onClick={fetchPreguntas} disabled={loading}>
+          <Button variant="outline" className="w-full sm:w-auto" onClick={fetchPreguntas} disabled={loading}>
             <RefreshCcw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
             Actualizar
           </Button>
           <Button
             variant="destructive"
+            className="w-full sm:w-auto"
             disabled={selectedIds.size === 0 || loading || isDeletingBulk || isUpdatingBulkStatus}
             onClick={() => setBulkDeleteOpen(true)}
           >
             <Trash2 className="w-4 h-4 mr-2" />
             Eliminar seleccionadas ({selectedIds.size})
           </Button>
-          <Button variant="default" onClick={() => {
+          <Button variant="default" className="w-full sm:w-auto" onClick={() => {
             setEditingQuestion(null);
             form.reset({
               category: FinancialTopic.PLANIFICACION,
@@ -430,7 +432,7 @@ export default function PreguntasPage() {
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full min-w-[980px] text-sm">
               <thead>
                 <tr className="border-b border-border text-muted-foreground">
                   <th className="text-left font-medium py-4 px-2 w-10">
@@ -532,7 +534,7 @@ export default function PreguntasPage() {
               </tbody>
             </table>
           </div>
-          <div className="mt-4 flex items-center justify-between">
+          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm text-muted-foreground">
               Seleccionadas: {selectedIds.size}
             </p>
@@ -610,7 +612,7 @@ export default function PreguntasPage() {
                 <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Información Básica</h3>
 
                 {/* Primera fila: Categoría y Subtópico */}
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <FormField
                     control={form.control}
                     name="category"
@@ -679,7 +681,7 @@ export default function PreguntasPage() {
                 </div>
 
                 {/* Segunda fila: Dificultad y Estado */}
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <FormField
                     control={form.control}
                     name="difficulty"

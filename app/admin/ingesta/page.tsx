@@ -282,15 +282,15 @@ export default function IngestaPage() {
   }, [currentRun, currentRunId, requestedChunksByRun]);
 
   return (
-    <div className="space-y-8 p-6">
+    <div className="space-y-8 p-4 sm:p-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
-            <Database className="w-8 h-8 text-primary" />
+          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl flex items-center gap-3">
+            <Database className="w-6 h-6 sm:w-8 sm:h-8 text-primary" />
             Ingesta de Documentos
           </h1>
           <p className="text-muted-foreground mt-1">
-            Sube PDFs, configura chunks y monitorea cada corrida de LangGraph en
+            Sube PDFs, configura chunks y monitorea cada corrida de ingesta en
             tiempo real.
           </p>
         </div>
@@ -448,7 +448,7 @@ export default function IngestaPage() {
               Historial de Ingesta
             </CardTitle>
             <CardDescription>
-              Ejecuciones registradas por LangGraph. Puedes seleccionar una para
+              Ejecuciones registradas por el pipeline de ingesta. Puedes seleccionar una para
               ver su seguimiento.
             </CardDescription>
           </CardHeader>

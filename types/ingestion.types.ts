@@ -27,6 +27,12 @@ export interface IngestionRun {
 export interface StartIngestionResponse {
   message: string;
   run_id: string;
-  status: 'QUEUED';
-  monitor_url: string;
+  filename?: string;
+  status: IngestionStatus;
+  total_chunks?: number;
+  processed_chunks?: number;
+  total_nodes?: number;
+  total_relations?: number;
+  errors?: string[];
+  events?: IngestionEvent[];
 }

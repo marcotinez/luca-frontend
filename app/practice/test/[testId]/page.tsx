@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { ArrowRight, Loader2 } from "lucide-react";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { DashboardNavbar } from "@/components/DashboardNavbar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -81,6 +82,14 @@ export default function PracticeTestRunnerPage() {
 
   const currentQuestion = useMemo(() => test?.current_question || null, [test]);
 
+  const correctOptionLabel = useMemo(() => {
+    if (!feedback || !currentQuestion) return undefined;
+    const correctIndex = currentQuestion.alternatives.findIndex(
+      (option) => option.option_id === feedback.correctOptionId,
+    );
+    return correctIndex >= 0 ? String.fromCharCode(65 + correctIndex) : undefined;
+  }, [feedback, currentQuestion]);
+
   const handleSelectOption = async (optionId: number) => {
     if (!test || !currentQuestion || submitting) return;
 
@@ -143,19 +152,22 @@ export default function PracticeTestRunnerPage() {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-background pb-14">
+      <div className="min-h-screen bg-grid-soft pb-14">
         <DashboardNavbar />
-        <main className="mx-auto max-w-4xl space-y-6 px-4 py-10 sm:px-6 lg:px-8">
-          <section className="space-y-1">
+        <main className="mx-auto max-w-4xl space-y-5 px-4 py-8 sm:px-6 lg:px-8">
+          <section className="animate-enter-up rounded-2xl border border-border/70 bg-card/80 p-5 shadow-sm backdrop-blur sm:p-6">
             <h1 className="text-2xl font-black tracking-tight">Runner de práctica</h1>
-            <p className="text-sm text-muted-foreground">
-              Responde cada pregunta y avanza manualmente cuando quieras.
+            <p className="mt-1 text-sm text-muted-foreground">
+              Responde cada pregunta y avanza cuando revises el feedback.
             </p>
           </section>
 
           {loading ? (
             <Card>
-              <CardContent className="p-4 text-sm text-muted-foreground">Cargando test...</CardContent>
+              <CardContent className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Cargando test...
+              </CardContent>
             </Card>
           ) : !test || !currentQuestion ? (
             <Card>
@@ -185,18 +197,16 @@ export default function PracticeTestRunnerPage() {
                 onSelect={handleSelectOption}
               />
               {feedback ? (
-                <div className="space-y-3">
+                <div className="animate-enter-up space-y-3">
                   <AnswerFeedbackPanel
                     isCorrect={feedback.isCorrect}
                     feedback={feedback.feedback}
-                    correctOptionId={feedback.correctOptionId}
+                    correctOptionLabel={correctOptionLabel}
                   />
                   <div className="flex justify-end">
-                    <Button
-                      onClick={handleNextQuestion}
-                      disabled={!pendingNextTest}
-                    >
+                    <Button onClick={handleNextQuestion} disabled={!pendingNextTest} className="rounded-lg">
                       {pendingNextTest?.status === "completed" ? "Ver resultado" : "Siguiente pregunta"}
+                      <ArrowRight className="h-4 w-4" />
                     </Button>
                   </div>
                 </div>

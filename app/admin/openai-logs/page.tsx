@@ -52,20 +52,20 @@ export default function OpenAILogsPage() {
   };
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6 p-4 sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Trazas OpenAI</h1>
+          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Trazas OpenAI</h1>
           <p className="text-muted-foreground mt-1">
             Historial local de requests y raw outputs del generador de preguntas.
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={loadLogs}>
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+          <Button variant="outline" onClick={loadLogs} className="w-full sm:w-auto">
             <RefreshCcw className="w-4 h-4 mr-2" />
             Refrescar
           </Button>
-          <Button variant="destructive" onClick={handleClear} disabled={logs.length === 0}>
+          <Button variant="destructive" onClick={handleClear} disabled={logs.length === 0} className="w-full sm:w-auto">
             <Trash2 className="w-4 h-4 mr-2" />
             Limpiar historial
           </Button>

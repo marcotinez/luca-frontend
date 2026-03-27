@@ -190,7 +190,7 @@ export function IngestionConfigurator({ onUpload, isUploading }: IngestionConfig
 
                   <div className="p-4 bg-muted/30 rounded-lg space-y-3 border">
                     <Label className="text-muted-foreground">Resumen de Procesamiento</Label>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
                       <div>
                          <p className="text-2xl font-bold text-foreground">{pagesPerChunk}</p>
                          <p className="text-xs text-muted-foreground">Páginas / Chunk</p>

@@ -312,10 +312,10 @@ export default function GeneradorPreguntasPage() {
   };
 
   return (
-    <div className="space-y-8 p-6">
+    <div className="space-y-8 p-4 sm:p-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Generador de Preguntas</h1>
+          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Generador de Preguntas</h1>
           <p className="text-muted-foreground mt-1">
             Genera preguntas con OpenAI + búsqueda semántica para revisión admin.
           </p>

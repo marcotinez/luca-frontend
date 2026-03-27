@@ -18,11 +18,11 @@ function accuracyVariant(accuracy: number): "destructive" | "secondary" | "defau
 
 export function RecentAccuracyChart({ summary }: RecentAccuracyChartProps) {
   return (
-    <Card>
-      <CardHeader>
+    <Card className="border-border/70 bg-card/85 shadow-sm backdrop-blur">
+      <CardHeader className="border-b border-border/60 pb-4">
         <CardTitle className="text-lg">Accuracy reciente</CardTitle>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="space-y-2 p-4 sm:p-5">
         {summary.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             Sin historial reciente para calcular precisión por tema.
@@ -31,7 +31,7 @@ export function RecentAccuracyChart({ summary }: RecentAccuracyChartProps) {
           summary.map((item) => (
             <div
               key={item.topic}
-              className="flex items-center justify-between rounded-xl border border-border/60 bg-background/60 p-3"
+              className="flex items-center justify-between gap-3 rounded-xl border border-border/60 bg-background/80 p-3"
             >
               <div className="space-y-1">
                 <p className="text-sm font-semibold">{item.topic}</p>

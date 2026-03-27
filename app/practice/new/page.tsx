@@ -76,7 +76,7 @@ export default function NewPracticeTestPage() {
                     <button
                       key={test.id}
                       type="button"
-                      className="flex w-full items-center justify-between rounded-xl border border-border/60 p-3 text-left hover:bg-muted/40"
+                      className="flex w-full flex-col items-start gap-2 rounded-xl border border-border/60 p-3 text-left hover:bg-muted/40 sm:flex-row sm:items-center sm:justify-between"
                       onClick={() =>
                         router.push(
                           test.status === "completed"
@@ -91,7 +91,7 @@ export default function NewPracticeTestPage() {
                           {test.correct_answers}/{test.total_questions} correctas
                         </p>
                       </div>
-                      <p className="text-xs text-muted-foreground">{formatDateTime(test.created_at)}</p>
+                      <p className="text-xs text-muted-foreground sm:text-right">{formatDateTime(test.created_at)}</p>
                     </button>
                   ))
                 )}

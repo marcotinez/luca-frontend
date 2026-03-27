@@ -123,6 +123,28 @@
 }
 
 @layer utilities {
+  .bg-grid-soft {
+    background-image:
+      radial-gradient(circle at 15% 20%, oklch(0.93 0.04 170 / 0.45), transparent 45%),
+      radial-gradient(circle at 88% 2%, oklch(0.9 0.03 220 / 0.4), transparent 42%),
+      linear-gradient(to bottom, oklch(0.99 0.002 240), oklch(0.975 0.004 240));
+  }
+
+  .dark .bg-grid-soft {
+    background-image:
+      radial-gradient(circle at 15% 20%, oklch(0.32 0.05 170 / 0.35), transparent 48%),
+      radial-gradient(circle at 90% 2%, oklch(0.3 0.04 240 / 0.35), transparent 44%),
+      linear-gradient(to bottom, oklch(0.12 0.015 260), oklch(0.1 0.014 260));
+  }
+
+  .animate-enter-up {
+    animation: enter-up 460ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .animate-enter-up-delay {
+    animation: enter-up 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
   .animate-wave {
     animation: wave 2.5s infinite;
     transform-origin: 70% 70%;
@@ -163,4 +185,15 @@
   0% { transform: translateY(0px); }
   50% { transform: translateY(-20px); }
   100% { transform: translateY(0px); }
+}
+
+@keyframes enter-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
