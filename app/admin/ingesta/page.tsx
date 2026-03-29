@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect, useMemo } from "react";
 import { getIngestionRun, startIngestion } from "@/lib/ingestion.api";
+import { getGraphStats } from "@/lib/graph.api";
 import type { IngestionRun, IngestionStatus } from "@/types/ingestion.types";
 import { IngestionConfigurator } from '@/components/ingestion/IngestionConfigurator';
 import { JobsHistoryTable } from '@/components/ingestion/JobsHistoryTable';
@@ -13,6 +14,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   AlertCircle,
   Database,
+  GitBranch,
   History,
   ListOrdered,
   LoaderCircle,
@@ -162,6 +164,11 @@ export default function IngestaPage() {
   const [requestedChunksByRun, setRequestedChunksByRun] = useState<
     Record<string, number>
   >({});
+  const [stats, setStats] = useState<{ total_nodes: number; total_relationships: number } | null>(null);
+
+  useEffect(() => {
+    getGraphStats().then((s) => setStats(s)).catch(() => {});
+  }, []);
 
   const handleUpload = useCallback(async (file: File, chunks: number) => {
     setIsUploading(true);
@@ -283,7 +290,7 @@ export default function IngestaPage() {
 
   return (
     <div className="space-y-8 p-4 sm:p-6">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold tracking-tight sm:text-3xl flex items-center gap-3">
             <Database className="w-6 h-6 sm:w-8 sm:h-8 text-primary" />
@@ -293,6 +300,16 @@ export default function IngestaPage() {
             Sube PDFs, configura chunks y monitorea cada corrida de ingesta en
             tiempo real.
           </p>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Badge variant="outline" className="gap-1.5 text-sm py-1 px-3">
+            <Database className="w-3.5 h-3.5" />
+            {(stats?.total_nodes ?? 0).toLocaleString()} nodos
+          </Badge>
+          <Badge variant="outline" className="gap-1.5 text-sm py-1 px-3">
+            <GitBranch className="w-3.5 h-3.5" />
+            {(stats?.total_relationships ?? 0).toLocaleString()} relaciones
+          </Badge>
         </div>
       </div>
 
