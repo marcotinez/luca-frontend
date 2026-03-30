@@ -1,9 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Difficulty } from '@/types';
 import {
+  getGenerationConfig,
   getGenerationJob,
+  GenerationConfigResponse,
   GenerationJobState,
   GenerationQuestionRequest,
   GenerationQuestionResponse,
@@ -18,7 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import { Loader2, Sparkles, RotateCcw } from 'lucide-react';
+import { Loader2, Settings2, Sparkles, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import axios from 'axios';
 
@@ -111,6 +114,8 @@ function getStageLabel(stage: string | undefined) {
 export default function GeneradorPreguntasPage() {
   const [difficulty, setDifficulty] = useState<Difficulty>(Difficulty.FACIL);
   const [userInput, setUserInput] = useState('');
+  const [category, setCategory] = useState('');
+  const [subtopic, setSubtopic] = useState('');
   const [questionCount, setQuestionCount] = useState(1);
 
   const [semanticLimit, setSemanticLimit] = useState(5);
@@ -121,11 +126,19 @@ export default function GeneradorPreguntasPage() {
   const [lastRequestPayload, setLastRequestPayload] = useState<GenerationQuestionRequest | null>(null);
   const [result, setResult] = useState<GenerationQuestionResponse | null>(null);
   const [hasHydratedState, setHasHydratedState] = useState(false);
+  const [config, setConfig] = useState<GenerationConfigResponse | null>(null);
   const pollTimerRef = useRef<number | null>(null);
 
+  const availableCategories = useMemo(() => config?.categories || [], [config]);
+  const availableSubtopics = useMemo(() => {
+    return category ? config?.subtopics?.[category] || [] : [];
+  }, [category, config]);
+
   const canGenerate = useMemo(() => {
+    if (!category || !subtopic) return false;
+    if (!availableSubtopics.includes(subtopic)) return false;
     return userInput.trim().length > 0 && !!difficulty;
-  }, [userInput, difficulty]);
+  }, [userInput, difficulty, category, subtopic, availableSubtopics]);
 
   const displayedGeneratedCount = result ? result.questions.length : 0;
   const isGenerating = job?.status === 'queued' || job?.status === 'running';
@@ -136,6 +149,15 @@ export default function GeneradorPreguntasPage() {
       pollTimerRef.current = null;
     }
   };
+
+  const loadGenerationConfig = useCallback(async () => {
+    try {
+      const response = await getGenerationConfig();
+      setConfig(response);
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    }
+  }, []);
 
   const applyCompletedResult = (
     currentJob: GenerationJobState,
@@ -179,6 +201,10 @@ export default function GeneradorPreguntasPage() {
   };
 
   useEffect(() => {
+    void loadGenerationConfig();
+  }, [loadGenerationConfig]);
+
+  useEffect(() => {
     if (typeof window === 'undefined') return;
 
     try {
@@ -191,6 +217,8 @@ export default function GeneradorPreguntasPage() {
       const parsedState = JSON.parse(rawState) as {
         difficulty?: Difficulty;
         userInput?: string;
+        category?: string;
+        subtopic?: string;
         questionCount?: number;
         semanticLimit?: number;
         semanticDepth?: 1 | 2;
@@ -202,6 +230,8 @@ export default function GeneradorPreguntasPage() {
 
       if (parsedState.difficulty) setDifficulty(parsedState.difficulty);
       if (typeof parsedState.userInput === 'string') setUserInput(parsedState.userInput);
+      if (typeof parsedState.category === 'string') setCategory(parsedState.category);
+      if (typeof parsedState.subtopic === 'string') setSubtopic(parsedState.subtopic);
       if (typeof parsedState.questionCount === 'number') setQuestionCount(parsedState.questionCount);
       if (typeof parsedState.semanticLimit === 'number') setSemanticLimit(parsedState.semanticLimit);
       if (parsedState.semanticDepth === 1 || parsedState.semanticDepth === 2) setSemanticDepth(parsedState.semanticDepth);
@@ -238,6 +268,8 @@ export default function GeneradorPreguntasPage() {
     const persistedState = {
       difficulty,
       userInput,
+      category,
+      subtopic,
       questionCount,
       semanticLimit,
       semanticDepth,
@@ -248,7 +280,28 @@ export default function GeneradorPreguntasPage() {
     };
 
     window.localStorage.setItem(GENERATOR_STATE_STORAGE_KEY, JSON.stringify(persistedState));
-  }, [hasHydratedState, difficulty, userInput, questionCount, semanticLimit, semanticDepth, model, job, lastRequestPayload, result]);
+  }, [hasHydratedState, difficulty, userInput, category, subtopic, questionCount, semanticLimit, semanticDepth, model, job, lastRequestPayload, result]);
+
+  useEffect(() => {
+    if (availableCategories.length === 0) {
+      if (category) setCategory('');
+      if (subtopic) setSubtopic('');
+      return;
+    }
+
+    if (!category || !availableCategories.includes(category)) {
+      const firstCategory = availableCategories[0];
+      setCategory(firstCategory);
+      const firstSubtopic = (config?.subtopics?.[firstCategory] || [])[0] || '';
+      setSubtopic(firstSubtopic);
+      return;
+    }
+
+    const subtopicsForCategory = config?.subtopics?.[category] || [];
+    if (!subtopic || !subtopicsForCategory.includes(subtopic)) {
+      setSubtopic(subtopicsForCategory[0] || '');
+    }
+  }, [availableCategories, config, category, subtopic]);
 
   useEffect(() => {
     return () => {
@@ -266,6 +319,8 @@ export default function GeneradorPreguntasPage() {
       stopPolling();
       const requestPayload: GenerationQuestionRequest = {
         user_input: userInput.trim(),
+        category,
+        subtopic,
         difficulty,
         question_count: questionCount,
         semantic_limit: semanticLimit,
@@ -296,6 +351,8 @@ export default function GeneradorPreguntasPage() {
     stopPolling();
     setDifficulty(Difficulty.FACIL);
     setUserInput('');
+    setCategory('');
+    setSubtopic('');
     setQuestionCount(1);
     setSemanticLimit(5);
     setSemanticDepth(1);
@@ -313,12 +370,33 @@ export default function GeneradorPreguntasPage() {
 
   return (
     <div className="space-y-8 p-4 sm:p-6">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Generador de Preguntas</h1>
           <p className="text-muted-foreground mt-1">
             Genera preguntas con OpenAI + búsqueda semántica para revisión admin.
           </p>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          {config?.updated_at && (
+            <Badge variant="outline">
+              Config actualizada: {new Date(config.updated_at).toLocaleString('es-CL')}
+            </Badge>
+          )}
+          {config?.taxonomy_version && (
+            <Badge variant="outline">Taxonomía: {config.taxonomy_version}</Badge>
+          )}
+          {config && (
+            <Badge variant="outline">
+              Catálogo: {config.categories.length} categorías
+            </Badge>
+          )}
+          <Button asChild variant="outline">
+            <Link href="/admin/generador/configuracion">
+              <Settings2 className="w-4 h-4 mr-2" />
+              Ir a configuraciones
+            </Link>
+          </Button>
         </div>
       </div>
 
@@ -328,7 +406,43 @@ export default function GeneradorPreguntasPage() {
           <CardDescription>Define el tema, dificultad y parámetros de generación.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+            <div className="space-y-2">
+              <Label>Categoría</Label>
+              <Select value={category} onValueChange={setCategory}>
+                <SelectTrigger className="h-12 border-2">
+                  <SelectValue placeholder="Selecciona categoría" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableCategories.map((categoryOption) => (
+                    <SelectItem key={categoryOption} value={categoryOption}>
+                      {categoryOption}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Subtópico</Label>
+              <Select
+                value={subtopic}
+                onValueChange={setSubtopic}
+                disabled={!category || availableSubtopics.length === 0}
+              >
+                <SelectTrigger className="h-12 border-2">
+                  <SelectValue placeholder="Selecciona subtópico" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableSubtopics.map((subtopicOption) => (
+                    <SelectItem key={subtopicOption} value={subtopicOption}>
+                      {subtopicOption}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             <div className="space-y-2">
               <Label>Nivel de dificultad</Label>
               <Select
@@ -381,6 +495,12 @@ export default function GeneradorPreguntasPage() {
               </Select>
             </div>
           </div>
+
+          {category && availableSubtopics.length === 0 && (
+            <p className="text-sm text-amber-700 dark:text-amber-300">
+              La categoría seleccionada no tiene subtópicos. Agrega al menos uno en la configuración.
+            </p>
+          )}
 
           <div className="space-y-2">
             <Label>Tema o contexto de la pregunta</Label>

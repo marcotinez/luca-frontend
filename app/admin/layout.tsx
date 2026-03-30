@@ -17,6 +17,14 @@ import { usePathname } from "next/navigation";
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
+  const isNavItemActive = (href: string) => {
+    if (href === "/admin") {
+      return pathname === href;
+    }
+
+    return pathname === href || pathname.startsWith(`${href}/`);
+  };
+
   const navSections = [
     {
       title: "General",
@@ -52,6 +60,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           icon: <Sparkles className="w-4 h-4" />,
         },
         {
+          label: "Configuración generación",
+          href: "/admin/generador/configuracion",
+          icon: <Sparkles className="w-4 h-4" />,
+        },
+        {
           label: "Trazas OpenAI",
           href: "/admin/openai-logs",
           icon: <FileSearch className="w-4 h-4" />,
@@ -84,7 +97,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <div className="mx-auto max-w-7xl overflow-x-auto px-4 py-2">
             <nav className="flex w-max items-center gap-2">
               {flatNavItems.map((item) => {
-                const isActive = pathname === item.href;
+                const isActive = isNavItemActive(item.href);
                 return (
                   <Link
                     key={item.href}
@@ -120,7 +133,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                     {section.title}
                   </p>
                   {section.items.map((item) => {
-                    const isActive = pathname === item.href;
+                    const isActive = isNavItemActive(item.href);
                     return (
                       <Link
                         key={item.href}
