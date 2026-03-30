@@ -1,4 +1,11 @@
 export type IngestionStatus = 'QUEUED' | 'RUNNING' | 'FINISHED' | 'PARTIAL' | 'FAILED';
+export type IngestionJobStatus =
+  | 'queued'
+  | 'running'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+  | string;
 
 export interface IngestionEvent {
   step: string;
@@ -35,4 +42,16 @@ export interface StartIngestionResponse {
   total_relations?: number;
   errors?: string[];
   events?: IngestionEvent[];
+}
+
+export interface IngestionJob {
+  job_id: string;
+  run_id?: string | null;
+  status: IngestionJobStatus;
+  stage?: string | null;
+  progress?: number | null;
+  message?: string | null;
+  error?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
 }
