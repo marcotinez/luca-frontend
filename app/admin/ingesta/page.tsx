@@ -1,16 +1,26 @@
 'use client';
 
 import { useState, useCallback, useEffect, useMemo } from "react";
-import { getIngestionRun, startIngestion } from "@/lib/ingestion.api";
+import { getIngestionJobs, getIngestionRun, startIngestion } from "@/lib/ingestion.api";
 import { getGraphStats } from "@/lib/graph.api";
-import type { IngestionRun, IngestionStatus } from "@/types/ingestion.types";
+import { wipeGraph } from "@/lib/admin.api";
+import type { IngestionJob, IngestionRun, IngestionStatus } from "@/types/ingestion.types";
 import { IngestionConfigurator } from '@/components/ingestion/IngestionConfigurator';
 import { JobsHistoryTable } from '@/components/ingestion/JobsHistoryTable';
 import { BackupManager } from '@/components/admin/BackupManager';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Button } from "@/components/ui/button";
 import {
   AlertCircle,
   Database,
@@ -18,10 +28,11 @@ import {
   History,
   ListOrdered,
   LoaderCircle,
+  Trash2,
 } from "lucide-react";
 import { toast } from 'sonner';
 
-const POLLING_INTERVAL_MS = 1500;
+const POLLING_INTERVAL_MS = 2500;
 const FINAL_STATUSES: IngestionStatus[] = ["FINISHED", "PARTIAL", "FAILED"];
 const CHUNK_FINISHED_REGEX =
   /chunk\s+(\d+)\s+finalizado:\s+(\d+)\s+nodos,\s+(\d+)\s+relaciones/i;
@@ -59,6 +70,25 @@ function getStatusBadge(status: IngestionStatus) {
       return <Badge variant="destructive">Fallido</Badge>;
     default:
       return <Badge variant="outline">Desconocido</Badge>;
+  }
+}
+
+function getJobStatusBadge(status: string) {
+  switch (status.toLowerCase()) {
+    case "completed":
+      return (
+        <Badge className="bg-green-600 hover:bg-green-700">Completado</Badge>
+      );
+    case "running":
+      return (
+        <Badge className="bg-blue-600 hover:bg-blue-700">Ejecutando</Badge>
+      );
+    case "queued":
+      return <Badge variant="secondary">En cola</Badge>;
+    case "failed":
+      return <Badge variant="destructive">Fallido</Badge>;
+    default:
+      return <Badge variant="outline">{status}</Badge>;
   }
 }
 
@@ -165,10 +195,42 @@ export default function IngestaPage() {
     Record<string, number>
   >({});
   const [stats, setStats] = useState<{ total_nodes: number; total_relationships: number } | null>(null);
+  const [isWipeDialogOpen, setIsWipeDialogOpen] = useState(false);
+  const [isWipingGraph, setIsWipingGraph] = useState(false);
+  const [ingestionJobs, setIngestionJobs] = useState<IngestionJob[]>([]);
+  const [jobsError, setJobsError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const fetchGraphStats = useCallback(() => {
     getGraphStats().then((s) => setStats(s)).catch(() => {});
   }, []);
+
+  const fetchIngestionJobs = useCallback(async () => {
+    try {
+      setJobsError(null);
+      const jobs = await getIngestionJobs();
+      const sortedJobs = [...jobs].sort((a, b) => {
+        const bDate = new Date(b.updated_at || b.created_at || 0).getTime();
+        const aDate = new Date(a.updated_at || a.created_at || 0).getTime();
+        return bDate - aDate;
+      });
+      setIngestionJobs(sortedJobs);
+    } catch (error) {
+      setJobsError(
+        error instanceof Error
+          ? error.message
+          : "No se pudo obtener el estado de jobs de ingesta.",
+      );
+      setIngestionJobs([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchGraphStats();
+  }, [fetchGraphStats]);
+
+  useEffect(() => {
+    void fetchIngestionJobs();
+  }, [fetchIngestionJobs, refreshTrigger]);
 
   const handleUpload = useCallback(async (file: File, chunks: number) => {
     setIsUploading(true);
@@ -197,6 +259,25 @@ export default function IngestaPage() {
     setCurrentRunId(runId);
     setMonitorError(null);
   }, []);
+
+  const handleConfirmWipeGraph = useCallback(async () => {
+    try {
+      setIsWipingGraph(true);
+      const result = await wipeGraph();
+      toast.success(result.message);
+      setIsWipeDialogOpen(false);
+      await fetchGraphStats();
+    } catch (error) {
+      console.error(error);
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "No se pudo vaciar el grafo.",
+      );
+    } finally {
+      setIsWipingGraph(false);
+    }
+  }, [fetchGraphStats]);
 
   useEffect(() => {
     if (!currentRunId) {
@@ -310,6 +391,19 @@ export default function IngestaPage() {
             <GitBranch className="w-3.5 h-3.5" />
             {(stats?.total_relationships ?? 0).toLocaleString()} relaciones
           </Badge>
+          <Button
+            size="sm"
+            onClick={() => setIsWipeDialogOpen(true)}
+            disabled={isWipingGraph}
+            className="ml-0 sm:ml-2 bg-red-600 hover:bg-red-700 text-white dark:bg-red-900/45 dark:hover:bg-red-900/65 dark:text-red-100"
+          >
+            {isWipingGraph ? (
+              <LoaderCircle className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Trash2 className="w-4 h-4 mr-2" />
+            )}
+            Vaciar Grafo
+          </Button>
         </div>
       </div>
 
@@ -475,11 +569,86 @@ export default function IngestaPage() {
               currentRunId={currentRunId}
               onSelectRun={handleSelectRun}
             />
+
+            <div className="mt-6 space-y-3 rounded-lg border p-4">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <h4 className="text-sm font-semibold">Jobs de Ingesta (backend)</h4>
+                <Badge variant="outline">{ingestionJobs.length} jobs</Badge>
+              </div>
+
+              {jobsError ? (
+                <p className="text-sm text-red-600 dark:text-red-300">{jobsError}</p>
+              ) : ingestionJobs.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No hay jobs de ingesta registrados.</p>
+              ) : (
+                <div className="space-y-2">
+                  {ingestionJobs.slice(0, 10).map((job) => (
+                    <div
+                      key={job.job_id}
+                      className="rounded-md border px-3 py-2 flex items-start justify-between gap-3"
+                    >
+                      <div className="min-w-0">
+                        <p className="font-mono text-xs truncate">{job.job_id}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          run_id: {job.run_id || "-"} | stage: {job.stage || "-"}
+                        </p>
+                        {job.error && (
+                          <p className="text-xs text-red-600 dark:text-red-300 mt-1">{job.error}</p>
+                        )}
+                      </div>
+                      <div className="shrink-0 text-right">
+                        {getJobStatusBadge(job.status)}
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {typeof job.progress === "number" ? `${job.progress}%` : "-"}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </CardContent>
         </Card>
 
-        <BackupManager />
+        <BackupManager onDatabaseChanged={fetchGraphStats} />
       </div>
+
+      <Dialog open={isWipeDialogOpen} onOpenChange={setIsWipeDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>¿Vaciar todo el grafo?</DialogTitle>
+            <DialogDescription>
+              Esta acción es destructiva e irreversible. Se eliminarán todos los nodos y relaciones de Neo4j.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rounded-md border border-red-300/60 bg-red-50 text-red-700 p-3 text-sm dark:border-red-900/40 dark:bg-red-950/25 dark:text-red-200">
+            Esta operación reinicializa constraints e índices, pero no restaura ningún backup.
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setIsWipeDialogOpen(false)}
+              disabled={isWipingGraph}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleConfirmWipeGraph}
+              disabled={isWipingGraph}
+              className="bg-red-600 hover:bg-red-700 text-white dark:bg-red-900/45 dark:hover:bg-red-900/65 dark:text-red-100"
+            >
+              {isWipingGraph ? (
+                <>
+                  <LoaderCircle className="w-4 h-4 mr-2 animate-spin" />
+                  Vaciando...
+                </>
+              ) : (
+                "Sí, vaciar grafo"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
