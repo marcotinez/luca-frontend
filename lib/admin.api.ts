@@ -33,6 +33,8 @@ export interface CreateBackupResponse {
   message: string;
   filename: string;
   details: string;
+  neo4j_file: string;
+  ingestion_history_file: string;
 }
 
 export interface RestoreBackupResponse {

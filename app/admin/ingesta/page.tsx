@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useCallback, useEffect, useMemo } from "react";
-import { getIngestionJobs, getIngestionRun, startIngestion } from "@/lib/ingestion.api";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import { getIngestionRun, startIngestion } from "@/lib/ingestion.api";
 import { getGraphStats } from "@/lib/graph.api";
 import { wipeGraph } from "@/lib/admin.api";
-import type { IngestionJob, IngestionRun, IngestionStatus } from "@/types/ingestion.types";
+import type { IngestionRun, IngestionStatus } from "@/types/ingestion.types";
 import { IngestionConfigurator } from '@/components/ingestion/IngestionConfigurator';
 import { JobsHistoryTable } from '@/components/ingestion/JobsHistoryTable';
 import { BackupManager } from '@/components/admin/BackupManager';
@@ -23,6 +23,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import {
   AlertCircle,
+  ArrowLeft,
   Database,
   GitBranch,
   History,
@@ -70,25 +71,6 @@ function getStatusBadge(status: IngestionStatus) {
       return <Badge variant="destructive">Fallido</Badge>;
     default:
       return <Badge variant="outline">Desconocido</Badge>;
-  }
-}
-
-function getJobStatusBadge(status: string) {
-  switch (status.toLowerCase()) {
-    case "completed":
-      return (
-        <Badge className="bg-green-600 hover:bg-green-700">Completado</Badge>
-      );
-    case "running":
-      return (
-        <Badge className="bg-blue-600 hover:bg-blue-700">Ejecutando</Badge>
-      );
-    case "queued":
-      return <Badge variant="secondary">En cola</Badge>;
-    case "failed":
-      return <Badge variant="destructive">Fallido</Badge>;
-    default:
-      return <Badge variant="outline">{status}</Badge>;
   }
 }
 
@@ -197,40 +179,15 @@ export default function IngestaPage() {
   const [stats, setStats] = useState<{ total_nodes: number; total_relationships: number } | null>(null);
   const [isWipeDialogOpen, setIsWipeDialogOpen] = useState(false);
   const [isWipingGraph, setIsWipingGraph] = useState(false);
-  const [ingestionJobs, setIngestionJobs] = useState<IngestionJob[]>([]);
-  const [jobsError, setJobsError] = useState<string | null>(null);
+  const executionCardRef = useRef<HTMLDivElement | null>(null);
 
   const fetchGraphStats = useCallback(() => {
     getGraphStats().then((s) => setStats(s)).catch(() => {});
   }, []);
 
-  const fetchIngestionJobs = useCallback(async () => {
-    try {
-      setJobsError(null);
-      const jobs = await getIngestionJobs();
-      const sortedJobs = [...jobs].sort((a, b) => {
-        const bDate = new Date(b.updated_at || b.created_at || 0).getTime();
-        const aDate = new Date(a.updated_at || a.created_at || 0).getTime();
-        return bDate - aDate;
-      });
-      setIngestionJobs(sortedJobs);
-    } catch (error) {
-      setJobsError(
-        error instanceof Error
-          ? error.message
-          : "No se pudo obtener el estado de jobs de ingesta.",
-      );
-      setIngestionJobs([]);
-    }
-  }, []);
-
   useEffect(() => {
     fetchGraphStats();
   }, [fetchGraphStats]);
-
-  useEffect(() => {
-    void fetchIngestionJobs();
-  }, [fetchIngestionJobs, refreshTrigger]);
 
   const handleUpload = useCallback(async (file: File, chunks: number) => {
     setIsUploading(true);
@@ -257,7 +214,15 @@ export default function IngestaPage() {
 
   const handleSelectRun = useCallback((runId: string) => {
     setCurrentRunId(runId);
+    setCurrentRun(null);
     setMonitorError(null);
+  }, []);
+
+  const handleBackToHistory = useCallback(() => {
+    setCurrentRunId(null);
+    setCurrentRun(null);
+    setMonitorError(null);
+    setRefreshTrigger((prev) => prev + 1);
   }, []);
 
   const handleConfirmWipeGraph = useCallback(async () => {
@@ -267,6 +232,10 @@ export default function IngestaPage() {
       toast.success(result.message);
       setIsWipeDialogOpen(false);
       await fetchGraphStats();
+      setCurrentRunId(null);
+      setCurrentRun(null);
+      setMonitorError(null);
+      setRefreshTrigger((prev) => prev + 1);
     } catch (error) {
       console.error(error);
       toast.error(
@@ -277,6 +246,14 @@ export default function IngestaPage() {
     } finally {
       setIsWipingGraph(false);
     }
+  }, [fetchGraphStats]);
+
+  const handleDatabaseChanged = useCallback(async () => {
+    await fetchGraphStats();
+    setCurrentRunId(null);
+    setCurrentRun(null);
+    setMonitorError(null);
+    setRefreshTrigger((prev) => prev + 1);
   }, [fetchGraphStats]);
 
   useEffect(() => {
@@ -326,6 +303,15 @@ export default function IngestaPage() {
         clearInterval(intervalId);
       }
     };
+  }, [currentRunId]);
+
+  useEffect(() => {
+    if (!currentRunId) return;
+
+    executionCardRef.current?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start',
+    });
   }, [currentRunId]);
 
   const progressValue = useMemo(() => {
@@ -413,216 +399,181 @@ export default function IngestaPage() {
           isUploading={isUploading}
         />
 
-        {currentRunId && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <LoaderCircle className="w-5 h-5" />
-                Seguimiento de la ejecución
-              </CardTitle>
-              <CardDescription>
-                Estado en vivo para{" "}
-                <span className="font-mono">{currentRunId}</span>
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              {monitorError && (
-                <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-700 dark:text-red-300 flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4" />
-                  {monitorError}
-                </div>
-              )}
-
-              {!currentRun ? (
-                <div className="text-sm text-muted-foreground">
-                  Cargando estado de la corrida...
-                </div>
-              ) : (
-                <>
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      {getStatusBadge(currentRun.status)}
-                      <span className="text-xs text-muted-foreground">
-                        Actualizado: {formatDate(currentRun.updated_at)}
-                      </span>
-                    </div>
-                    <span className="font-mono text-sm">{progressValue}%</span>
-                  </div>
-
-                  <Progress value={progressValue} className="h-2" />
-
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    <div className="rounded-lg border p-3">
-                      <p className="text-xs text-muted-foreground">Chunks</p>
-                      <p className="text-xl font-semibold">
-                        {liveStats?.processedChunks ?? 0}/
-                        {liveStats?.totalChunks ?? 0}
-                      </p>
-                    </div>
-                    <div className="rounded-lg border p-3">
-                      <p className="text-xs text-muted-foreground">Nodos</p>
-                      <p className="text-xl font-semibold">
-                        {liveStats?.totalNodes ?? 0}
-                      </p>
-                    </div>
-                    <div className="rounded-lg border p-3">
-                      <p className="text-xs text-muted-foreground">
-                        Relaciones
-                      </p>
-                      <p className="text-xl font-semibold">
-                        {liveStats?.totalRelations ?? 0}
-                      </p>
-                    </div>
-                    <div className="rounded-lg border p-3">
-                      <p className="text-xs text-muted-foreground">Errores</p>
-                      <p className="text-xl font-semibold">
-                        {liveStats?.totalErrors ?? 0}
-                      </p>
-                    </div>
-                  </div>
-
-                  {latestErrorEvent && (
-                    <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-700 dark:text-red-300">
-                      <p className="font-medium">Ultimo evento con error</p>
-                      <p>{latestErrorEvent.message}</p>
-                    </div>
-                  )}
-
-                  {currentRun.errors.length > 0 && (
-                    <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
-                      <p className="font-medium text-sm mb-2">
-                        Errores reportados
-                      </p>
-                      <ul className="space-y-1 text-sm text-muted-foreground list-disc pl-5">
-                        {currentRun.errors.map((error, index) => (
-                          <li key={`${error}-${index}`}>{error}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-
-                  <div className="space-y-2">
-                    <h4 className="text-sm font-medium flex items-center gap-2">
-                      <ListOrdered className="w-4 h-4" />
-                      Timeline de Eventos
-                    </h4>
-                    <ScrollArea className="h-64 rounded-lg border p-3">
-                      <div className="space-y-3">
-                        {orderedEvents.length === 0 ? (
-                          <p className="text-sm text-muted-foreground">
-                            Aun no hay eventos registrados.
-                          </p>
-                        ) : (
-                          orderedEvents.map((event, index) => (
-                            <div
-                              key={`${event.timestamp}-${event.step}-${index}`}
-                              className="border-b pb-2 last:border-b-0 last:pb-0"
-                            >
-                              <div className="flex items-center justify-between gap-2 mb-1">
-                                <div className="flex items-center gap-2">
-                                  <Badge
-                                    variant={
-                                      event.level === "ERROR"
-                                        ? "destructive"
-                                        : event.level === "WARNING"
-                                          ? "secondary"
-                                          : "outline"
-                                    }
-                                  >
-                                    {event.level}
-                                  </Badge>
-                                  <span className="font-mono text-xs text-muted-foreground">
-                                    {event.step}
-                                  </span>
-                                </div>
-                                <span className="text-xs text-muted-foreground">
-                                  {formatDate(event.timestamp)}
-                                </span>
-                              </div>
-                              <p className="text-sm">{event.message}</p>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </ScrollArea>
-                  </div>
-                </>
-              )}
-            </CardContent>
-          </Card>
-        )}
-
-        <Card className="h-full">
+        <Card className="h-full" ref={executionCardRef}>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <History className="w-5 h-5" />
-              Historial de Ingesta
-            </CardTitle>
-            <CardDescription>
-              Ejecuciones registradas por el pipeline de ingesta. Puedes seleccionar una para
-              ver su seguimiento.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <JobsHistoryTable
-              refreshTrigger={refreshTrigger}
-              currentRunId={currentRunId}
-              onSelectRun={handleSelectRun}
-            />
-
-            <div className="mt-6 space-y-3 rounded-lg border p-4">
-              <div className="flex items-center justify-between gap-2 flex-wrap">
-                <h4 className="text-sm font-semibold">Jobs de Ingesta (backend)</h4>
-                <Badge variant="outline">{ingestionJobs.length} jobs</Badge>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="space-y-1">
+                <CardTitle className="flex items-center gap-2">
+                  {currentRunId ? <LoaderCircle className="w-5 h-5" /> : <History className="w-5 h-5" />}
+                  {currentRunId ? "Seguimiento de la ejecución" : "Historial de Ingesta"}
+                </CardTitle>
+                <CardDescription>
+                  {currentRunId ? (
+                    <>
+                      Estado en vivo para <span className="font-mono">{currentRunId}</span>
+                    </>
+                  ) : (
+                    "Ejecuciones registradas por el pipeline de ingesta. Selecciona una para ver su seguimiento."
+                  )}
+                </CardDescription>
               </div>
 
-              {jobsError ? (
-                <p className="text-sm text-red-600 dark:text-red-300">{jobsError}</p>
-              ) : ingestionJobs.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No hay jobs de ingesta registrados.</p>
-              ) : (
-                <div className="space-y-2">
-                  {ingestionJobs.slice(0, 10).map((job) => (
-                    <div
-                      key={job.job_id}
-                      className="rounded-md border px-3 py-2 flex items-start justify-between gap-3"
-                    >
-                      <div className="min-w-0">
-                        <p className="font-mono text-xs truncate">{job.job_id}</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          run_id: {job.run_id || "-"} | stage: {job.stage || "-"}
-                        </p>
-                        {job.error && (
-                          <p className="text-xs text-red-600 dark:text-red-300 mt-1">{job.error}</p>
-                        )}
+              {currentRunId && (
+                <Button variant="outline" size="sm" onClick={handleBackToHistory}>
+                  <ArrowLeft className="w-4 h-4 mr-2" />
+                  Volver al historial
+                </Button>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent>
+            {currentRunId ? (
+              <div className="space-y-5">
+                {monitorError && (
+                  <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-700 dark:text-red-300 flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4" />
+                    {monitorError}
+                  </div>
+                )}
+
+                {!currentRun ? (
+                  <div className="text-sm text-muted-foreground">
+                    Cargando estado de la corrida...
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        {getStatusBadge(currentRun.status)}
+                        <span className="text-xs text-muted-foreground">
+                          Actualizado: {formatDate(currentRun.updated_at)}
+                        </span>
                       </div>
-                      <div className="shrink-0 text-right">
-                        {getJobStatusBadge(job.status)}
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {typeof job.progress === "number" ? `${job.progress}%` : "-"}
+                      <span className="font-mono text-sm">{progressValue}%</span>
+                    </div>
+
+                    <Progress value={progressValue} className="h-2" />
+
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      <div className="rounded-lg border p-3">
+                        <p className="text-xs text-muted-foreground">Chunks</p>
+                        <p className="text-xl font-semibold">
+                          {liveStats?.processedChunks ?? 0}/
+                          {liveStats?.totalChunks ?? 0}
+                        </p>
+                      </div>
+                      <div className="rounded-lg border p-3">
+                        <p className="text-xs text-muted-foreground">Nodos</p>
+                        <p className="text-xl font-semibold">
+                          {liveStats?.totalNodes ?? 0}
+                        </p>
+                      </div>
+                      <div className="rounded-lg border p-3">
+                        <p className="text-xs text-muted-foreground">Relaciones</p>
+                        <p className="text-xl font-semibold">
+                          {liveStats?.totalRelations ?? 0}
+                        </p>
+                      </div>
+                      <div className="rounded-lg border p-3">
+                        <p className="text-xs text-muted-foreground">Errores</p>
+                        <p className="text-xl font-semibold">
+                          {liveStats?.totalErrors ?? 0}
                         </p>
                       </div>
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
+
+                    {latestErrorEvent && (
+                      <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-700 dark:text-red-300">
+                        <p className="font-medium">Ultimo evento con error</p>
+                        <p>{latestErrorEvent.message}</p>
+                      </div>
+                    )}
+
+                    {currentRun.errors.length > 0 && (
+                      <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
+                        <p className="font-medium text-sm mb-2">
+                          Errores reportados
+                        </p>
+                        <ul className="space-y-1 text-sm text-muted-foreground list-disc pl-5">
+                          {currentRun.errors.map((error, index) => (
+                            <li key={`${error}-${index}`}>{error}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    <div className="space-y-2">
+                      <h4 className="text-sm font-medium flex items-center gap-2">
+                        <ListOrdered className="w-4 h-4" />
+                        Timeline de Eventos
+                      </h4>
+                      <ScrollArea className="h-64 rounded-lg border p-3">
+                        <div className="space-y-3">
+                          {orderedEvents.length === 0 ? (
+                            <p className="text-sm text-muted-foreground">
+                              Aun no hay eventos registrados.
+                            </p>
+                          ) : (
+                            orderedEvents.map((event, index) => (
+                              <div
+                                key={`${event.timestamp}-${event.step}-${index}`}
+                                className="border-b pb-2 last:border-b-0 last:pb-0"
+                              >
+                                <div className="flex items-center justify-between gap-2 mb-1">
+                                  <div className="flex items-center gap-2">
+                                    <Badge
+                                      variant={
+                                        event.level === "ERROR"
+                                          ? "destructive"
+                                          : event.level === "WARNING"
+                                            ? "secondary"
+                                            : "outline"
+                                      }
+                                    >
+                                      {event.level}
+                                    </Badge>
+                                    <span className="font-mono text-xs text-muted-foreground">
+                                      {event.step}
+                                    </span>
+                                  </div>
+                                  <span className="text-xs text-muted-foreground">
+                                    {formatDate(event.timestamp)}
+                                  </span>
+                                </div>
+                                <p className="text-sm">{event.message}</p>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </ScrollArea>
+                    </div>
+                  </>
+                )}
+              </div>
+            ) : (
+              <JobsHistoryTable
+                refreshTrigger={refreshTrigger}
+                currentRunId={currentRunId}
+                onSelectRun={handleSelectRun}
+              />
+            )}
           </CardContent>
         </Card>
 
-        <BackupManager onDatabaseChanged={fetchGraphStats} />
+        <BackupManager onDatabaseChanged={handleDatabaseChanged} />
       </div>
 
       <Dialog open={isWipeDialogOpen} onOpenChange={setIsWipeDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>¿Vaciar todo el grafo?</DialogTitle>
+            <DialogTitle>¿Vaciar grafo e historial de ingesta?</DialogTitle>
             <DialogDescription>
-              Esta acción es destructiva e irreversible. Se eliminarán todos los nodos y relaciones de Neo4j.
+              Esta acción eliminará todo el contenido del grafo y también borrará el historial de ingesta almacenado.
+              No se puede deshacer.
             </DialogDescription>
           </DialogHeader>
           <div className="rounded-md border border-red-300/60 bg-red-50 text-red-700 p-3 text-sm dark:border-red-900/40 dark:bg-red-950/25 dark:text-red-200">
-            Esta operación reinicializa constraints e índices, pero no restaura ningún backup.
+            Esta operación reinicializa constraints e índices, elimina el historial de ingesta y no restaura ningún backup.
           </div>
           <DialogFooter className="gap-2 sm:gap-0">
             <Button
@@ -643,7 +594,7 @@ export default function IngestaPage() {
                   Vaciando...
                 </>
               ) : (
-                "Sí, vaciar grafo"
+                "Sí, vaciar grafo e historial"
               )}
             </Button>
           </DialogFooter>

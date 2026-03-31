@@ -33,17 +33,6 @@ function formatDate(dateString: string): string {
   });
 }
 
-function getProgress(run: IngestionRun): number {
-  if (run.total_chunks <= 0) {
-    return run.status === "FINISHED" || run.status === "PARTIAL" ? 100 : 0;
-  }
-
-  return Math.min(
-    100,
-    Math.round((run.processed_chunks / run.total_chunks) * 100),
-  );
-}
-
 function getStatusBadge(status: IngestionStatus) {
   switch (status) {
     case "FINISHED":
@@ -117,10 +106,8 @@ export function JobsHistoryTable({
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/50">
-              <TableHead>Run ID</TableHead>
               <TableHead>Archivo</TableHead>
               <TableHead className="text-center">Estado</TableHead>
-              <TableHead className="text-center">Progreso</TableHead>
               <TableHead className="text-center">Nodos</TableHead>
               <TableHead className="text-center">Relaciones</TableHead>
               <TableHead className="text-center">Actualizado</TableHead>
@@ -131,7 +118,7 @@ export function JobsHistoryTable({
             {runs.length === 0 && !loading ? (
               <TableRow>
                 <TableCell
-                  colSpan={8}
+                  colSpan={6}
                   className="text-center py-8 text-muted-foreground"
                 >
                   No hay Ejecuciones de ingesta registradas.
@@ -147,12 +134,6 @@ export function JobsHistoryTable({
                     className={isSelected ? "bg-primary/5" : ""}
                   >
                     <TableCell
-                      className="font-mono text-xs max-w-[180px] truncate"
-                      title={run.run_id}
-                    >
-                      {run.run_id}
-                    </TableCell>
-                    <TableCell
                       className="max-w-[240px] truncate"
                       title={run.file_name}
                     >
@@ -160,9 +141,6 @@ export function JobsHistoryTable({
                     </TableCell>
                     <TableCell className="text-center">
                       {getStatusBadge(run.status)}
-                    </TableCell>
-                    <TableCell className="text-center font-mono text-sm">
-                      {getProgress(run)}%
                     </TableCell>
                     <TableCell className="text-center">
                       {run.total_nodes}
