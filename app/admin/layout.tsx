@@ -22,6 +22,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       return pathname === href;
     }
 
+    if (href === "/admin/generador") {
+      return pathname === href;
+    }
+
     return pathname === href || pathname.startsWith(`${href}/`);
   };
 
@@ -60,11 +64,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           icon: <Sparkles className="w-4 h-4" />,
         },
         {
-          label: "Configuración generación",
-          href: "/admin/generador/configuracion",
-          icon: <Sparkles className="w-4 h-4" />,
-        },
-        {
           label: "Trazas OpenAI",
           href: "/admin/openai-logs",
           icon: <FileSearch className="w-4 h-4" />,
@@ -83,6 +82,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           label: "Consultas sobre el grafo",
           href: "/admin/consultas",
           icon: <Search className="w-4 h-4" />,
+        },
+      ],
+    },
+    {
+      title: "Configuración IA",
+      items: [
+        {
+          label: "Configuración IA",
+          href: "/admin/generador/configuracion",
+          icon: <Sparkles className="w-4 h-4" />,
         },
       ],
     },
