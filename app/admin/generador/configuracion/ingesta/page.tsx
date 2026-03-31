@@ -10,12 +10,11 @@ import {
 } from '@/lib/prompt-generation.api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { ArrowLeft, Loader2, Save, Settings2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { PromptEditorField } from '../_components/prompt-editor-field';
 import {
   decodeEscapedSequences,
   getConfigErrorMessage,
@@ -160,7 +159,7 @@ export default function ConfiguracionIngestaPage() {
   };
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 p-4 sm:p-6 lg:p-8">
+    <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-6 p-4 sm:p-6 lg:p-8">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-1">
           <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Configuración de la ingesta</h1>
@@ -199,76 +198,56 @@ export default function ConfiguracionIngestaPage() {
               <AccordionItem value="ingestion-extraction" className="px-4">
                 <AccordionTrigger className="text-base hover:no-underline">Extracción</AccordionTrigger>
                 <AccordionContent className="space-y-4 pb-6">
-                  <div className="space-y-2">
-                    <Label>Prompt de sistema para extracción</Label>
-                    <p className="text-xs text-muted-foreground">
-                      Define cómo extraer entidades y relaciones desde el contenido fuente.
-                    </p>
-                    <Textarea
-                      value={draft.ingestion_extraction_system_prompt}
-                      onChange={(event) =>
-                        handleFieldChange('ingestion_extraction_system_prompt', event.target.value)
-                      }
-                      rows={14}
-                      className={LARGE_TEXTAREA_CLASSNAME}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Plantilla de usuario para extracción</Label>
-                    <p className="text-xs text-muted-foreground">
-                      Estructura del mensaje con variables como archivo y bloque de texto.
-                    </p>
-                    <Textarea
-                      value={draft.ingestion_extraction_user_prompt_template}
-                      onChange={(event) =>
-                        handleFieldChange('ingestion_extraction_user_prompt_template', event.target.value)
-                      }
-                      rows={14}
-                      className={LARGE_TEXTAREA_CLASSNAME}
-                    />
-                    <TemplatePlaceholders
-                      template={draft.ingestion_extraction_user_prompt_template}
-                      requiredKeys={REQUIRED_PLACEHOLDERS.ingestion_extraction_user_prompt_template}
-                    />
-                  </div>
+                  <PromptEditorField
+                    label="Prompt de sistema para extracción"
+                    description="Define cómo extraer entidades y relaciones desde el contenido fuente."
+                    value={draft.ingestion_extraction_system_prompt}
+                    onChange={(value) => handleFieldChange('ingestion_extraction_system_prompt', value)}
+                    rows={18}
+                    className={LARGE_TEXTAREA_CLASSNAME}
+                  />
+                  <PromptEditorField
+                    label="Plantilla de usuario para extracción"
+                    description="Estructura del mensaje con variables como archivo y bloque de texto. Se muestra bloqueada para edición."
+                    value={draft.ingestion_extraction_user_prompt_template}
+                    readOnly
+                    rows={18}
+                    className={LARGE_TEXTAREA_CLASSNAME}
+                    footer={
+                      <TemplatePlaceholders
+                        template={draft.ingestion_extraction_user_prompt_template}
+                        requiredKeys={REQUIRED_PLACEHOLDERS.ingestion_extraction_user_prompt_template}
+                      />
+                    }
+                  />
                 </AccordionContent>
               </AccordionItem>
 
               <AccordionItem value="ingestion-refinement" className="px-4">
                 <AccordionTrigger className="text-base hover:no-underline">Refinamiento</AccordionTrigger>
                 <AccordionContent className="space-y-4 pb-6">
-                  <div className="space-y-2">
-                    <Label>Prompt de sistema para refinamiento</Label>
-                    <p className="text-xs text-muted-foreground">
-                      Limpia y normaliza entidades/relaciones extraídas antes de clasificar.
-                    </p>
-                    <Textarea
-                      value={draft.ingestion_refinement_system_prompt}
-                      onChange={(event) =>
-                        handleFieldChange('ingestion_refinement_system_prompt', event.target.value)
-                      }
-                      rows={14}
-                      className={LARGE_TEXTAREA_CLASSNAME}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Plantilla de usuario para refinamiento</Label>
-                    <p className="text-xs text-muted-foreground">
-                      Mensaje con estructuras JSON de entrada para aplicar refinamiento.
-                    </p>
-                    <Textarea
-                      value={draft.ingestion_refinement_user_prompt_template}
-                      onChange={(event) =>
-                        handleFieldChange('ingestion_refinement_user_prompt_template', event.target.value)
-                      }
-                      rows={14}
-                      className={LARGE_TEXTAREA_CLASSNAME}
-                    />
-                    <TemplatePlaceholders
-                      template={draft.ingestion_refinement_user_prompt_template}
-                      requiredKeys={REQUIRED_PLACEHOLDERS.ingestion_refinement_user_prompt_template}
-                    />
-                  </div>
+                  <PromptEditorField
+                    label="Prompt de sistema para refinamiento"
+                    description="Limpia y normaliza entidades/relaciones extraídas antes de clasificar."
+                    value={draft.ingestion_refinement_system_prompt}
+                    onChange={(value) => handleFieldChange('ingestion_refinement_system_prompt', value)}
+                    rows={18}
+                    className={LARGE_TEXTAREA_CLASSNAME}
+                  />
+                  <PromptEditorField
+                    label="Plantilla de usuario para refinamiento"
+                    description="Mensaje con estructuras JSON de entrada para aplicar refinamiento. Se muestra bloqueada para edición."
+                    value={draft.ingestion_refinement_user_prompt_template}
+                    readOnly
+                    rows={18}
+                    className={LARGE_TEXTAREA_CLASSNAME}
+                    footer={
+                      <TemplatePlaceholders
+                        template={draft.ingestion_refinement_user_prompt_template}
+                        requiredKeys={REQUIRED_PLACEHOLDERS.ingestion_refinement_user_prompt_template}
+                      />
+                    }
+                  />
                 </AccordionContent>
               </AccordionItem>
 
@@ -277,46 +256,32 @@ export default function ConfiguracionIngestaPage() {
                   Clasificación taxonómica
                 </AccordionTrigger>
                 <AccordionContent className="space-y-4 pb-6">
-                  <div className="space-y-2">
-                    <Label>Prompt de sistema para clasificación taxonómica</Label>
-                    <p className="text-xs text-muted-foreground">
-                      Reglas para asignar etiquetas de categoría y subtópico en la taxonomía.
-                    </p>
-                    <Textarea
-                      value={draft.ingestion_taxonomy_classification_system_prompt}
-                      onChange={(event) =>
-                        handleFieldChange(
-                          'ingestion_taxonomy_classification_system_prompt',
-                          event.target.value
-                        )
-                      }
-                      rows={14}
-                      className={LARGE_TEXTAREA_CLASSNAME}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Plantilla de usuario para clasificación taxonómica</Label>
-                    <p className="text-xs text-muted-foreground">
-                      Incluye taxonomía, límites de etiquetas y datos refinados para clasificar.
-                    </p>
-                    <Textarea
-                      value={draft.ingestion_taxonomy_classification_user_prompt_template}
-                      onChange={(event) =>
-                        handleFieldChange(
-                          'ingestion_taxonomy_classification_user_prompt_template',
-                          event.target.value
-                        )
-                      }
-                      rows={14}
-                      className={LARGE_TEXTAREA_CLASSNAME}
-                    />
-                    <TemplatePlaceholders
-                      template={draft.ingestion_taxonomy_classification_user_prompt_template}
-                      requiredKeys={
-                        REQUIRED_PLACEHOLDERS.ingestion_taxonomy_classification_user_prompt_template
-                      }
-                    />
-                  </div>
+                  <PromptEditorField
+                    label="Prompt de sistema para clasificación taxonómica"
+                    description="Reglas para asignar etiquetas de categoría y subtópico en la taxonomía."
+                    value={draft.ingestion_taxonomy_classification_system_prompt}
+                    onChange={(value) =>
+                      handleFieldChange('ingestion_taxonomy_classification_system_prompt', value)
+                    }
+                    rows={18}
+                    className={LARGE_TEXTAREA_CLASSNAME}
+                  />
+                  <PromptEditorField
+                    label="Plantilla de usuario para clasificación taxonómica"
+                    description="Incluye taxonomía, límites de etiquetas y datos refinados para clasificar. Se muestra bloqueada para edición."
+                    value={draft.ingestion_taxonomy_classification_user_prompt_template}
+                    readOnly
+                    rows={18}
+                    className={LARGE_TEXTAREA_CLASSNAME}
+                    footer={
+                      <TemplatePlaceholders
+                        template={draft.ingestion_taxonomy_classification_user_prompt_template}
+                        requiredKeys={
+                          REQUIRED_PLACEHOLDERS.ingestion_taxonomy_classification_user_prompt_template
+                        }
+                      />
+                    }
+                  />
                 </AccordionContent>
               </AccordionItem>
             </Accordion>

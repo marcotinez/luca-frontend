@@ -92,7 +92,6 @@ export interface GenerationConfigResponse {
   generation_user_prompt_template: string;
   generation_difficulty_semantic_instructions: Record<string, string>;
   generation_output_rules_template: string[];
-  generation_variation_lenses: Record<string, string[]>;
   ingestion_extraction_system_prompt: string;
   ingestion_extraction_user_prompt_template: string;
   ingestion_refinement_system_prompt: string;
@@ -116,7 +115,6 @@ export type GenerationConfigPatchRequest = Partial<{
   generation_user_prompt_template: string;
   generation_difficulty_semantic_instructions: Record<string, string>;
   generation_output_rules_template: string[];
-  generation_variation_lenses: Record<string, string[]>;
   ingestion_extraction_system_prompt: string;
   ingestion_extraction_user_prompt_template: string;
   ingestion_refinement_system_prompt: string;
@@ -217,25 +215,6 @@ function normalizeStringMap(value: unknown): Record<string, string> {
   return output;
 }
 
-function normalizeStringArrayMap(value: unknown): Record<string, string[]> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return {};
-  }
-
-  const output: Record<string, string[]> = {};
-
-  for (const [rawKey, rawValue] of Object.entries(value)) {
-    const key = normalizeString(rawKey).trim();
-    if (!key) {
-      continue;
-    }
-
-    output[key] = normalizeStringArray(rawValue);
-  }
-
-  return output;
-}
-
 function ensureDifficultyStringMap(
   input: Record<string, string>,
   defaultValue = ''
@@ -243,16 +222,6 @@ function ensureDifficultyStringMap(
   return GENERATION_DIFFICULTY_KEYS.reduce<Record<string, string>>((acc, key) => {
     const value = input[key];
     acc[key] = typeof value === 'string' ? value : defaultValue;
-    return acc;
-  }, {});
-}
-
-function ensureDifficultyStringArrayMap(
-  input: Record<string, string[]>
-): Record<string, string[]> {
-  return GENERATION_DIFFICULTY_KEYS.reduce<Record<string, string[]>>((acc, key) => {
-    const value = input[key];
-    acc[key] = Array.isArray(value) ? value : [];
     return acc;
   }, {});
 }
@@ -370,9 +339,6 @@ function normalizeGenerationConfig(data: unknown): GenerationConfigResponse {
   const normalizedDifficultyInstructions = ensureDifficultyStringMap(
     normalizeStringMap(raw.generation_difficulty_semantic_instructions)
   );
-  const normalizedVariationLenses = ensureDifficultyStringArrayMap(
-    normalizeStringArrayMap(raw.generation_variation_lenses)
-  );
 
   const taxonomyCategories =
     incomingTaxonomyCategories.length > 0
@@ -395,7 +361,6 @@ function normalizeGenerationConfig(data: unknown): GenerationConfigResponse {
     generation_user_prompt_template: normalizeString(raw.generation_user_prompt_template),
     generation_difficulty_semantic_instructions: normalizedDifficultyInstructions,
     generation_output_rules_template: normalizeStringArray(raw.generation_output_rules_template),
-    generation_variation_lenses: normalizedVariationLenses,
     ingestion_extraction_system_prompt: normalizeString(raw.ingestion_extraction_system_prompt),
     ingestion_extraction_user_prompt_template: normalizeString(
       raw.ingestion_extraction_user_prompt_template

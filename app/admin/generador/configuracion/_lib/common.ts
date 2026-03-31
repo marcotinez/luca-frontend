@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { GenerationDifficultyKey, GENERATION_DIFFICULTY_KEYS } from '@/lib/prompt-generation.api';
 
-export const LARGE_TEXTAREA_CLASSNAME = 'min-h-[240px]';
+export const LARGE_TEXTAREA_CLASSNAME = 'min-h-[420px] resize-y font-mono text-sm leading-6';
 export const MAX_TERMS_PER_LIST = 30;
 
 export const REQUIRED_PLACEHOLDERS = {
@@ -12,7 +12,6 @@ export const REQUIRED_PLACEHOLDERS = {
     'difficulty_semantic_instruction',
     'semantic_context_block',
     'semantic_plan_block',
-    'variation_matrix_block',
     'avoid_block',
     'output_rules_block',
   ],
@@ -67,6 +66,21 @@ export function decodeEscapedSequences(value: string): string {
     .replace(/\\"/g, '"')
     .replace(/\\'/g, "'")
     .replace(/\\\\/g, '\\');
+}
+
+export function normalizeGenerationTemplate(value: string): string {
+  return value
+    .replace(
+      /\n*Matriz de variaci[oó]n obligatoria[^\n]*\n\{variation_matrix_block\}\n*/gi,
+      '\n'
+    )
+    .replace(/\{variation_matrix_block\}/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+export function hasRemovedGenerationPlaceholder(template: string): boolean {
+  return template.includes('{variation_matrix_block}');
 }
 
 export function normalizeName(value: string): string {

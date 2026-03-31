@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   deriveCatalogFromTaxonomy,
   GenerationConfigPatchRequest,
@@ -28,7 +28,7 @@ import {
 } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { ArrowLeft, Download, Loader2, PencilLine, Plus, Save, Settings2, Trash2 } from 'lucide-react';
+import { ArrowLeft, Download, Loader2, PencilLine, Plus, Save, Settings2, Trash2, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   decodeEscapedSequences,
@@ -63,6 +63,18 @@ type SubcategoryModalState = {
   termInputs: Record<TermListKey, string>;
 };
 
+type TaxonomyImportPayload = {
+  taxonomy_version?: string;
+  taxonomy_categories: TaxonomyCategoryRule[];
+};
+
+type TaxonomyImportPreview = {
+  taxonomy_version?: string;
+  taxonomy_categories: TaxonomyCategoryRule[];
+  categoryCount: number;
+  subcategoryCount: number;
+};
+
 const EMPTY_DRAFT: TaxonomyDraft = {
   taxonomy_version: 'v1',
   taxonomy_max_labels_per_item: 2,
@@ -78,6 +90,74 @@ function createEmptyTermInputs(): Record<TermListKey, string> {
     },
     {} as Record<TermListKey, string>
   );
+}
+
+function toStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value
+        .filter((item): item is string => typeof item === 'string')
+        .map((item) => item.trim())
+        .filter(Boolean)
+    : [];
+}
+
+function normalizeImportedSubcategory(raw: unknown): TaxonomySubcategoryRule {
+  const obj = (raw ?? {}) as Record<string, unknown>;
+  if (typeof obj.name !== 'string' || !obj.name.trim()) {
+    throw new Error('Cada subcategoría debe tener `name`.');
+  }
+
+  return {
+    name: obj.name.trim(),
+    description: typeof obj.description === 'string' ? obj.description.trim() : '',
+    include_terms: toStringArray(obj.include_terms),
+    exclude_terms: toStringArray(obj.exclude_terms),
+    examples: toStringArray(obj.examples),
+  };
+}
+
+function normalizeImportedCategory(raw: unknown): TaxonomyCategoryRule {
+  const obj = (raw ?? {}) as Record<string, unknown>;
+  if (typeof obj.name !== 'string' || !obj.name.trim()) {
+    throw new Error('Cada categoría debe tener `name`.');
+  }
+
+  const subcategories = Array.isArray(obj.subcategories) ? obj.subcategories : [];
+
+  return {
+    name: obj.name.trim(),
+    description: typeof obj.description === 'string' ? obj.description.trim() : '',
+    subcategories: subcategories.map(normalizeImportedSubcategory),
+  };
+}
+
+function normalizeImportedTaxonomy(raw: unknown): TaxonomyImportPayload {
+  if (Array.isArray(raw)) {
+    return {
+      taxonomy_categories: raw.map(normalizeImportedCategory),
+    };
+  }
+
+  if (!raw || typeof raw !== 'object') {
+    throw new Error('El JSON debe ser un objeto o un arreglo de categorías.');
+  }
+
+  const obj = raw as Record<string, unknown>;
+  const categories = obj.taxonomy_categories;
+
+  if (!Array.isArray(categories)) {
+    throw new Error('Falta `taxonomy_categories` o no es un arreglo.');
+  }
+
+  const taxonomyVersion =
+    typeof obj.taxonomy_version === 'string' && obj.taxonomy_version.trim()
+      ? obj.taxonomy_version.trim()
+      : undefined;
+
+  return {
+    taxonomy_version: taxonomyVersion,
+    taxonomy_categories: categories.map(normalizeImportedCategory),
+  };
 }
 
 function cloneDraftFromConfig(config: GenerationConfigResponse): TaxonomyDraft {
@@ -220,6 +300,8 @@ export default function ConfiguracionTaxonomiaPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [categoryModal, setCategoryModal] = useState<CategoryModalState | null>(null);
   const [subcategoryModal, setSubcategoryModal] = useState<SubcategoryModalState | null>(null);
+  const [importPreview, setImportPreview] = useState<TaxonomyImportPreview | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const derivedCatalog = useMemo(
     () => deriveCatalogFromTaxonomy(draft.taxonomy_categories),
@@ -304,6 +386,51 @@ export default function ConfiguracionTaxonomiaPage() {
     window.URL.revokeObjectURL(url);
 
     toast.success('Taxonomía exportada en JSON');
+  };
+
+  const handleOpenImportPicker = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleImportTaxonomyFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const normalized = normalizeImportedTaxonomy(parsed);
+      const categoryCount = normalized.taxonomy_categories.length;
+      const subcategoryCount = normalized.taxonomy_categories.reduce(
+        (acc, category) => acc + category.subcategories.length,
+        0
+      );
+
+      setImportPreview({
+        taxonomy_version: normalized.taxonomy_version,
+        taxonomy_categories: normalized.taxonomy_categories,
+        categoryCount,
+        subcategoryCount,
+      });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No se pudo importar el JSON.');
+    }
+  };
+
+  const handleConfirmImportTaxonomy = () => {
+    if (!importPreview) return;
+
+    setDraft((prev) => ({
+      ...prev,
+      taxonomy_version: importPreview.taxonomy_version ?? prev.taxonomy_version,
+      taxonomy_categories: importPreview.taxonomy_categories,
+    }));
+
+    setCategoryModal(null);
+    setSubcategoryModal(null);
+    setImportPreview(null);
+    toast.success('Taxonomía importada al editor. Guarda cambios para persistirla.');
   };
 
   const handleSave = async () => {
@@ -503,6 +630,14 @@ export default function ConfiguracionTaxonomiaPage() {
           <CardDescription>Ajusta únicamente variables de taxonomía.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={handleImportTaxonomyFile}
+          />
+
           {isLoading ? (
             <div className="rounded-md border border-dashed p-6 text-sm text-muted-foreground">
               Cargando configuración...
@@ -586,6 +721,10 @@ export default function ConfiguracionTaxonomiaPage() {
                       </Badge>
                     </div>
                     <div className="flex items-center gap-2">
+                      <Button type="button" variant="outline" onClick={handleOpenImportPicker}>
+                        <Upload className="mr-2 h-4 w-4" />
+                        Importar JSON
+                      </Button>
                       <Button type="button" variant="outline" onClick={handleExportTaxonomy}>
                         <Download className="mr-2 h-4 w-4" />
                         Export JSON
@@ -808,6 +947,51 @@ export default function ConfiguracionTaxonomiaPage() {
             </Button>
             <Button type="button" onClick={handleSaveCategoryModal}>
               Guardar cambios
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!importPreview} onOpenChange={(open) => !open && setImportPreview(null)}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Importar taxonomía desde JSON</DialogTitle>
+            <DialogDescription>
+              Esta acción reemplaza la taxonomía actualmente cargada en el editor. No mezcla categorías existentes.
+            </DialogDescription>
+          </DialogHeader>
+
+          {importPreview && (
+            <div className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-md border p-3">
+                  <p className="text-xs text-muted-foreground">Versión detectada</p>
+                  <p className="mt-1 font-medium">{importPreview.taxonomy_version || 'Sin cambio'}</p>
+                </div>
+                <div className="rounded-md border p-3">
+                  <p className="text-xs text-muted-foreground">Categorías</p>
+                  <p className="mt-1 font-medium">{importPreview.categoryCount}</p>
+                </div>
+                <div className="rounded-md border p-3">
+                  <p className="text-xs text-muted-foreground">Subcategorías</p>
+                  <p className="mt-1 font-medium">{importPreview.subcategoryCount}</p>
+                </div>
+              </div>
+
+              <div className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground">
+                Se reemplazará la estructura actual del editor por el contenido importado. Luego debes usar
+                <span className="font-medium text-foreground"> Guardar cambios </span>
+                para persistirla en backend.
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setImportPreview(null)}>
+              Cancelar
+            </Button>
+            <Button type="button" onClick={handleConfirmImportTaxonomy}>
+              Reemplazar taxonomía en edición
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -19,12 +19,15 @@ import { Input } from '@/components/ui/input';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { ArrowLeft, Loader2, Plus, Save, Settings2, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { PromptEditorField } from '../_components/prompt-editor-field';
 import {
   decodeEscapedSequences,
   DIFFICULTY_PROMPT_FIELD_MAP,
   getConfigErrorMessage,
+  hasRemovedGenerationPlaceholder,
   LARGE_TEXTAREA_CLASSNAME,
   MAX_TERMS_PER_LIST,
+  normalizeGenerationTemplate,
   normalizeName,
   REQUIRED_PLACEHOLDERS,
   validateTemplatePlaceholders,
@@ -38,7 +41,6 @@ type GenerationDraft = {
   generation_user_prompt_template: string;
   generation_difficulty_semantic_instructions: Record<string, string>;
   generation_output_rules_template: string[];
-  generation_variation_lenses: Record<string, string[]>;
 };
 
 const EMPTY_DRAFT: GenerationDraft = {
@@ -52,10 +54,6 @@ const EMPTY_DRAFT: GenerationDraft = {
     return acc;
   }, {}),
   generation_output_rules_template: [],
-  generation_variation_lenses: GENERATION_DIFFICULTY_KEYS.reduce<Record<string, string[]>>((acc, key) => {
-    acc[key] = [];
-    return acc;
-  }, {}),
 };
 
 function cloneDraftFromConfig(config: GenerationConfigResponse): GenerationDraft {
@@ -64,8 +62,8 @@ function cloneDraftFromConfig(config: GenerationConfigResponse): GenerationDraft
     facil_prompt: decodeEscapedSequences(config.facil_prompt),
     medio_prompt: decodeEscapedSequences(config.medio_prompt),
     dificil_prompt: decodeEscapedSequences(config.dificil_prompt),
-    generation_user_prompt_template: decodeEscapedSequences(
-      config.generation_user_prompt_template
+    generation_user_prompt_template: normalizeGenerationTemplate(
+      decodeEscapedSequences(config.generation_user_prompt_template)
     ),
     generation_difficulty_semantic_instructions: GENERATION_DIFFICULTY_KEYS.reduce<Record<string, string>>((acc, key) => {
       acc[key] = decodeEscapedSequences(
@@ -76,12 +74,6 @@ function cloneDraftFromConfig(config: GenerationConfigResponse): GenerationDraft
     generation_output_rules_template: config.generation_output_rules_template.map((item) =>
       decodeEscapedSequences(item)
     ),
-    generation_variation_lenses: GENERATION_DIFFICULTY_KEYS.reduce<Record<string, string[]>>((acc, key) => {
-      acc[key] = (config.generation_variation_lenses[key] || []).map((item) =>
-        decodeEscapedSequences(item)
-      );
-      return acc;
-    }, {}),
   };
 }
 
@@ -189,12 +181,6 @@ export default function ConfiguracionGeneracionPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [outputRuleInput, setOutputRuleInput] = useState('');
-  const [variationInputByDifficulty, setVariationInputByDifficulty] = useState<Record<string, string>>(
-    GENERATION_DIFFICULTY_KEYS.reduce<Record<string, string>>((acc, key) => {
-      acc[key] = '';
-      return acc;
-    }, {})
-  );
 
   const selectedDifficultyPromptField = DIFFICULTY_PROMPT_FIELD_MAP[selectedDifficulty];
 
@@ -245,13 +231,6 @@ export default function ConfiguracionGeneracionPage() {
     }));
   };
 
-  const handleVariationInputChange = (difficulty: GenerationDifficultyKey, value: string) => {
-    setVariationInputByDifficulty((prev) => ({
-      ...prev,
-      [difficulty]: value,
-    }));
-  };
-
   const handleAddOutputRule = () => {
     const candidate = outputRuleInput.trim();
     if (!candidate) return;
@@ -283,63 +262,27 @@ export default function ConfiguracionGeneracionPage() {
     }));
   };
 
-  const handleAddVariationLens = (difficulty: GenerationDifficultyKey) => {
-    const candidate = (variationInputByDifficulty[difficulty] || '').trim();
-    if (!candidate) return;
-
-    const currentList = draft.generation_variation_lenses[difficulty] || [];
-    if (currentList.length >= MAX_TERMS_PER_LIST) {
-      toast.error(`Límite alcanzado (${MAX_TERMS_PER_LIST}) para ${difficulty}`);
-      return;
-    }
-
-    const exists = currentList.some((item) => normalizeName(item) === normalizeName(candidate));
-    if (exists) {
-      toast.error('Ese enfoque ya existe en la dificultad seleccionada');
-      return;
-    }
-
-    setDraft((prev) => ({
-      ...prev,
-      generation_variation_lenses: {
-        ...prev.generation_variation_lenses,
-        [difficulty]: [...(prev.generation_variation_lenses[difficulty] || []), candidate],
-      },
-    }));
-
-    setVariationInputByDifficulty((prev) => ({ ...prev, [difficulty]: '' }));
-  };
-
-  const handleRemoveVariationLens = (difficulty: GenerationDifficultyKey, index: number) => {
-    setDraft((prev) => ({
-      ...prev,
-      generation_variation_lenses: {
-        ...prev.generation_variation_lenses,
-        [difficulty]: (prev.generation_variation_lenses[difficulty] || []).filter((_, idx) => idx !== index),
-      },
-    }));
-  };
-
   const handleRestore = () => {
     if (!config) return;
     setDraft(cloneDraftFromConfig(config));
     setOutputRuleInput('');
-    setVariationInputByDifficulty(
-      GENERATION_DIFFICULTY_KEYS.reduce<Record<string, string>>((acc, key) => {
-        acc[key] = '';
-        return acc;
-      }, {})
-    );
     toast.success('Cambios descartados');
   };
 
   const handleSave = async () => {
+    const normalizedTemplate = normalizeGenerationTemplate(draft.generation_user_prompt_template.trim());
+
+    if (hasRemovedGenerationPlaceholder(normalizedTemplate)) {
+      toast.error('{variation_matrix_block} ya no existe en el backend y debe eliminarse del template.');
+      return;
+    }
+
     const payload: GenerationConfigPatchRequest = {
       general_prompt: draft.general_prompt.trim(),
       facil_prompt: draft.facil_prompt.trim(),
       medio_prompt: draft.medio_prompt.trim(),
       dificil_prompt: draft.dificil_prompt.trim(),
-      generation_user_prompt_template: draft.generation_user_prompt_template.trim(),
+      generation_user_prompt_template: normalizedTemplate,
       generation_difficulty_semantic_instructions: GENERATION_DIFFICULTY_KEYS.reduce<Record<string, string>>((acc, key) => {
         acc[key] = draft.generation_difficulty_semantic_instructions[key]?.trim() || '';
         return acc;
@@ -347,12 +290,6 @@ export default function ConfiguracionGeneracionPage() {
       generation_output_rules_template: draft.generation_output_rules_template
         .map((item) => item.trim())
         .filter((item) => Boolean(item)),
-      generation_variation_lenses: GENERATION_DIFFICULTY_KEYS.reduce<Record<string, string[]>>((acc, key) => {
-        acc[key] = (draft.generation_variation_lenses[key] || [])
-          .map((item) => item.trim())
-          .filter((item) => Boolean(item));
-        return acc;
-      }, {}),
     };
 
     try {
@@ -369,7 +306,7 @@ export default function ConfiguracionGeneracionPage() {
   };
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 p-4 sm:p-6 lg:p-8">
+    <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-6 p-4 sm:p-6 lg:p-8">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-1">
           <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Configuración de la generación</h1>
@@ -408,18 +345,14 @@ export default function ConfiguracionGeneracionPage() {
               <AccordionItem value="generation-prompts" className="px-4">
                 <AccordionTrigger className="text-base hover:no-underline">Prompts de generación</AccordionTrigger>
                 <AccordionContent className="space-y-5 pb-6">
-                  <div className="space-y-2">
-                    <Label>Prompt general de generación</Label>
-                    <p className="text-xs text-muted-foreground">
-                      Contexto base que se aplica a todas las preguntas generadas.
-                    </p>
-                    <Textarea
-                      value={draft.general_prompt}
-                      onChange={(event) => handlePromptChange('general_prompt', event.target.value)}
-                      rows={14}
-                      className={LARGE_TEXTAREA_CLASSNAME}
-                    />
-                  </div>
+                  <PromptEditorField
+                    label="Prompt general de generación"
+                    description="Contexto base que se aplica a todas las preguntas generadas."
+                    value={draft.general_prompt}
+                    onChange={(value) => handlePromptChange('general_prompt', value)}
+                    rows={18}
+                    className={LARGE_TEXTAREA_CLASSNAME}
+                  />
 
                   <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
                     <div className="space-y-3 rounded-lg border bg-muted/20 p-4">
@@ -446,53 +379,47 @@ export default function ConfiguracionGeneracionPage() {
                         })}
                       </div>
                     </div>
-                    <div className="space-y-2">
-                      <Label>{`Prompt para dificultad ${selectedDifficulty}`}</Label>
-                      <p className="text-xs text-muted-foreground">
-                        Instrucciones específicas para esta dificultad.
-                      </p>
-                      <Textarea
-                        value={draft[selectedDifficultyPromptField]}
-                        onChange={(event) => handlePromptChange(selectedDifficultyPromptField, event.target.value)}
-                        rows={16}
-                        className={LARGE_TEXTAREA_CLASSNAME}
-                      />
-                    </div>
+                    <PromptEditorField
+                      label={`Prompt para dificultad ${selectedDifficulty}`}
+                      description="Instrucciones específicas para esta dificultad."
+                      value={draft[selectedDifficultyPromptField]}
+                      onChange={(value) => handlePromptChange(selectedDifficultyPromptField, value)}
+                      rows={18}
+                      className={LARGE_TEXTAREA_CLASSNAME}
+                    />
                   </div>
                 </AccordionContent>
               </AccordionItem>
 
               <AccordionItem value="generation-template" className="px-4">
                 <AccordionTrigger className="text-base hover:no-underline">Template de generación</AccordionTrigger>
-                <AccordionContent className="space-y-3 pb-6">
-                  <Label>Plantilla de usuario para generación</Label>
-                  <p className="text-xs text-muted-foreground">
-                    Plantilla principal que combina dificultad, contexto y reglas de salida.
-                  </p>
-                  <Textarea
+                <AccordionContent className="pb-6">
+                  <PromptEditorField
+                    label="Plantilla de usuario para generación"
+                    description="Plantilla principal que combina dificultad, contexto, plan semántico, reglas de salida e historial a evitar. Se muestra bloqueada para evitar ediciones accidentales."
                     value={draft.generation_user_prompt_template}
-                    onChange={(event) => handlePromptChange('generation_user_prompt_template', event.target.value)}
-                    rows={14}
+                    readOnly
+                    rows={20}
                     className={LARGE_TEXTAREA_CLASSNAME}
+                    footer={<TemplatePlaceholders template={draft.generation_user_prompt_template} />}
                   />
-                  <TemplatePlaceholders template={draft.generation_user_prompt_template} />
                 </AccordionContent>
               </AccordionItem>
 
               <AccordionItem value="generation-strategy" className="px-4">
                 <AccordionTrigger className="text-base hover:no-underline">
-                  Enfoques por dificultad
+                  Instrucciones semánticas
                 </AccordionTrigger>
                 <AccordionContent className="space-y-4 pb-6">
                   <p className="text-sm text-muted-foreground">
-                    `generation_variation_lenses` son enfoques para variar la formulación de preguntas
-                    sin cambiar la dificultad pedagógica.
+                    La variedad del lote depende del prompt por dificultad, del plan semántico por pregunta,
+                    de las reglas de salida y del historial que se evita repetir.
                   </p>
                   <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
                     <div className="space-y-3 rounded-lg border bg-muted/20 p-4">
                       <Label>Dificultad para ajustes</Label>
                       <p className="text-xs text-muted-foreground">
-                        Cambia la dificultad para editar su instrucción semántica y enfoques.
+                        Cambia la dificultad para editar su instrucción semántica.
                       </p>
                       <div className="grid gap-2">
                         {GENERATION_DIFFICULTY_KEYS.map((difficulty) => (
@@ -508,32 +435,19 @@ export default function ConfiguracionGeneracionPage() {
                         ))}
                       </div>
                     </div>
-                    <div className="grid gap-4 xl:grid-cols-2">
-                      <div className="space-y-2 rounded-lg border p-4">
-                        <Label>{`Instrucción semántica (${selectedDifficulty})`}</Label>
-                        <p className="text-xs text-muted-foreground">
-                          Describe el nivel cognitivo esperado para esta dificultad.
-                        </p>
-                        <Textarea
-                          value={draft.generation_difficulty_semantic_instructions[selectedDifficulty] || ''}
-                          onChange={(event) =>
-                            handleDifficultyInstructionChange(selectedDifficulty, event.target.value)
-                          }
-                          rows={14}
-                          className={LARGE_TEXTAREA_CLASSNAME}
-                        />
-                      </div>
-                      <div className="rounded-lg border p-4">
-                        <ListEditor
-                          label={`Enfoques de variación (${selectedDifficulty})`}
-                          items={draft.generation_variation_lenses[selectedDifficulty] || []}
-                          placeholder={`Agregar enfoque para ${selectedDifficulty}`}
-                          inputValue={variationInputByDifficulty[selectedDifficulty] || ''}
-                          onInputChange={(value) => handleVariationInputChange(selectedDifficulty, value)}
-                          onAdd={() => handleAddVariationLens(selectedDifficulty)}
-                          onRemove={(index) => handleRemoveVariationLens(selectedDifficulty, index)}
-                        />
-                      </div>
+                    <div className="space-y-2 rounded-lg border p-4">
+                      <Label>{`Instrucción semántica (${selectedDifficulty})`}</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Describe el nivel cognitivo esperado para esta dificultad.
+                      </p>
+                      <Textarea
+                        value={draft.generation_difficulty_semantic_instructions[selectedDifficulty] || ''}
+                        onChange={(event) =>
+                          handleDifficultyInstructionChange(selectedDifficulty, event.target.value)
+                        }
+                        rows={14}
+                        className={LARGE_TEXTAREA_CLASSNAME}
+                      />
                     </div>
                   </div>
                 </AccordionContent>
