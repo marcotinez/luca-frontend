@@ -70,7 +70,15 @@ export function StudentDashboard() {
     return !hasPracticeHistory && !hasTrackedDomains && !hasPracticeTime && completedTests === 0;
   }, [completedTests, learningProfile?.domain_knowledge?.length, learningProfile?.total_practice_minutes, summary.length]);
 
-  const recommendedTopics = user?.profile.interests || [];
+  const recommendedTopics = useMemo(() => {
+    const topics = user?.profile.interests || [];
+
+    return topics.filter((topic, index) => {
+      const normalizedTopic = topic.trim().toLocaleLowerCase();
+
+      return normalizedTopic.length > 0 && index === topics.findIndex((candidate) => candidate.trim().toLocaleLowerCase() === normalizedTopic);
+    });
+  }, [user?.profile.interests]);
 
   const handleCreateDiagnostic = async (topic?: string) => {
     try {
