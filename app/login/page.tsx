@@ -74,14 +74,18 @@ export default function LoginPage() {
             </Button>
           </div>
           <Card className="w-full max-w-md shadow-lg border-border bg-card">
-          <CardHeader className="space-y-1 flex flex-col items-center">
-            <div className="w-12 h-12 bg-primary rounded-full flex items-center justify-center mb-4">
-              <LogIn className="text-primary-foreground w-6 h-6" />
+          <CardHeader className="space-y-0">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary">
+                <LogIn className="h-5 w-5 text-primary-foreground" />
+              </div>
+              <div className="min-w-0">
+                <CardTitle className="text-xl font-bold tracking-tight">Iniciar Sesión</CardTitle>
+                <CardDescription className="text-sm text-muted-foreground">
+                  Ingresa tus credenciales para acceder a Luca
+                </CardDescription>
+              </div>
             </div>
-            <CardTitle className="text-2xl font-bold tracking-tight">Iniciar Sesión</CardTitle>
-            <CardDescription className="text-muted-foreground">
-              Ingresa tus credenciales para acceder a Luca
-            </CardDescription>
           </CardHeader>
           <CardContent>
             <Form {...form}>

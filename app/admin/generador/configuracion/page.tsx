@@ -51,7 +51,7 @@ export default function GeneradorConfiguracionIndexPage() {
         {SECTION_LINKS.map((section) => {
           const Icon = section.icon;
           return (
-            <Card key={section.href} className="border-border/70">
+            <Card key={section.href} className="flex h-full flex-col border-border/70">
               <CardHeader className="space-y-3">
                 <div className="inline-flex w-fit items-center rounded-lg border border-border/60 bg-muted/25 p-2">
                   <Icon className="h-4 w-4" />
@@ -59,7 +59,7 @@ export default function GeneradorConfiguracionIndexPage() {
                 <CardTitle className="text-base">{section.title}</CardTitle>
                 <CardDescription>{section.description}</CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="mt-auto">
                 <Button asChild className="w-full">
                   <Link href={section.href}>Abrir sección</Link>
                 </Button>
