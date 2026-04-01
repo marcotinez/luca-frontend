@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useAuth } from "@/hooks/useAuth";
 import { getLearningProfile } from "@/lib/users.api";
-import { getPracticeTests } from "@/lib/learning.api";
+import { createPracticeTest, getPracticeTests } from "@/lib/learning.api";
 import { apiErrorMessage, formatDateTime } from "@/lib/learning.utils";
 import type { PracticeTestSummaryResponse, UserLearningProfile } from "@/types";
 import { LearningStatsHeader } from "./LearningStatsHeader";
@@ -27,6 +27,7 @@ export function StudentDashboard() {
   const [summary, setSummary] = useState(user?.practice_history_summary || []);
   const [tests, setTests] = useState<PracticeTestSummaryResponse[]>([]);
   const [loading, setLoading] = useState(true);
+  const [creatingTopic, setCreatingTopic] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -56,6 +57,38 @@ export function StudentDashboard() {
     [tests],
   );
 
+  const completedTests = useMemo(
+    () => tests.filter((test) => test.status === "completed").length,
+    [tests],
+  );
+
+  const isNewStudent = useMemo(() => {
+    const hasPracticeHistory = summary.length > 0;
+    const hasTrackedDomains = (learningProfile?.domain_knowledge?.length || 0) > 0;
+    const hasPracticeTime = (learningProfile?.total_practice_minutes || 0) > 0;
+
+    return !hasPracticeHistory && !hasTrackedDomains && !hasPracticeTime && completedTests === 0;
+  }, [completedTests, learningProfile?.domain_knowledge?.length, learningProfile?.total_practice_minutes, summary.length]);
+
+  const recommendedTopics = user?.profile.interests || [];
+
+  const handleCreateDiagnostic = async (topic?: string) => {
+    try {
+      setCreatingTopic(topic || "general");
+      const test = await createPracticeTest({
+        question_count: 5,
+        category: topic,
+        title: topic ? `Diagnóstico inicial: ${topic}` : "Diagnóstico inicial",
+      });
+      toast.success("Prueba diagnóstica creada");
+      router.push(`/practice/test/${test.id}`);
+    } catch (error) {
+      toast.error(apiErrorMessage(error, "No se pudo crear la prueba diagnóstica"));
+    } finally {
+      setCreatingTopic(null);
+    }
+  };
+
   if (!user) return null;
 
   return (
@@ -63,6 +96,66 @@ export function StudentDashboard() {
       <div className="min-h-screen bg-grid-soft pb-20">
         <DashboardNavbar />
         <main className="mx-auto max-w-7xl space-y-7 px-4 py-8 sm:px-6 lg:px-8">
+          {isNewStudent ? (
+            <>
+              <section className="animate-enter-up rounded-2xl border border-primary/20 bg-card/80 p-5 shadow-sm backdrop-blur sm:p-6">
+                <div className="space-y-5">
+                  <div className="space-y-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary/80">
+                      Primeros pasos
+                    </p>
+                    <h1 className="text-2xl font-black tracking-tight sm:text-3xl">
+                      Comencemos ✨
+                    </h1>
+                    <p className="max-w-2xl text-sm text-muted-foreground">
+                      Esta es tu primera vez en Luca. Empecemos con unas evaluaciones breves para
+                      entender tu punto de partida y preparar tu ruta de aprendizaje.
+                    </p>
+                  </div>
+                </div>
+              </section>
+
+              <section className="animate-enter-up-delay">
+                <Card className="border-border/70 bg-card/80 shadow-sm backdrop-blur">
+                  <CardContent className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 sm:p-5">
+                    {recommendedTopics.length === 0 ? (
+                      <div className="rounded-xl border border-border/60 bg-background/70 p-4 text-sm text-muted-foreground">
+                        No hay categorías seleccionadas todavía. Puedes comenzar con una evaluación general.
+                      </div>
+                    ) : (
+                      recommendedTopics.map((topic) => (
+                        <article
+                          key={topic}
+                          className="rounded-2xl border border-border/60 bg-background/80 p-4"
+                        >
+                          <div className="space-y-3">
+                            <div className="space-y-1">
+                              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary/80">
+                                Evaluación inicial
+                              </p>
+                              <h3 className="font-semibold text-foreground">{topic}</h3>
+                              <p className="text-sm text-muted-foreground">
+                                Responde una prueba breve para medir tu nivel en esta categoría.
+                              </p>
+                            </div>
+                            <Button
+                              className="w-full justify-between rounded-xl"
+                              disabled={creatingTopic !== null}
+                              onClick={() => handleCreateDiagnostic(topic)}
+                            >
+                              {creatingTopic === topic ? "Creando..." : "Hacer evaluación"}
+                              <ArrowRight className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </article>
+                      ))
+                    )}
+                  </CardContent>
+                </Card>
+              </section>
+            </>
+          ) : (
+            <>
           <section className="animate-enter-up rounded-2xl border border-border/70 bg-card/70 p-5 shadow-sm backdrop-blur sm:p-6">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="space-y-2">
@@ -166,6 +259,8 @@ export function StudentDashboard() {
               </CardContent>
             </Card>
           </section>
+            </>
+          )}
         </main>
       </div>
     </ProtectedRoute>

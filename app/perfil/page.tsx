@@ -34,11 +34,12 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Separator } from "@/components/ui/separator";
+import { PasswordField, passwordValidation } from "@/components/PasswordField";
 
 const passwordSchema = z
   .object({
     current_password: z.string().min(1, "La contraseña actual es requerida"),
-    new_password: z.string().min(6, "La nueva contraseña debe tener al menos 6 caracteres"),
+    new_password: passwordValidation,
     new_password_confirmation: z.string(),
   })
   .refine((data) => data.new_password === data.new_password_confirmation, {
@@ -85,7 +86,7 @@ export default function PerfilPage() {
   };
 
   const username = user?.email?.split("@")[0] || "Usuario";
-  const interests = user?.profile.interests || [];
+  const interests = Array.from(new Set(user?.profile.interests || []));
 
   return (
     <ProtectedRoute>
@@ -150,18 +151,10 @@ export default function PerfilPage() {
                               </FormItem>
                             )}
                           />
-                          <FormField
+                          <PasswordField
                             control={form.control}
                             name="new_password"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Nueva contraseña</FormLabel>
-                                <FormControl>
-                                  <Input type="password" {...field} />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
+                            label="Nueva contraseña"
                           />
                           <FormField
                             control={form.control}
