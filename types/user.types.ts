@@ -14,15 +14,7 @@ export enum EducationLevel {
   UNIVERSITARIA_COMPLETA = "Universitaria Completa",
 }
 
-// Son los posibles temas financieros
-export enum FinancialTopic {
-    PLANIFICACION = "Planificación y presupuesto",
-    CREDITO = "El mundo del crédito",
-    ECONOMIA = "Economía práctica",
-    PRIMER_EMPLEO = "Primer empleo y conceptos laborales",
-    AHORRO = "Ahorro e inversión básica",
-    PRODUCTOS_BANCARIOS = "Productos bancarios y seguridad",
-}
+export type FinancialTopic = string;
 
 // ============================================================================
 // USER TYPES

@@ -1,8 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { FinancialTopic, PracticeDifficulty, PracticeTestCreateRequest } from "@/types";
-import { FinancialTopic as FinancialTopicEnum } from "@/types";
+import type { PracticeDifficulty, PracticeTestCreateRequest } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -18,13 +17,18 @@ import {
 interface CreateTestFormProps {
   onSubmit: (payload: PracticeTestCreateRequest) => Promise<void>;
   loading?: boolean;
+  categories: string[];
+  subtopicsByCategory: Record<string, string[]>;
 }
 
 const difficultyOptions: PracticeDifficulty[] = ["Fácil", "Medio", "Difícil"];
 
-const topicOptions: FinancialTopic[] = Object.values(FinancialTopicEnum);
-
-export function CreateTestForm({ onSubmit, loading = false }: CreateTestFormProps) {
+export function CreateTestForm({
+  onSubmit,
+  loading = false,
+  categories,
+  subtopicsByCategory,
+}: CreateTestFormProps) {
   const [questionCount, setQuestionCount] = useState(5);
   const [title, setTitle] = useState("");
   const [category, setCategory] = useState<string>("all");
@@ -35,6 +39,9 @@ export function CreateTestForm({ onSubmit, loading = false }: CreateTestFormProp
     () => questionCount >= 1 && questionCount <= 20 && !loading,
     [questionCount, loading],
   );
+
+  const availableSubtopics =
+    category !== "all" ? subtopicsByCategory[category] || [] : [];
 
   return (
     <Card>
@@ -74,7 +81,7 @@ export function CreateTestForm({ onSubmit, loading = false }: CreateTestFormProp
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todas</SelectItem>
-                {topicOptions.map((topic) => (
+                {categories.map((topic) => (
                   <SelectItem key={topic} value={topic}>
                     {topic}
                   </SelectItem>
@@ -103,13 +110,29 @@ export function CreateTestForm({ onSubmit, loading = false }: CreateTestFormProp
 
         <div className="space-y-2">
           <Label htmlFor="subtopic">Subtema (opcional)</Label>
-          <Input
-            id="subtopic"
-            value={subtopic}
-            maxLength={120}
-            placeholder="Ej: Fondo de emergencia"
-            onChange={(event) => setSubtopic(event.target.value)}
-          />
+          {category !== "all" && availableSubtopics.length > 0 ? (
+            <Select value={subtopic || "all"} onValueChange={(value) => setSubtopic(value === "all" ? "" : value)}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Todos los subtemas" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos</SelectItem>
+                {availableSubtopics.map((item) => (
+                  <SelectItem key={item} value={item}>
+                    {item}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Input
+              id="subtopic"
+              value={subtopic}
+              maxLength={120}
+              placeholder="Ej: Fondo de emergencia"
+              onChange={(event) => setSubtopic(event.target.value)}
+            />
+          )}
         </div>
 
         <Button
@@ -118,7 +141,7 @@ export function CreateTestForm({ onSubmit, loading = false }: CreateTestFormProp
           onClick={() =>
             onSubmit({
               question_count: questionCount,
-              category: category !== "all" ? (category as FinancialTopic) : undefined,
+              category: category !== "all" ? category : undefined,
               subtopic: subtopic.trim() || undefined,
               difficulty:
                 difficulty !== "all" ? (difficulty as PracticeDifficulty) : undefined,

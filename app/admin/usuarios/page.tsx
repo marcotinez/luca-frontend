@@ -5,7 +5,9 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { useState, useEffect } from "react";
 import { getUsers, deleteUser, toggleUserStatus, createUser, updateUser } from "@/lib/users.api";
-import { UserResponse, EducationLevel, FinancialTopic, RegisterRequest } from "@/types";
+import { getRegistrationTaxonomy } from "@/lib/auth.api";
+import { normalizeRuntimeTaxonomy, type RuntimeTaxonomy } from "@/lib/taxonomy.utils";
+import { UserResponse, EducationLevel, RegisterRequest } from "@/types";
 
 // Design Components
 import { Trash2, UserX, UserCheck, Mail, Calendar, Shield,
@@ -28,6 +30,7 @@ export default function UsuariosPage() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [taxonomy, setTaxonomy] = useState<RuntimeTaxonomy>({ categories: [], subtopicsByCategory: {} });
 
   // Estados para Creación/Edición
   const [isUserDialogOpen, setIsUserDialogOpen] = useState(false);
@@ -38,7 +41,7 @@ export default function UsuariosPage() {
     password: z.string().min(6, "Mínimo 6 caracteres").optional().or(z.literal("")),
     age: z.number().min(18).max(120),
     education_level: z.enum(EducationLevel),
-    interests: z.array(z.enum(FinancialTopic)).min(1, "Selecciona al menos uno"),
+    interests: z.array(z.string()).min(1, "Selecciona al menos uno"),
   });
 
   type UserFormValues = z.infer<typeof userSchema>;
@@ -59,7 +62,7 @@ export default function UsuariosPage() {
       setLoading(true);
       const data = await getUsers();
       setUsuarios(data);
-    } catch (error) {
+    } catch {
       toast.error("Error al cargar los usuarios");
     } finally {
       setLoading(false);
@@ -70,12 +73,30 @@ export default function UsuariosPage() {
     fetchUsuarios();
   }, []);
 
+  useEffect(() => {
+    const loadTaxonomy = async () => {
+      try {
+        const response = await getRegistrationTaxonomy();
+        setTaxonomy(
+          normalizeRuntimeTaxonomy({
+            categories: response.categories,
+            subtopics: response.subtopics,
+          }),
+        );
+      } catch {
+        toast.error("No se pudieron cargar las categorías de usuario");
+      }
+    };
+
+    loadTaxonomy();
+  }, []);
+
   const handleToggleStatus = async (usuario: UserResponse) => {
     try {
       await toggleUserStatus(usuario.id);
       toast.success(`Estado de ${usuario.email} actualizado`);
       fetchUsuarios();
-    } catch (error) {
+    } catch {
       toast.error("Error al actualizar el estado");
     }
   };
@@ -86,7 +107,7 @@ export default function UsuariosPage() {
       await deleteUser(deleteId);
       toast.success("Usuario eliminado");
       fetchUsuarios();
-    } catch (error) {
+    } catch {
       toast.error("Error al eliminar el usuario");
     } finally {
       setDeleteId(null);
@@ -111,7 +132,7 @@ export default function UsuariosPage() {
       }
       setIsUserDialogOpen(false);
       fetchUsuarios();
-    } catch (error) {
+    } catch {
       toast.error("Error al guardar usuario");
     }
   };
@@ -380,7 +401,7 @@ export default function UsuariosPage() {
                       <FormLabel>Temas de Interés</FormLabel>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 border border-border rounded-lg bg-muted/30">
-                    {Object.values(FinancialTopic).map((topic) => (
+                    {taxonomy.categories.map((topic) => (
                       <FormField
                         key={topic}
                         control={form.control}

@@ -7,7 +7,9 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { DashboardNavbar } from "@/components/DashboardNavbar";
 import { CreateTestForm } from "@/components/learning/CreateTestForm";
 import { createPracticeTest, getPracticeTests } from "@/lib/learning.api";
+import { getRegistrationTaxonomy } from "@/lib/auth.api";
 import { apiErrorMessage, formatDateTime } from "@/lib/learning.utils";
+import { normalizeRuntimeTaxonomy, type RuntimeTaxonomy } from "@/lib/taxonomy.utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import type { PracticeTestCreateRequest, PracticeTestSummaryResponse } from "@/types";
@@ -17,20 +19,33 @@ export default function NewPracticeTestPage() {
   const [loading, setLoading] = useState(false);
   const [tests, setTests] = useState<PracticeTestSummaryResponse[]>([]);
   const [loadingTests, setLoadingTests] = useState(true);
+  const [taxonomy, setTaxonomy] = useState<RuntimeTaxonomy>({ categories: [], subtopicsByCategory: {} });
+  const [loadingTaxonomy, setLoadingTaxonomy] = useState(true);
 
   useEffect(() => {
-    const loadTests = async () => {
+    const loadData = async () => {
       setLoadingTests(true);
+      setLoadingTaxonomy(true);
       try {
-        const response = await getPracticeTests();
-        setTests(response.slice(0, 8));
+        const [testsResponse, taxonomyResponse] = await Promise.all([
+          getPracticeTests(),
+          getRegistrationTaxonomy(),
+        ]);
+        setTests(testsResponse.slice(0, 8));
+        setTaxonomy(
+          normalizeRuntimeTaxonomy({
+            categories: taxonomyResponse.categories,
+            subtopics: taxonomyResponse.subtopics,
+          }),
+        );
       } catch (error) {
-        toast.error(apiErrorMessage(error, "No se pudieron cargar los tests recientes"));
+        toast.error(apiErrorMessage(error, "No se pudieron cargar los datos de práctica"));
       } finally {
         setLoadingTests(false);
+        setLoadingTaxonomy(false);
       }
     };
-    loadTests();
+    loadData();
   }, []);
 
   const handleCreateTest = async (payload: PracticeTestCreateRequest) => {
@@ -53,7 +68,12 @@ export default function NewPracticeTestPage() {
         <DashboardNavbar />
         <main className="mx-auto grid max-w-7xl grid-cols-1 gap-6 px-4 py-10 sm:px-6 lg:grid-cols-5 lg:px-8">
           <section className="lg:col-span-3">
-            <CreateTestForm loading={loading} onSubmit={handleCreateTest} />
+            <CreateTestForm
+              loading={loading || loadingTaxonomy}
+              onSubmit={handleCreateTest}
+              categories={taxonomy.categories}
+              subtopicsByCategory={taxonomy.subtopicsByCategory}
+            />
           </section>
 
           <section className="lg:col-span-2">

@@ -1,6 +1,7 @@
 // Re-exportar todo desde user.types
-export { EducationLevel, FinancialTopic } from './user.types';
+export { EducationLevel } from './user.types';
 export type {
+  FinancialTopic,
   UserProfile,
   UserGamification,
   UserResponse,

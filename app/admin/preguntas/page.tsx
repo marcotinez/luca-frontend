@@ -5,51 +5,9 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { useState, useEffect, useCallback } from "react";
 import { getQuestions, deleteQuestion, createQuestion, updateQuestion } from "@/lib/questions.api";
-import { QuestionResponse, QuestionCreate, FinancialTopic, Difficulty, Status, SubTopic } from "@/types";
-
-// Mapeo de categorías a sus subtópicos
-const CATEGORY_SUBTOPICS: Record<FinancialTopic, SubTopic[]> = {
-  [FinancialTopic.PLANIFICACION]: [
-    SubTopic.GASTOS_FIJOS_VARIABLES,
-    SubTopic.PRESUPUESTO_MENSUAL,
-    SubTopic.METAS_FINANCIERAS,
-    SubTopic.CONTROL_GASTOS,
-  ],
-  [FinancialTopic.CREDITO]: [
-    SubTopic.QUE_ES_CREDITO,
-    SubTopic.TIPOS_CREDITO,
-    SubTopic.TASA_INTERES,
-    SubTopic.HISTORIAL_CREDITICIO,
-    SubTopic.DEUDAS_RESPONSABLES,
-  ],
-  [FinancialTopic.ECONOMIA]: [
-    SubTopic.INFLACION,
-    SubTopic.OFERTA_DEMANDA,
-    SubTopic.IMPUESTOS_BASICOS,
-    SubTopic.ECONOMIA_PERSONAL,
-  ],
-  [FinancialTopic.PRIMER_EMPLEO]: [
-    SubTopic.CONTRATO_TRABAJO,
-    SubTopic.LIQUIDACION_SUELDO,
-    SubTopic.AFP_SALUD,
-    SubTopic.DERECHOS_LABORALES,
-    SubTopic.FINIQUITO,
-  ],
-  [FinancialTopic.AHORRO]: [
-    SubTopic.HABITO_AHORRO,
-    SubTopic.FONDO_EMERGENCIA,
-    SubTopic.INSTRUMENTOS_AHORRO,
-    SubTopic.INVERSION_BASICA,
-    SubTopic.RIESGO_RENTABILIDAD,
-  ],
-  [FinancialTopic.PRODUCTOS_BANCARIOS]: [
-    SubTopic.CUENTA_CORRIENTE_VISTA,
-    SubTopic.TARJETAS_DEBITO_CREDITO,
-    SubTopic.SEGURIDAD_BANCARIA,
-    SubTopic.FRAUDES_ESTAFAS,
-    SubTopic.BANCA_DIGITAL,
-  ],
-};
+import { getGenerationConfig } from "@/lib/prompt-generation.api";
+import { normalizeRuntimeTaxonomy, type RuntimeTaxonomy } from "@/lib/taxonomy.utils";
+import { QuestionResponse, QuestionCreate, Difficulty, Status } from "@/types";
 
 
 // Design Components
@@ -69,6 +27,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 //////////////////////////////////////////
 
 export default function PreguntasPage() {
+  const [taxonomy, setTaxonomy] = useState<RuntimeTaxonomy>({ categories: [], subtopicsByCategory: {} });
   const [preguntas, setPreguntas] = useState<QuestionResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDeletingBulk, setIsDeletingBulk] = useState(false);
@@ -95,8 +54,8 @@ export default function PreguntasPage() {
   });
 
   const questionSchema = z.object({
-    category: z.nativeEnum(FinancialTopic, { message: "Categoría requerida" }),
-    subtopic: z.nativeEnum(SubTopic, { message: "Subtópico requerido" }),
+    category: z.string().min(1, "Categoría requerida"),
+    subtopic: z.string().min(1, "Subtópico requerido"),
     difficulty: z.nativeEnum(Difficulty, { message: "Dificultad requerida" }),
     question: z.string().min(10, "La pregunta debe tener al menos 10 caracteres"),
     alternatives: z.array(alternativeSchema)
@@ -115,8 +74,8 @@ export default function PreguntasPage() {
   const form = useForm<QuestionFormValues>({
     resolver: zodResolver(questionSchema),
     defaultValues: {
-      category: FinancialTopic.PLANIFICACION,
-      subtopic: SubTopic.GASTOS_FIJOS_VARIABLES,
+      category: "",
+      subtopic: "",
       difficulty: Difficulty.FACIL,
       question: "",
       alternatives: [
@@ -151,6 +110,33 @@ export default function PreguntasPage() {
   }, [fetchPreguntas]);
 
   useEffect(() => {
+    const loadTaxonomy = async () => {
+      try {
+        const response = await getGenerationConfig();
+        const normalized = normalizeRuntimeTaxonomy({
+          categories: response.categories,
+          subtopics: response.subtopics,
+        });
+        setTaxonomy(normalized);
+
+        const firstCategory = normalized.categories[0] || "";
+        const firstSubtopic = normalized.subtopicsByCategory[firstCategory]?.[0] || "";
+
+        if (!form.getValues("category")) {
+          form.setValue("category", firstCategory);
+        }
+        if (!form.getValues("subtopic")) {
+          form.setValue("subtopic", firstSubtopic);
+        }
+      } catch {
+        toast.error("Error al cargar la taxonomía activa");
+      }
+    };
+
+    loadTaxonomy();
+  }, [form]);
+
+  useEffect(() => {
     setPage(1);
     setSelectedIds(new Set());
   }, [filterCategory, filterStatus, pageSize]);
@@ -175,6 +161,17 @@ export default function PreguntasPage() {
 
   const handleSaveQuestion = async (values: QuestionFormValues) => {
     try {
+      const availableSubtopics = taxonomy.subtopicsByCategory[values.category] || [];
+      if (!taxonomy.categories.includes(values.category)) {
+        toast.error("La categoría seleccionada no existe en la taxonomía activa");
+        return;
+      }
+
+      if (availableSubtopics.length > 0 && !availableSubtopics.includes(values.subtopic)) {
+        toast.error("El subtópico seleccionado no pertenece a la categoría activa");
+        return;
+      }
+
       const questionData: QuestionCreate = {
         category: values.category,
         subtopic: values.subtopic,
@@ -351,10 +348,12 @@ export default function PreguntasPage() {
             Eliminar seleccionadas ({selectedIds.size})
           </Button>
           <Button variant="default" className="w-full sm:w-auto" onClick={() => {
+            const firstCategory = taxonomy.categories[0] || "";
+            const firstSubtopic = taxonomy.subtopicsByCategory[firstCategory]?.[0] || "";
             setEditingQuestion(null);
             form.reset({
-              category: FinancialTopic.PLANIFICACION,
-              subtopic: SubTopic.GASTOS_FIJOS_VARIABLES,
+              category: firstCategory,
+              subtopic: firstSubtopic,
               difficulty: Difficulty.FACIL,
               question: "",
               alternatives: [
@@ -400,7 +399,7 @@ export default function PreguntasPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todas</SelectItem>
-                  {Object.values(FinancialTopic).map(cat => (
+                  {taxonomy.categories.map(cat => (
                     <SelectItem key={cat} value={cat}>{cat}</SelectItem>
                   ))}
                 </SelectContent>
@@ -503,8 +502,8 @@ export default function PreguntasPage() {
                             <DropdownMenuItem onClick={() => {
                               setEditingQuestion(p);
                               form.reset({
-                                category: p.category as FinancialTopic,
-                                subtopic: p.subtopic as SubTopic,
+                                category: p.category,
+                                subtopic: p.subtopic,
                                 difficulty: p.difficulty,
                                 question: p.question,
                                 alternatives: p.alternatives,
@@ -617,6 +616,10 @@ export default function PreguntasPage() {
                     control={form.control}
                     name="category"
                     render={({ field }) => {
+                      const categoryOptions = field.value && !taxonomy.categories.includes(field.value)
+                        ? [field.value, ...taxonomy.categories]
+                        : taxonomy.categories;
+
                       return (
                         <FormItem>
                           <FormLabel>Categoría</FormLabel>
@@ -624,10 +627,11 @@ export default function PreguntasPage() {
                             onValueChange={(value) => {
                               field.onChange(value);
                               // Resetear subtópico al cambiar categoría
-                              const newCategory = value as FinancialTopic;
-                              const availableSubtopics = CATEGORY_SUBTOPICS[newCategory];
+                              const availableSubtopics = taxonomy.subtopicsByCategory[value] || [];
                               if (availableSubtopics && availableSubtopics.length > 0) {
                                 form.setValue("subtopic", availableSubtopics[0]);
+                              } else {
+                                form.setValue("subtopic", "");
                               }
                             }}
                             value={field.value}
@@ -638,7 +642,7 @@ export default function PreguntasPage() {
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
-                              {Object.values(FinancialTopic).map(cat => (
+                              {categoryOptions.map(cat => (
                                 <SelectItem key={cat} value={cat}>{cat}</SelectItem>
                               ))}
                             </SelectContent>
@@ -655,8 +659,11 @@ export default function PreguntasPage() {
                     render={({ field }) => {
                       const selectedCategory = form.watch("category");
                       const availableSubtopics = selectedCategory
-                        ? CATEGORY_SUBTOPICS[selectedCategory as FinancialTopic] || []
+                        ? taxonomy.subtopicsByCategory[selectedCategory] || []
                         : [];
+                      const subtopicOptions = field.value && !availableSubtopics.includes(field.value)
+                        ? [field.value, ...availableSubtopics]
+                        : availableSubtopics;
 
                       return (
                         <FormItem>
@@ -668,7 +675,7 @@ export default function PreguntasPage() {
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent className="max-h-[300px]">
-                              {availableSubtopics.map(sub => (
+                              {subtopicOptions.map(sub => (
                                 <SelectItem key={sub} value={sub}>{sub}</SelectItem>
                               ))}
                             </SelectContent>

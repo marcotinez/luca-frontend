@@ -8,6 +8,26 @@ import axios from 'axios';
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 const API_URL = `${BASE_URL}/api/v1/auth`;
 
+export interface RegistrationTaxonomyCategory {
+  name: string;
+  description: string;
+  subcategories: Array<{
+    name: string;
+    description: string;
+    include_terms: string[];
+    exclude_terms: string[];
+    examples: string[];
+  }>;
+}
+
+export interface RegistrationTaxonomyResponse {
+  taxonomy_version: string;
+  taxonomy_categories: RegistrationTaxonomyCategory[];
+  categories: string[];
+  subtopics: Record<string, string[]>;
+  updated_at: string;
+}
+
 // ============================================================================
 // INTERCEPTOR DE REQUEST - Agrega el token automáticamente
 // ============================================================================
@@ -87,5 +107,10 @@ export async function refreshToken(): Promise<RefreshTokenResponse> {
 
 export async function updatePassword(credentials: UpdatePasswordRequest): Promise<UpdatePasswordResponse> {
   const response = await axios.post(`${API_URL}/update-password`, credentials);
+  return response.data;
+}
+
+export async function getRegistrationTaxonomy(): Promise<RegistrationTaxonomyResponse> {
+  const response = await axios.get(`${API_URL}/registration-taxonomy`);
   return response.data;
 }
