@@ -1,6 +1,5 @@
 "use client";
 
-import { Card, CardContent } from "@/components/ui/card";
 import { Clock3, Sparkles, TimerReset, TrendingUp } from "lucide-react";
 import { formatDateTime, formatPracticeMinutes } from "@/lib/learning.utils";
 
@@ -45,23 +44,26 @@ export function LearningStatsHeader({
   ];
 
   return (
-    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+    <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
       {stats.map((stat) => (
-        <Card key={stat.label} className="border-border/70">
-          <CardContent className="flex items-start justify-between p-5">
+        <article
+          key={stat.label}
+          className="animate-enter-up rounded-2xl border border-border/70 bg-card/85 p-4 shadow-sm backdrop-blur"
+        >
+          <div className="flex items-start justify-between gap-3">
             <div className="space-y-1">
-              <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                 {stat.label}
               </p>
-              <p className="text-base font-bold text-foreground">{stat.value}</p>
+              <p className="text-lg font-black tracking-tight text-foreground">{stat.value}</p>
               <p className="text-xs text-muted-foreground">{stat.subLabel}</p>
             </div>
-            <div className="rounded-xl bg-primary/10 p-2 text-primary">
-              <stat.icon className="h-5 w-5" />
+            <div className="rounded-xl border border-primary/25 bg-primary/10 p-2 text-primary">
+              <stat.icon className="h-4.5 w-4.5" />
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </article>
       ))}
-    </div>
+    </section>
   );
 }

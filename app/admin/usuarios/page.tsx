@@ -122,17 +122,17 @@ export default function UsuariosPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Gestión de Usuarios</h1>
+          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Gestión de Usuarios</h1>
           <p className="text-muted-foreground">Administra las cuentas y permisos de los usuarios de Luca.</p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={fetchUsuarios} disabled={loading}>
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+          <Button variant="outline" onClick={fetchUsuarios} disabled={loading} className="w-full sm:w-auto">
             <RefreshCcw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
             Actualizar
           </Button>
-          <Button variant="default" onClick={() => {
+          <Button variant="default" className="w-full sm:w-auto" onClick={() => {
             setEditingUser(null);
             form.reset({
               email: "",
@@ -169,7 +169,7 @@ export default function UsuariosPage() {
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full min-w-[760px] text-sm">
               <thead>
                 <tr className="border-b border-border text-muted-foreground">
                   <th className="text-left font-medium py-4 px-2">Usuario</th>
@@ -329,7 +329,7 @@ export default function UsuariosPage() {
                   </FormItem>
                 )}
               />
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <FormField
                     control={form.control}
                     name="age"

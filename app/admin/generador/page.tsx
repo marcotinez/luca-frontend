@@ -1,15 +1,18 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Difficulty } from '@/types';
 import {
+  getGenerationConfig,
   getGenerationJob,
+  GenerationConfigResponse,
   GenerationJobState,
   GenerationQuestionRequest,
   GenerationQuestionResponse,
   startGenerationJob,
 } from '@/lib/prompt-generation.api';
-import { addOpenAILog, getOpenAILogs } from '@/lib/openai-logs.storage';
+import { addOpenAILog } from '@/lib/openai-logs.storage';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -18,12 +21,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import { Loader2, Sparkles, RotateCcw } from 'lucide-react';
+import { Loader2, Settings2, Sparkles, RotateCcw, BrainCircuit, FileText, WandSparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import axios from 'axios';
+import { cn } from '@/lib/utils';
 
-const QUESTION_COUNT_OPTIONS = Array.from({ length: 20 }, (_, i) => String(i + 1));
-const SEMANTIC_LIMIT_OPTIONS = Array.from({ length: 20 }, (_, i) => String(i + 1));
+const QUESTION_COUNT_OPTIONS = ['1', '5', '10', '15', '20'];
+const SEMANTIC_LIMIT_OPTIONS = ['5', '10', '15', '20'];
 const GENERATOR_STATE_STORAGE_KEY = 'admin_generador_state_v1';
 const MODEL_OPTIONS = ['gpt-5.4-nano', 'gpt-5-nano', 'gpt-5-mini', 'o4-mini'] as const;
 const JOB_POLL_INTERVAL_MS = 800;
@@ -108,10 +112,22 @@ function getStageLabel(stage: string | undefined) {
   return STAGE_LABELS[stage] || stage;
 }
 
+function getDifficultyTone(difficulty: Difficulty) {
+  if (difficulty === Difficulty.FACIL) {
+    return 'border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700';
+  }
+  if (difficulty === Difficulty.MEDIO) {
+    return 'border-amber-500 bg-amber-500 text-white hover:bg-amber-600';
+  }
+  return 'border-rose-600 bg-rose-600 text-white hover:bg-rose-700';
+}
+
 export default function GeneradorPreguntasPage() {
   const [difficulty, setDifficulty] = useState<Difficulty>(Difficulty.FACIL);
   const [userInput, setUserInput] = useState('');
-  const [questionCount, setQuestionCount] = useState(1);
+  const [category, setCategory] = useState('');
+  const [subtopic, setSubtopic] = useState('');
+  const [questionCount, setQuestionCount] = useState(5);
 
   const [semanticLimit, setSemanticLimit] = useState(5);
   const [semanticDepth, setSemanticDepth] = useState<1 | 2>(1);
@@ -121,21 +137,37 @@ export default function GeneradorPreguntasPage() {
   const [lastRequestPayload, setLastRequestPayload] = useState<GenerationQuestionRequest | null>(null);
   const [result, setResult] = useState<GenerationQuestionResponse | null>(null);
   const [hasHydratedState, setHasHydratedState] = useState(false);
+  const [config, setConfig] = useState<GenerationConfigResponse | null>(null);
   const pollTimerRef = useRef<number | null>(null);
 
+  const availableCategories = useMemo(() => config?.categories || [], [config]);
+  const availableSubtopics = useMemo(() => {
+    return category ? config?.subtopics?.[category] || [] : [];
+  }, [category, config]);
+
   const canGenerate = useMemo(() => {
+    if (!category || !subtopic) return false;
+    if (!availableSubtopics.includes(subtopic)) return false;
     return userInput.trim().length > 0 && !!difficulty;
-  }, [userInput, difficulty]);
+  }, [userInput, difficulty, category, subtopic, availableSubtopics]);
 
   const displayedGeneratedCount = result ? result.questions.length : 0;
   const isGenerating = job?.status === 'queued' || job?.status === 'running';
-
   const stopPolling = () => {
     if (pollTimerRef.current) {
       window.clearInterval(pollTimerRef.current);
       pollTimerRef.current = null;
     }
   };
+
+  const loadGenerationConfig = useCallback(async () => {
+    try {
+      const response = await getGenerationConfig();
+      setConfig(response);
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    }
+  }, []);
 
   const applyCompletedResult = (
     currentJob: GenerationJobState,
@@ -179,6 +211,10 @@ export default function GeneradorPreguntasPage() {
   };
 
   useEffect(() => {
+    void loadGenerationConfig();
+  }, [loadGenerationConfig]);
+
+  useEffect(() => {
     if (typeof window === 'undefined') return;
 
     try {
@@ -191,6 +227,8 @@ export default function GeneradorPreguntasPage() {
       const parsedState = JSON.parse(rawState) as {
         difficulty?: Difficulty;
         userInput?: string;
+        category?: string;
+        subtopic?: string;
         questionCount?: number;
         semanticLimit?: number;
         semanticDepth?: 1 | 2;
@@ -202,6 +240,8 @@ export default function GeneradorPreguntasPage() {
 
       if (parsedState.difficulty) setDifficulty(parsedState.difficulty);
       if (typeof parsedState.userInput === 'string') setUserInput(parsedState.userInput);
+      if (typeof parsedState.category === 'string') setCategory(parsedState.category);
+      if (typeof parsedState.subtopic === 'string') setSubtopic(parsedState.subtopic);
       if (typeof parsedState.questionCount === 'number') setQuestionCount(parsedState.questionCount);
       if (typeof parsedState.semanticLimit === 'number') setSemanticLimit(parsedState.semanticLimit);
       if (parsedState.semanticDepth === 1 || parsedState.semanticDepth === 2) setSemanticDepth(parsedState.semanticDepth);
@@ -212,11 +252,6 @@ export default function GeneradorPreguntasPage() {
       if (parsedState.lastRequestPayload) setLastRequestPayload(parsedState.lastRequestPayload);
       if (parsedState.result) {
         setResult(parsedState.result);
-      } else {
-        const latestLog = getOpenAILogs()[0];
-        if (latestLog?.response) {
-          setResult(latestLog.response);
-        }
       }
     } catch {
       window.localStorage.removeItem(GENERATOR_STATE_STORAGE_KEY);
@@ -238,6 +273,8 @@ export default function GeneradorPreguntasPage() {
     const persistedState = {
       difficulty,
       userInput,
+      category,
+      subtopic,
       questionCount,
       semanticLimit,
       semanticDepth,
@@ -248,7 +285,28 @@ export default function GeneradorPreguntasPage() {
     };
 
     window.localStorage.setItem(GENERATOR_STATE_STORAGE_KEY, JSON.stringify(persistedState));
-  }, [hasHydratedState, difficulty, userInput, questionCount, semanticLimit, semanticDepth, model, job, lastRequestPayload, result]);
+  }, [hasHydratedState, difficulty, userInput, category, subtopic, questionCount, semanticLimit, semanticDepth, model, job, lastRequestPayload, result]);
+
+  useEffect(() => {
+    if (availableCategories.length === 0) {
+      if (category) setCategory('');
+      if (subtopic) setSubtopic('');
+      return;
+    }
+
+    if (!category || !availableCategories.includes(category)) {
+      const firstCategory = availableCategories[0];
+      setCategory(firstCategory);
+      const firstSubtopic = (config?.subtopics?.[firstCategory] || [])[0] || '';
+      setSubtopic(firstSubtopic);
+      return;
+    }
+
+    const subtopicsForCategory = config?.subtopics?.[category] || [];
+    if (!subtopic || !subtopicsForCategory.includes(subtopic)) {
+      setSubtopic(subtopicsForCategory[0] || '');
+    }
+  }, [availableCategories, config, category, subtopic]);
 
   useEffect(() => {
     return () => {
@@ -266,6 +324,8 @@ export default function GeneradorPreguntasPage() {
       stopPolling();
       const requestPayload: GenerationQuestionRequest = {
         user_input: userInput.trim(),
+        category,
+        subtopic,
         difficulty,
         question_count: questionCount,
         semantic_limit: semanticLimit,
@@ -296,7 +356,9 @@ export default function GeneradorPreguntasPage() {
     stopPolling();
     setDifficulty(Difficulty.FACIL);
     setUserInput('');
-    setQuestionCount(1);
+    setCategory('');
+    setSubtopic('');
+    setQuestionCount(5);
     setSemanticLimit(5);
     setSemanticDepth(1);
     setModel('gpt-5.4-nano');
@@ -312,261 +374,394 @@ export default function GeneradorPreguntasPage() {
   };
 
   return (
-    <div className="space-y-8 p-6">
-      <div className="flex items-start justify-between gap-4">
+    <div className="space-y-8 p-4 sm:p-6">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Generador de Preguntas</h1>
+          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl flex items-center gap-3">
+            <WandSparkles className="w-6 h-6 sm:w-8 sm:h-8 text-primary" />
+            Generador de Preguntas
+          </h1>
           <p className="text-muted-foreground mt-1">
-            Genera preguntas con OpenAI + búsqueda semántica para revisión admin.
+            Redacta el contexto, ajusta la recuperación semántica y genera lotes para revisión admin.
           </p>
+        </div>
+        <div className="ml-auto flex w-full flex-col items-start gap-3 sm:w-auto sm:items-end">
+          <Button asChild size="lg" className="shadow-sm">
+            <Link href="/admin/generador/configuracion">
+              <Settings2 className="w-4 h-4 mr-2" />
+              Ir a configuraciones
+            </Link>
+          </Button>
+          <div className="flex items-center gap-2 flex-wrap sm:justify-end">
+            {config?.updated_at && (
+              <Badge variant="outline">
+                Config actualizada: {new Date(config.updated_at).toLocaleString('es-CL')}
+              </Badge>
+            )}
+            {config?.taxonomy_version && (
+              <Badge variant="outline">Taxonomía: {config.taxonomy_version}</Badge>
+            )}
+            {config && (
+              <Badge variant="outline">
+                Catálogo: {config.categories.length} categorías
+              </Badge>
+            )}
+          </div>
         </div>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Formulario de generación</CardTitle>
-          <CardDescription>Define el tema, dificultad y parámetros de generación.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="space-y-2">
-              <Label>Nivel de dificultad</Label>
-              <Select
-                value={difficulty}
-                onValueChange={(value) => setDifficulty(value as Difficulty)}
-              >
-                <SelectTrigger className="h-12 border-2">
-                  <SelectValue placeholder="Selecciona un nivel" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={Difficulty.FACIL}>{Difficulty.FACIL}</SelectItem>
-                  <SelectItem value={Difficulty.MEDIO}>{Difficulty.MEDIO}</SelectItem>
-                  <SelectItem value={Difficulty.DIFICIL}>{Difficulty.DIFICIL}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-xl flex items-center gap-2">
+              <FileText className="w-5 h-5 text-primary" />
+              Contexto de generación
+            </CardTitle>
+            <CardDescription>
+              Define tema, catálogo y nivel pedagógico desde una misma superficie.
+            </CardDescription>
+          </CardHeader>
 
-            <div className="space-y-2">
-              <Label>Cantidad de preguntas</Label>
-              <Select
-                value={String(questionCount)}
-                onValueChange={(value) => setQuestionCount(Number(value))}
-              >
-                <SelectTrigger className="h-12 border-2">
-                  <SelectValue placeholder="Selecciona cantidad" />
-                </SelectTrigger>
-                <SelectContent>
-                  {QUESTION_COUNT_OPTIONS.map((option) => (
-                    <SelectItem key={option} value={option}>
-                      {option}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Modelo de generación</Label>
-              <Select value={model} onValueChange={setModel}>
-                <SelectTrigger className="h-12 border-2">
-                  <SelectValue placeholder="Selecciona modelo" />
-                </SelectTrigger>
-                <SelectContent>
-                  {MODEL_OPTIONS.map((modelOption) => (
-                    <SelectItem key={modelOption} value={modelOption}>
-                      {modelOption}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label>Tema o contexto de la pregunta</Label>
-            <Textarea
-              value={userInput}
-              onChange={(event) => setUserInput(event.target.value)}
-              rows={5}
-              placeholder="Ej: Quiero preguntas sobre presupuesto para estudiantes universitarios"
-            />
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div className="flex items-center gap-3 bg-muted/20 rounded-lg px-4 py-3 border border-dashed">
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium">Resultados semánticos</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Número de coincidencias usadas para construir contexto
-                </p>
+          <CardContent className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Categoría</Label>
+                <Select value={category} onValueChange={setCategory}>
+                  <SelectTrigger className="h-12 border-2">
+                    <SelectValue placeholder="Selecciona categoría" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableCategories.map((categoryOption) => (
+                      <SelectItem key={categoryOption} value={categoryOption}>
+                        {categoryOption}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-              <Select
-                value={String(semanticLimit)}
-                onValueChange={(value) => setSemanticLimit(Number(value))}
-              >
-                <SelectTrigger className="w-[100px] h-12 border-2 shrink-0">
-                  <SelectValue placeholder="Límite" />
-                </SelectTrigger>
-                <SelectContent>
-                  {SEMANTIC_LIMIT_OPTIONS.map((option) => (
-                    <SelectItem key={option} value={option}>
-                      {option}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+
+              <div className="space-y-2">
+                <Label>Subtópico</Label>
+                <Select
+                  value={subtopic}
+                  onValueChange={setSubtopic}
+                  disabled={!category || availableSubtopics.length === 0}
+                >
+                  <SelectTrigger className="h-12 border-2">
+                    <SelectValue placeholder="Selecciona subtópico" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableSubtopics.map((subtopicOption) => (
+                      <SelectItem key={subtopicOption} value={subtopicOption}>
+                        {subtopicOption}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
-            <div className="flex items-center gap-3 bg-muted/20 rounded-lg px-4 py-3 border border-dashed">
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium">Profundidad semántica</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {semanticDepth === 1 ? 'Contexto directo' : 'Contexto con vecinos'}
-                </p>
-              </div>
-              <div className="flex rounded-md border border-border overflow-hidden shrink-0">
-                {[1, 2].map((depthOption) => (
+            <div className="space-y-3">
+              <Label>Tema o contexto de la pregunta</Label>
+              <Textarea
+                value={userInput}
+                onChange={(event) => setUserInput(event.target.value)}
+                rows={9}
+                placeholder="Ej: Quiero preguntas sobre presupuesto para estudiantes universitarios, enfocadas en decisiones cotidianas, errores frecuentes y análisis de alternativas."
+                className="min-h-[240px] resize-y text-base leading-7"
+              />
+            </div>
+
+            <div className="space-y-3">
+              <Label>Dificultad</Label>
+              <div className="flex flex-wrap gap-2">
+                {[Difficulty.FACIL, Difficulty.MEDIO, Difficulty.DIFICIL].map((level) => (
                   <button
-                    key={depthOption}
-                    onClick={() => setSemanticDepth(depthOption as 1 | 2)}
+                    key={level}
                     type="button"
-                    className={`w-9 h-9 text-sm font-semibold transition-all ${
-                      semanticDepth === depthOption
-                        ? 'bg-foreground text-background'
-                        : 'text-muted-foreground hover:text-foreground hover:bg-muted/40'
-                    }`}
+                    onClick={() => setDifficulty(level)}
+                    className={cn(
+                      'rounded-full border px-4 py-2 text-sm font-medium transition-colors',
+                      difficulty === level
+                        ? getDifficultyTone(level)
+                        : 'border-border bg-background text-foreground hover:bg-muted'
+                    )}
                   >
-                    {depthOption}
+                    {level}
                   </button>
                 ))}
               </div>
             </div>
-          </div>
 
-          {job && (
-            <div className="space-y-2 border border-border rounded-md p-4 bg-muted/20">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline">
-                    {job.status === 'queued'
-                      ? 'En cola'
-                      : job.status === 'running'
-                        ? 'En progreso'
-                        : job.status === 'completed'
-                          ? 'Completado'
-                          : 'Error'}
-                  </Badge>
-                  <Badge variant="outline">{job.progress}%</Badge>
-                </div>
-                <span className="text-sm text-muted-foreground">job_id: {job.job_id}</span>
-              </div>
-              <Progress value={Math.max(0, Math.min(100, job.progress || 0))} />
-              <p className="text-sm text-muted-foreground">
-                {job.message || getStageLabel(job.stage)}
+            {category && availableSubtopics.length === 0 && (
+              <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-300">
+                La categoría seleccionada no tiene subtópicos. Agrega al menos uno en la configuración.
               </p>
-              {job.status === 'failed' && job.error && (
-                <p className="text-sm text-destructive">{job.error}</p>
-              )}
-            </div>
-          )}
+            )}
 
-          <div className="flex flex-wrap gap-2 justify-between">
-            <Button variant="outline" onClick={handleClearGeneratorState} disabled={isGenerating}>
-              <RotateCcw className="w-4 h-4 mr-2" />
-              Limpiar
-            </Button>
-            <Button onClick={handleGenerate} disabled={!canGenerate || isGenerating}>
-              {isGenerating ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              ) : (
-                <Sparkles className="w-4 h-4 mr-2" />
+          </CardContent>
+        </Card>
+
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-xl flex items-center gap-2">
+                <BrainCircuit className="w-5 h-5 text-primary" />
+                Parámetros y ejecución
+              </CardTitle>
+              <CardDescription>
+                Ajusta volumen, modelo y profundidad antes de generar.
+              </CardDescription>
+            </CardHeader>
+
+            <CardContent className="space-y-5">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Cantidad de preguntas</Label>
+                  <Select
+                    value={String(questionCount)}
+                    onValueChange={(value) => setQuestionCount(Number(value))}
+                  >
+                    <SelectTrigger className="h-12 border-2">
+                      <SelectValue placeholder="Selecciona cantidad" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {QUESTION_COUNT_OPTIONS.map((option) => (
+                        <SelectItem key={option} value={option}>
+                          {option}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Modelo de generación</Label>
+                  <Select value={model} onValueChange={setModel}>
+                    <SelectTrigger className="h-12 border-2">
+                      <SelectValue placeholder="Selecciona modelo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {MODEL_OPTIONS.map((modelOption) => (
+                        <SelectItem key={modelOption} value={modelOption}>
+                          {modelOption}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="rounded-xl border bg-muted/20 p-4 space-y-4">
+                <div>
+                  <p className="text-sm font-medium">Resultados semánticos</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Número de coincidencias usadas para construir contexto.
+                  </p>
+                </div>
+                <Select
+                  value={String(semanticLimit)}
+                  onValueChange={(value) => setSemanticLimit(Number(value))}
+                >
+                  <SelectTrigger className="h-12 border-2 bg-background">
+                    <SelectValue placeholder="Límite" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SEMANTIC_LIMIT_OPTIONS.map((option) => (
+                      <SelectItem key={option} value={option}>
+                        {option}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+                <div className="rounded-xl border bg-muted/20 p-4 space-y-3">
+                <div>
+                  <p className="text-sm font-medium">Profundidad semántica</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {semanticDepth === 1
+                      ? 'Recupera sólo el vecindario inmediato del concepto.'
+                      : 'Extiende la búsqueda hacia un segundo anillo de conexiones.'}
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {[1, 2].map((depthOption) => (
+                    <button
+                      key={depthOption}
+                      onClick={() => setSemanticDepth(depthOption as 1 | 2)}
+                      type="button"
+                      className={cn(
+                        'rounded-lg border px-4 py-3 text-sm font-medium transition-colors',
+                        semanticDepth === depthOption
+                          ? 'border-primary bg-primary text-primary-foreground'
+                          : 'border-border bg-background hover:bg-muted'
+                      )}
+                    >
+                      <div className="space-y-1 text-left">
+                        <p>{depthOption === 1 ? 'Directo' : 'Expandido'}</p>
+                        <p className="text-xs font-normal leading-5 opacity-80">
+                          {depthOption === 1
+                            ? 'Contexto inmediato'
+                            : 'Contexto ampliado'}
+                        </p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+                <div className="rounded-lg border bg-background/70 p-3 text-xs leading-6 text-muted-foreground">
+                  {semanticDepth === 1 ? (
+                    <p>
+                      <span className="font-medium text-foreground">Directo:</span> toma el concepto encontrado y
+                      usa sólo sus conexiones inmediatas. Sirve cuando quieres un contexto más acotado, centrado en
+                      la entidad principal y en las relaciones que salen o llegan directamente a ella.
+                    </p>
+                  ) : (
+                    <p>
+                      <span className="font-medium text-foreground">Expandido:</span> parte del mismo contexto
+                      inmediato, pero además sigue las conexiones de las entidades vecinas para incorporar un segundo
+                      nivel de relación. Eso entrega una red semántica más amplia y útil cuando el tema necesita más
+                      contexto alrededor.
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {job && (
+                <div className="space-y-3 border rounded-xl p-4 bg-muted/20">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline">
+                        {job.status === 'queued'
+                          ? 'En cola'
+                          : job.status === 'running'
+                            ? 'En progreso'
+                            : job.status === 'completed'
+                              ? 'Completado'
+                              : 'Error'}
+                      </Badge>
+                      <Badge variant="outline">{job.progress}%</Badge>
+                    </div>
+                    <span className="text-xs text-muted-foreground">job_id: {job.job_id}</span>
+                  </div>
+                  <Progress value={Math.max(0, Math.min(100, job.progress || 0))} />
+                  <p className="text-sm text-muted-foreground">
+                    {job.message || getStageLabel(job.stage)}
+                  </p>
+                  {job.status === 'failed' && job.error && (
+                    <p className="text-sm text-destructive">{job.error}</p>
+                  )}
+                </div>
               )}
-              Generar preguntas
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+
+              <div className="flex flex-wrap gap-2 justify-between">
+                <Button variant="outline" onClick={handleClearGeneratorState} disabled={isGenerating}>
+                  <RotateCcw className="w-4 h-4 mr-2" />
+                  Limpiar
+                </Button>
+                <Button onClick={handleGenerate} disabled={!canGenerate || isGenerating}>
+                  {isGenerating ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Sparkles className="w-4 h-4 mr-2" />
+                  )}
+                  Generar preguntas
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
 
       {result && (
         <Card>
-          <CardHeader>
-            <CardTitle>Resultado de generación</CardTitle>
-            <CardDescription>Preguntas creadas y guardadas con estado en revisión.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-5">
+          <CardHeader className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div className="space-y-1">
+              <CardTitle className="text-xl flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-primary" />
+                Resultado de generación
+              </CardTitle>
+              <CardDescription>Preguntas creadas y guardadas con estado en revisión.</CardDescription>
+            </div>
             <div className="flex flex-wrap gap-2">
-              <Badge variant="outline">
-                Preguntas generadas: {displayedGeneratedCount}
-              </Badge>
+              <Badge variant="outline">Preguntas: {displayedGeneratedCount}</Badge>
+              <Badge variant="outline">Semantic total: {result.semantic_total}</Badge>
+              <Badge variant="outline">{result.used_model}</Badge>
+            </div>
+          </CardHeader>
+
+          <CardContent className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="rounded-xl border bg-muted/20 p-4">
+                <p className="text-xs text-muted-foreground">Generadas</p>
+                <p className="mt-2 text-2xl font-semibold">{displayedGeneratedCount}</p>
+              </div>
+              <div className="rounded-xl border bg-muted/20 p-4">
+                <p className="text-xs text-muted-foreground">Modelo usado</p>
+                <p className="mt-2 text-base font-semibold">{result.used_model}</p>
+              </div>
+              <div className="rounded-xl border bg-muted/20 p-4">
+                <p className="text-xs text-muted-foreground">Primera creación</p>
+                <p className="mt-2 text-sm font-semibold">
+                  {result.questions[0] ? new Date(result.questions[0].created_at).toLocaleString('es-CL') : '-'}
+                </p>
+              </div>
             </div>
 
-            <div className="space-y-6">
-              <Accordion type="multiple" className="w-full border border-border rounded-md px-4">
-                {result.questions.map((question, questionIndex) => (
-                  <AccordionItem key={question.id} value={`question-${question.id}`}>
-                    <AccordionTrigger className="hover:no-underline">
-                      <div className="flex flex-wrap items-center gap-2 pr-3">
-                        <Badge variant="outline">#{questionIndex + 1}</Badge>
-                        <Badge variant="outline">{question.difficulty}</Badge>
-                        <span className="text-sm text-muted-foreground line-clamp-1">
-                          {question.question}
-                        </span>
-                      </div>
-                    </AccordionTrigger>
-                    <AccordionContent className="space-y-4">
-                      <div>
-                        <h3 className="font-semibold mb-2">Pregunta</h3>
-                        <p className="text-muted-foreground">{question.question}</p>
-                      </div>
+            <Accordion type="multiple" className="w-full rounded-md border px-4">
+              {result.questions.map((question, questionIndex) => (
+                <AccordionItem key={question.id} value={`question-${question.id}`}>
+                  <AccordionTrigger className="hover:no-underline">
+                    <div className="flex flex-wrap items-center gap-2 pr-3 text-left">
+                      <Badge variant="outline">#{questionIndex + 1}</Badge>
+                      <span className={cn('rounded-full border px-3 py-1 text-xs font-medium', getDifficultyTone(question.difficulty as Difficulty))}>
+                        {question.difficulty}
+                      </span>
+                      <span className="text-sm text-muted-foreground line-clamp-1">
+                        {question.question}
+                      </span>
+                    </div>
+                  </AccordionTrigger>
+                  <AccordionContent className="space-y-4">
+                    <div>
+                      <h3 className="font-semibold mb-2">Pregunta</h3>
+                      <p className="text-muted-foreground leading-7">{question.question}</p>
+                    </div>
 
-                      <div>
-                        <h3 className="font-semibold mb-2">Alternativas</h3>
-                        <div className="space-y-2">
-                          {question.alternatives.map((alternative, alternativeIndex) => (
-                            <div key={`${question.id}-${alternativeIndex}`} className="border border-border rounded-md p-3">
-                              <div className="flex items-center gap-2 mb-1">
-                                <Badge variant={alternative.is_correct ? 'default' : 'secondary'}>
-                                  {alternative.is_correct ? 'Correcta' : 'Incorrecta'}
-                                </Badge>
-                              </div>
-                              <p className="font-medium">{alternative.text}</p>
-                              <p className="text-sm text-muted-foreground mt-1">Feedback: {alternative.feedback}</p>
+                    <div>
+                      <h3 className="font-semibold mb-2">Alternativas</h3>
+                      <div className="grid gap-3 xl:grid-cols-2">
+                        {question.alternatives.map((alternative, alternativeIndex) => (
+                          <div key={`${question.id}-${alternativeIndex}`} className="border border-border rounded-xl p-4 bg-muted/20">
+                            <div className="flex items-center gap-2 mb-2">
+                              <Badge variant={alternative.is_correct ? 'default' : 'secondary'}>
+                                {alternative.is_correct ? 'Correcta' : 'Incorrecta'}
+                              </Badge>
                             </div>
-                          ))}
-                        </div>
+                            <p className="font-medium leading-6">{alternative.text}</p>
+                            <p className="text-sm text-muted-foreground mt-2 leading-6">{alternative.feedback}</p>
+                          </div>
+                        ))}
                       </div>
+                    </div>
 
-                      <div className="space-y-2">
-                        <h3 className="font-semibold">Metadata pedagógica</h3>
-                        <p className="text-sm text-muted-foreground">
-                          <span className="font-medium text-foreground">rag_reference:</span>{' '}
-                          {question.pedagogic_metadata.rag_reference}
-                        </p>
-                        <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                          <span className="font-medium text-foreground">complete_explanation:</span>{' '}
-                          {question.pedagogic_metadata.complete_explanation}
-                        </p>
-                      </div>
-                    </AccordionContent>
-                  </AccordionItem>
-                ))}
-              </Accordion>
-            </div>
+                    <div className="rounded-xl border bg-muted/20 p-4 space-y-2">
+                      <h3 className="font-semibold">Metadata pedagógica</h3>
+                      <p className="text-sm text-muted-foreground">
+                        <span className="font-medium text-foreground">rag_reference:</span>{' '}
+                        {question.pedagogic_metadata.rag_reference}
+                      </p>
+                      <p className="text-sm text-muted-foreground whitespace-pre-wrap leading-6">
+                        <span className="font-medium text-foreground">complete_explanation:</span>{' '}
+                        {question.pedagogic_metadata.complete_explanation}
+                      </p>
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+              ))}
+            </Accordion>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm text-muted-foreground">
-              <p>
-                <span className="font-medium text-foreground">semantic_total:</span> {result.semantic_total}
-              </p>
-              <p>
-                <span className="font-medium text-foreground">used_model:</span> {result.used_model}
-              </p>
-              <p>
-                <span className="font-medium text-foreground">primera pregunta creada:</span>{' '}
-                {result.questions[0] ? new Date(result.questions[0].created_at).toLocaleString('es-CL') : '-'}
-              </p>
-            </div>
-
-            <Accordion type="single" collapsible className="w-full border border-border rounded-md px-4">
+            <Accordion type="single" collapsible className="w-full rounded-md border px-4">
               <AccordionItem value="raw-output">
                 <AccordionTrigger className="hover:no-underline">
                   <span className="font-semibold">Raw Output</span>

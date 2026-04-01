@@ -13,19 +13,31 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   DatabaseBackup,
   RotateCcw,
   Plus,
   RefreshCw,
-  AlertTriangle
 } from "lucide-react";
 import { toast } from 'sonner';
 import { getBackups, createBackup, restoreBackup, type BackupFile } from '@/lib/admin.api';
 
-export function BackupManager() {
+interface BackupManagerProps {
+  onDatabaseChanged?: () => void | Promise<void>;
+}
+
+export function BackupManager({ onDatabaseChanged }: BackupManagerProps) {
   const [backups, setBackups] = useState<BackupFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
+  const [backupToRestore, setBackupToRestore] = useState<string | null>(null);
 
   const fetchBackups = useCallback(async () => {
     try {
@@ -48,8 +60,10 @@ export function BackupManager() {
     try {
       setProcessing(true);
       const result = await createBackup();
-      toast.success(result.message);
-      fetchBackups(); // Refresh list
+      toast.success(
+        `Backup creado: ${result.filename}. Historial de ingesta: ${result.ingestion_history_file}.`
+      );
+      await fetchBackups();
     } catch (error) {
       console.error("Error creating backup:", error);
       toast.error("Error al crear el backup");
@@ -59,14 +73,13 @@ export function BackupManager() {
   };
 
   const handleRestoreBackup = async (filename: string) => {
-    if (!confirm(`ADVERTENCIA CRÍTICA:\n\nRestaurar el backup "${filename}" eliminará TODOS los datos actuales de la base de datos.\n\n¿Estás absolutamente seguro de continuar?`)) {
-      return;
-    }
-
     try {
       setProcessing(true);
       const result = await restoreBackup(filename);
       toast.success(result.message);
+      await onDatabaseChanged?.();
+      await fetchBackups();
+      setBackupToRestore(null);
     } catch (error) {
       console.error("Error restoring backup:", error);
       toast.error("Error al restaurar el backup");
@@ -85,7 +98,7 @@ export function BackupManager() {
               Administración de Base de Datos
             </CardTitle>
             <CardDescription>
-              Gestiona copias de seguridad y restauración del sistema.
+              Gestiona backups completos del grafo y del historial de ingesta asociado.
             </CardDescription>
           </div>
           <Button
@@ -103,6 +116,11 @@ export function BackupManager() {
         </div>
       </CardHeader>
       <CardContent>
+        <div className="mb-4 rounded-lg border bg-muted/20 p-4 text-sm text-muted-foreground">
+          Cada backup nuevo guarda el grafo en un archivo <span className="font-mono text-foreground">.graphml</span> y
+          un archivo auxiliar con el historial de ingesta. Al restaurar, se intentará recuperar ambos.
+        </div>
+
         <div className="rounded-md border bg-card">
           <Table>
             <TableHeader>
@@ -135,7 +153,7 @@ export function BackupManager() {
                         variant="ghost"
                         size="sm"
                         className="text-orange-600 hover:text-orange-700 hover:bg-orange-50 dark:hover:bg-orange-900/20"
-                        onClick={() => handleRestoreBackup(backup.filename)}
+                        onClick={() => setBackupToRestore(backup.filename)}
                         disabled={processing}
                         title="Restaurar este backup (Peligroso)"
                       >
@@ -150,6 +168,46 @@ export function BackupManager() {
           </Table>
         </div>
       </CardContent>
+
+      <Dialog open={!!backupToRestore} onOpenChange={(open) => !open && setBackupToRestore(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>¿Restaurar backup completo?</DialogTitle>
+            <DialogDescription>
+              Restaurar este backup reemplazará el grafo actual y borrará el historial de ingesta actual.
+              Si existe un archivo de historial asociado al backup, también será restaurado. Si no existe,
+              el sistema quedará sin historial de ingesta.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rounded-md border border-amber-300/60 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/25 dark:text-amber-200">
+            Backup seleccionado:{" "}
+            <span className="font-mono">{backupToRestore}</span>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setBackupToRestore(null)}
+              disabled={processing}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => backupToRestore && handleRestoreBackup(backupToRestore)}
+              disabled={processing || !backupToRestore}
+              className="bg-orange-600 hover:bg-orange-700 text-white dark:bg-orange-900/45 dark:hover:bg-orange-900/65 dark:text-orange-100"
+            >
+              {processing ? (
+                <>
+                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                  Restaurando...
+                </>
+              ) : (
+                "Sí, restaurar backup completo"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

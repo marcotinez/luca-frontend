@@ -1,60 +1,132 @@
-import type { IngestionJob, UploadResponse } from '@/types/ingestion.types';
 import axios from 'axios';
+import type {
+  IngestionJob,
+  IngestionRun,
+  StartIngestionResponse,
+} from '@/types/ingestion.types';
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 const API_URL = `${BASE_URL}/api/v1/ingestion`;
 
-/**
- * Sube un documento PDF al webhook de n8n
- * @param file El archivo PDF
- * @param chunks Cantidad de chunks (se enviará como form-data si es necesario,
- *               aunque el user request solo especifica 'file' en los parametros curl,
- *               la UI pide seleccionar cantidad de chunks. Asumiremos que se envia o se usa solo para calculo local.
- *               Revisando el request del usuario: "La idea es que al seleccionar la cantidad de chunks nos muestre la cantidad de paginas que quedarán por chunk."
- *               Pero el endpoint solo muestra 'file'.
- *               Voy a enviar 'chunks' también por si acaso el backend lo soporta, o solo 'file' si es estricto.
- *               El curl del usuario solo muestra -F "file=@...".
- *               Seguiré ESTRICTAMENTE el curl del usuario para evitar errores 422.
- */
-export async function uploadDocument(
-  file: File,
-  chunks?: number
-): Promise<UploadResponse> {
-  const formData = new FormData();
-  formData.append('file', file);
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (axios.isAxiosError(error)) {
+    const detail = error.response?.data?.detail;
+    if (typeof detail === 'string' && detail.trim().length > 0) {
+      return detail;
+    }
+    if (Array.isArray(detail) && detail.length > 0) {
+      const firstIssue = detail[0];
+      if (
+        typeof firstIssue === 'object' &&
+        firstIssue !== null &&
+        'msg' in firstIssue &&
+        typeof firstIssue.msg === 'string'
+      ) {
+        return firstIssue.msg;
+      }
+    }
 
-  // Nota: El usuario pidió seleccionar chunks en UI, pero la doc de API
-  // proporcionada SOLO menciona el campo 'file'.
-  // Si el backend soportara 'chunks', lo agregariamos aqui:
-  if (chunks) {
-     formData.append('chunks', String(chunks));
+    const message = error.response?.data?.message;
+    if (typeof message === 'string' && message.trim().length > 0) {
+      return message;
+    }
   }
 
-  const response = await axios.post(`${API_URL}/upload-pdf`, formData, {
-    headers: {
-      'Content-Type': 'multipart/form-data',
-    },
-  });
-  return response.data;
+  if (error instanceof Error && error.message.trim().length > 0) {
+    return error.message;
+  }
+
+  return fallback;
 }
 
-/**
- * Obtiene el historial de ingesta (Jobs)
- */
-export async function getJobsHistory(): Promise<IngestionJob[]> {
-  const response = await axios.get(`${API_URL}/jobs`);
-  return response.data;
+function getAuthHeaders() {
+  if (typeof window === 'undefined') {
+    return {};
+  }
+
+  const token = localStorage.getItem('token');
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-/**
- * Elimina todos los jobs asociados a un nombre de archivo
- */
-export async function deleteJobsByFile(fileName: string): Promise<{ message: string }> {
-  // curl -X DELETE "http://localhost:8000/api/v1/ingestion/jobs?file_name=documento.pdf"
-  const response = await axios.delete(`${API_URL}/jobs`, {
-    params: { file_name: fileName },
-  });
-  return response.data;
+export async function startIngestion(file: File, chunks = 8): Promise<StartIngestionResponse> {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('chunks', String(chunks));
+
+  try {
+    const response = await axios.post<StartIngestionResponse>(`${API_URL}/upload-pdf`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+        ...getAuthHeaders(),
+      },
+    });
+
+    return response.data;
+  } catch (error) {
+    throw new Error(getErrorMessage(error, 'No se pudo iniciar la ingesta.'));
+  }
 }
 
+export async function getIngestionRuns(): Promise<IngestionRun[]> {
+  try {
+    const response = await axios.get<IngestionRun[]>(`${API_URL}/runs`, {
+      headers: getAuthHeaders(),
+    });
+    return response.data;
+  } catch (error) {
+    throw new Error(getErrorMessage(error, 'No se pudo obtener el historial de ingestas.'));
+  }
+}
 
+export async function getIngestionRun(runId: string): Promise<IngestionRun> {
+  try {
+    const response = await axios.get<IngestionRun>(`${API_URL}/runs/${runId}`, {
+      headers: getAuthHeaders(),
+    });
+    return response.data;
+  } catch (error) {
+    throw new Error(getErrorMessage(error, 'No se pudo obtener el estado de la ingesta.'));
+  }
+}
+
+function normalizeIngestionJob(candidate: unknown): IngestionJob | null {
+  if (!candidate || typeof candidate !== 'object') {
+    return null;
+  }
+
+  const item = candidate as Record<string, unknown>;
+  const jobId = typeof item.job_id === 'string' ? item.job_id : null;
+  if (!jobId) {
+    return null;
+  }
+
+  return {
+    job_id: jobId,
+    run_id: typeof item.run_id === 'string' ? item.run_id : null,
+    status: typeof item.status === 'string' ? item.status : 'queued',
+    stage: typeof item.stage === 'string' ? item.stage : null,
+    progress: typeof item.progress === 'number' ? item.progress : null,
+    message: typeof item.message === 'string' ? item.message : null,
+    error: typeof item.error === 'string' ? item.error : null,
+    created_at: typeof item.created_at === 'string' ? item.created_at : null,
+    updated_at: typeof item.updated_at === 'string' ? item.updated_at : null,
+  };
+}
+
+export async function getIngestionJobs(): Promise<IngestionJob[]> {
+  try {
+    const response = await axios.get<unknown>(`${API_URL}/jobs`, {
+      headers: getAuthHeaders(),
+    });
+
+    if (!Array.isArray(response.data)) {
+      return [];
+    }
+
+    return response.data
+      .map((item) => normalizeIngestionJob(item))
+      .filter((item): item is IngestionJob => item !== null);
+  } catch (error) {
+    throw new Error(getErrorMessage(error, 'No se pudo obtener el estado de jobs de ingesta.'));
+  }
+}

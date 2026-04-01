@@ -7,13 +7,13 @@ import { CircleCheckBig, CircleX } from "lucide-react";
 interface AnswerFeedbackPanelProps {
   isCorrect: boolean;
   feedback: string;
-  correctOptionId: number;
+  correctOptionLabel?: string;
 }
 
 export function AnswerFeedbackPanel({
   isCorrect,
   feedback,
-  correctOptionId,
+  correctOptionLabel,
 }: AnswerFeedbackPanelProps) {
   return (
     <Card
@@ -37,10 +37,10 @@ export function AnswerFeedbackPanel({
             </>
           )}
         </div>
-        <p className="text-sm text-foreground">{feedback}</p>
-        {!isCorrect && (
+        <p className="text-sm leading-relaxed text-foreground">{feedback}</p>
+        {!isCorrect && correctOptionLabel && (
           <p className="text-xs text-muted-foreground">
-            Respuesta correcta: opción {String.fromCharCode(65 + correctOptionId)}
+            Respuesta correcta: opción {correctOptionLabel}
           </p>
         )}
       </CardContent>

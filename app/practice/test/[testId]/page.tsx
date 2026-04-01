@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { ArrowRight, Loader2 } from "lucide-react";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { DashboardNavbar } from "@/components/DashboardNavbar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -28,6 +29,9 @@ export default function PracticeTestRunnerPage() {
     feedback: string;
     correctOptionId: number;
   } | null>(null);
+  const [pendingNextTest, setPendingNextTest] = useState<PracticeTestDetailResponse | null>(null);
+  const [currentStreak, setCurrentStreak] = useState(0);
+  const [bestStreak, setBestStreak] = useState(0);
   const questionStartRef = useRef<number>(Date.now());
   const nullQuestionRetryRef = useRef(0);
 
@@ -50,6 +54,10 @@ export default function PracticeTestRunnerPage() {
       }
       setTest(response);
       setSelectedOptionId(null);
+      setFeedback(null);
+      setPendingNextTest(null);
+      setCurrentStreak(0);
+      setBestStreak(0);
       questionStartRef.current = Date.now();
     } catch (error) {
       if (axios.isAxiosError(error) && error.response?.status === 403) {
@@ -72,13 +80,15 @@ export default function PracticeTestRunnerPage() {
     loadTest();
   }, [loadTest]);
 
-  useEffect(() => {
-    if (!feedback) return;
-    const timeout = setTimeout(() => setFeedback(null), 1800);
-    return () => clearTimeout(timeout);
-  }, [feedback]);
-
   const currentQuestion = useMemo(() => test?.current_question || null, [test]);
+
+  const correctOptionLabel = useMemo(() => {
+    if (!feedback || !currentQuestion) return undefined;
+    const correctIndex = currentQuestion.alternatives.findIndex(
+      (option) => option.option_id === feedback.correctOptionId,
+    );
+    return correctIndex >= 0 ? String.fromCharCode(65 + correctIndex) : undefined;
+  }, [feedback, currentQuestion]);
 
   const handleSelectOption = async (optionId: number) => {
     if (!test || !currentQuestion || submitting) return;
@@ -97,13 +107,16 @@ export default function PracticeTestRunnerPage() {
         feedback: response.feedback,
         correctOptionId: response.correct_option_id,
       });
-      setTest(response.test);
-      if (response.test.status === "completed") {
-        router.replace(`/practice/test/${response.test.id}/result`);
-        return;
+      if (response.is_correct) {
+        setCurrentStreak((prev) => {
+          const next = prev + 1;
+          setBestStreak((bestPrev) => Math.max(bestPrev, next));
+          return next;
+        });
+      } else {
+        setCurrentStreak(0);
       }
-      questionStartRef.current = Date.now();
-      setSelectedOptionId(null);
+      setPendingNextTest(response.test);
     } catch (error) {
       if (axios.isAxiosError(error)) {
         const status = error.response?.status;
@@ -124,21 +137,37 @@ export default function PracticeTestRunnerPage() {
     }
   };
 
+  const handleNextQuestion = () => {
+    if (!pendingNextTest) return;
+    if (pendingNextTest.status === "completed") {
+      router.replace(`/practice/test/${pendingNextTest.id}/result`);
+      return;
+    }
+    setTest(pendingNextTest);
+    setPendingNextTest(null);
+    setFeedback(null);
+    setSelectedOptionId(null);
+    questionStartRef.current = Date.now();
+  };
+
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-background pb-14">
+      <div className="min-h-screen bg-grid-soft pb-14">
         <DashboardNavbar />
-        <main className="mx-auto max-w-4xl space-y-6 px-4 py-10 sm:px-6 lg:px-8">
-          <section className="space-y-1">
+        <main className="mx-auto max-w-4xl space-y-5 px-4 py-8 sm:px-6 lg:px-8">
+          <section className="animate-enter-up rounded-2xl border border-border/70 bg-card/80 p-5 shadow-sm backdrop-blur sm:p-6">
             <h1 className="text-2xl font-black tracking-tight">Runner de práctica</h1>
-            <p className="text-sm text-muted-foreground">
-              Responde y avanza. El backend gestiona la siguiente pregunta automáticamente.
+            <p className="mt-1 text-sm text-muted-foreground">
+              Responde cada pregunta y avanza cuando revises el feedback.
             </p>
           </section>
 
           {loading ? (
             <Card>
-              <CardContent className="p-4 text-sm text-muted-foreground">Cargando test...</CardContent>
+              <CardContent className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Cargando test...
+              </CardContent>
             </Card>
           ) : !test || !currentQuestion ? (
             <Card>
@@ -154,20 +183,33 @@ export default function PracticeTestRunnerPage() {
             </Card>
           ) : (
             <>
-              <TestProgressBar answered={test.answered_questions} total={test.total_questions} />
+              <TestProgressBar
+                answered={test.answered_questions}
+                total={test.total_questions}
+                streak={currentStreak}
+                bestStreak={bestStreak}
+              />
               <QuestionCard question={currentQuestion} />
               <AlternativesList
                 alternatives={currentQuestion.alternatives}
-                disabled={submitting}
+                disabled={submitting || !!feedback}
                 selectedOptionId={selectedOptionId}
                 onSelect={handleSelectOption}
               />
               {feedback ? (
-                <AnswerFeedbackPanel
-                  isCorrect={feedback.isCorrect}
-                  feedback={feedback.feedback}
-                  correctOptionId={feedback.correctOptionId}
-                />
+                <div className="animate-enter-up space-y-3">
+                  <AnswerFeedbackPanel
+                    isCorrect={feedback.isCorrect}
+                    feedback={feedback.feedback}
+                    correctOptionLabel={correctOptionLabel}
+                  />
+                  <div className="flex justify-end">
+                    <Button onClick={handleNextQuestion} disabled={!pendingNextTest} className="rounded-lg">
+                      {pendingNextTest?.status === "completed" ? "Ver resultado" : "Siguiente pregunta"}
+                      <ArrowRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
               ) : null}
             </>
           )}

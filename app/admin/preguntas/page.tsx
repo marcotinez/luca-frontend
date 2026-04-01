@@ -72,9 +72,11 @@ export default function PreguntasPage() {
   const [preguntas, setPreguntas] = useState<QuestionResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDeletingBulk, setIsDeletingBulk] = useState(false);
+  const [isUpdatingBulkStatus, setIsUpdatingBulkStatus] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterCategory, setFilterCategory] = useState<string>("");
   const [filterStatus, setFilterStatus] = useState<string>("");
+  const [bulkStatus, setBulkStatus] = useState<string>("");
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
@@ -227,6 +229,35 @@ export default function PreguntasPage() {
     }
   };
 
+  const handleBulkStatusUpdate = async () => {
+    if (selectedIds.size === 0 || !bulkStatus) return;
+
+    const ids = Array.from(selectedIds);
+    try {
+      setIsUpdatingBulkStatus(true);
+      const results = await Promise.allSettled(
+        ids.map((id) => updateQuestion(id, { status: bulkStatus as Status }))
+      );
+      const updatedCount = results.filter((result) => result.status === "fulfilled").length;
+      const failedCount = results.length - updatedCount;
+
+      if (updatedCount > 0) {
+        toast.success(`${updatedCount} pregunta(s) actualizada(s) de estado`);
+      }
+      if (failedCount > 0) {
+        toast.error(`${failedCount} pregunta(s) no se pudieron actualizar`);
+      }
+
+      setSelectedIds(new Set());
+      setBulkStatus("");
+      fetchPreguntas();
+    } catch {
+      toast.error("Error al actualizar estado de preguntas seleccionadas");
+    } finally {
+      setIsUpdatingBulkStatus(false);
+    }
+  };
+
   const filteredPreguntas = preguntas.filter(p =>
     p.question.toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -278,25 +309,48 @@ export default function PreguntasPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="space-y-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Gestión de Preguntas</h1>
+          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Gestión de Preguntas</h1>
           <p className="text-muted-foreground">Administra el banco de preguntas de educación financiera.</p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={fetchPreguntas} disabled={loading}>
+        <div className="flex flex-wrap gap-2">
+          <Select
+            value={bulkStatus || "none"}
+            onValueChange={(val) => setBulkStatus(val === "none" ? "" : val)}
+          >
+            <SelectTrigger className="w-full sm:w-[190px]">
+              <SelectValue placeholder="Cambiar estado" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Estado masivo</SelectItem>
+              <SelectItem value={Status.EN_REVISION}>En Revisión</SelectItem>
+              <SelectItem value={Status.ACEPTADA}>Aceptada</SelectItem>
+              <SelectItem value={Status.RECHAZADA}>Rechazada</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button
+            variant="secondary"
+            className="w-full sm:w-auto"
+            disabled={selectedIds.size === 0 || !bulkStatus || loading || isUpdatingBulkStatus || isDeletingBulk}
+            onClick={handleBulkStatusUpdate}
+          >
+            {isUpdatingBulkStatus ? "Aplicando..." : `Aplicar estado (${selectedIds.size})`}
+          </Button>
+          <Button variant="outline" className="w-full sm:w-auto" onClick={fetchPreguntas} disabled={loading}>
             <RefreshCcw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
             Actualizar
           </Button>
           <Button
             variant="destructive"
-            disabled={selectedIds.size === 0 || loading || isDeletingBulk}
+            className="w-full sm:w-auto"
+            disabled={selectedIds.size === 0 || loading || isDeletingBulk || isUpdatingBulkStatus}
             onClick={() => setBulkDeleteOpen(true)}
           >
             <Trash2 className="w-4 h-4 mr-2" />
             Eliminar seleccionadas ({selectedIds.size})
           </Button>
-          <Button variant="default" onClick={() => {
+          <Button variant="default" className="w-full sm:w-auto" onClick={() => {
             setEditingQuestion(null);
             form.reset({
               category: FinancialTopic.PLANIFICACION,
@@ -378,7 +432,7 @@ export default function PreguntasPage() {
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full min-w-[980px] text-sm">
               <thead>
                 <tr className="border-b border-border text-muted-foreground">
                   <th className="text-left font-medium py-4 px-2 w-10">
@@ -480,7 +534,7 @@ export default function PreguntasPage() {
               </tbody>
             </table>
           </div>
-          <div className="mt-4 flex items-center justify-between">
+          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm text-muted-foreground">
               Seleccionadas: {selectedIds.size}
             </p>
@@ -558,7 +612,7 @@ export default function PreguntasPage() {
                 <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Información Básica</h3>
 
                 {/* Primera fila: Categoría y Subtópico */}
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <FormField
                     control={form.control}
                     name="category"
@@ -627,7 +681,7 @@ export default function PreguntasPage() {
                 </div>
 
                 {/* Segunda fila: Dificultad y Estado */}
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <FormField
                     control={form.control}
                     name="difficulty"

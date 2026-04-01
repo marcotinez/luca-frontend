@@ -117,12 +117,12 @@ export default function ConsultasPage() {
   const totalResults = totalEntities + totalRelationships + semanticResults.length;
 
   return (
-    <div className="space-y-8 p-6">
+    <div className="space-y-8 p-4 sm:p-6">
       {/* Header */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
-            <Layers className="w-8 h-8 text-primary" />
+          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl flex items-center gap-3">
+            <Layers className="w-6 h-6 sm:w-8 sm:h-8 text-primary" />
             Explorador del Grafo
           </h1>
           <p className="text-muted-foreground mt-1">
@@ -131,7 +131,7 @@ export default function ConsultasPage() {
         </div>
         {/* Pills de estadísticas */}
         {stats && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <Badge variant="outline" className="gap-1.5 text-sm py-1 px-3">
               <Database className="w-3.5 h-3.5" />
               {stats.total_nodes.toLocaleString()} nodos
@@ -146,7 +146,7 @@ export default function ConsultasPage() {
 
       {/* Panel de Búsqueda */}
       <Card className="border-2 border-primary/10 shadow-lg overflow-hidden">
-        <div className="bg-muted/30 px-6 py-4 border-b flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="bg-muted/30 px-4 sm:px-6 py-4 border-b flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="space-y-1">
             <CardTitle className="text-xl flex items-center gap-2">
               <Search className="w-5 h-5 text-primary" />
@@ -168,14 +168,14 @@ export default function ConsultasPage() {
             <TabsList className="grid grid-cols-2 h-11 p-1 bg-muted/80 rounded-full border">
               <TabsTrigger
                 value="semantic"
-                className="rounded-full data-[state=active]:bg-primary data-[state=active]:text-primary-foreground px-6"
+                className="rounded-full data-[state=active]:bg-primary data-[state=active]:text-primary-foreground px-3 sm:px-6"
               >
                 <Brain className="w-4 h-4 mr-2" />
                 Semántica
               </TabsTrigger>
               <TabsTrigger
                 value="keyword"
-                className="rounded-full data-[state=active]:bg-white data-[state=active]:shadow-sm px-6"
+                className="rounded-full data-[state=active]:bg-white data-[state=active]:shadow-sm px-3 sm:px-6"
               >
                 <Database className="w-4 h-4 mr-2" />
                 Exacta
@@ -204,9 +204,9 @@ export default function ConsultasPage() {
               )}
             </div>
 
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Select value={limit} onValueChange={setLimit}>
-                <SelectTrigger className="w-[100px] h-12 border-2">
+                <SelectTrigger className="w-[90px] sm:w-[100px] h-12 border-2">
                   <SelectValue placeholder="Límite" />
                 </SelectTrigger>
                 <SelectContent>
@@ -221,7 +221,7 @@ export default function ConsultasPage() {
               <Button
                 onClick={handleSearch}
                 disabled={loading}
-                className="h-12 px-8 text-lg font-medium shadow-md"
+                className="h-12 flex-1 sm:flex-none px-6 sm:px-8 text-base sm:text-lg font-medium shadow-md"
               >
                 {loading ? (
                   <Loader2 className="w-5 h-5 animate-spin" />
@@ -257,7 +257,7 @@ export default function ConsultasPage() {
 
               {/* Caja 2: Profundidad (solo si subgrafo activo) */}
               {expandGraph && (
-                <div className="flex items-center gap-3 w-72 shrink-0 bg-muted/20 rounded-lg px-4 py-3 border border-dashed">
+                <div className="flex items-center gap-3 w-full sm:w-72 shrink-0 bg-muted/20 rounded-lg px-4 py-3 border border-dashed">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium">Profundidad</p>
                     <p className="text-xs text-muted-foreground mt-0.5">
@@ -287,11 +287,11 @@ export default function ConsultasPage() {
 
           {/* Info de resultados */}
           {hasSearched && (
-            <div className="flex items-center justify-between pt-2 border-t text-sm">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between pt-2 border-t text-sm">
               <div className="flex items-center gap-4 text-muted-foreground">
                 <span>
                   Resultados para{' '}
-                  <strong className="text-foreground">"{query}"</strong>{' '}
+                  <strong className="text-foreground">&quot;{query}&quot;</strong>{' '}
                   en modo{' '}
                   <Badge variant="outline">
                     {searchMode === 'semantic' ? 'Semántico' : 'Exacto'}
