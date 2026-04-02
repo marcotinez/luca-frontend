@@ -12,6 +12,15 @@ export interface DomainKnowledge {
   last_practiced_at: string | null;
 }
 
+export interface SubtopicKnowledge {
+  topic: FinancialTopic;
+  subtopic: string;
+  score: number;
+  attempts: number;
+  correct_attempts: number;
+  last_practiced_at: string | null;
+}
+
 export interface PracticeHistoryEntry {
   question_id: string | null;
   topic: FinancialTopic;
@@ -31,15 +40,31 @@ export interface PracticeHistorySummary {
 
 export interface UserLearningProfile {
   domain_knowledge: DomainKnowledge[];
+  subtopic_knowledge: SubtopicKnowledge[];
   practice_history: PracticeHistoryEntry[];
   total_practice_minutes: number;
   last_practice_at: string | null;
 }
 
+export type PracticeTestSelectionMode = "category" | "recommended";
+
 export interface PracticeTestCreateRequest {
   question_count?: number;
   category?: FinancialTopic;
   subtopic?: string;
+  difficulty?: PracticeDifficulty;
+  title?: string;
+}
+
+export interface CreateCategoryPracticeTestRequest {
+  question_count?: number;
+  category: FinancialTopic;
+  difficulty?: PracticeDifficulty;
+  title?: string;
+}
+
+export interface CreateRecommendedPracticeTestRequest {
+  question_count?: number;
   difficulty?: PracticeDifficulty;
   title?: string;
 }
@@ -58,6 +83,9 @@ export interface PracticeTestDetailResponse {
   id: string;
   user_id: string;
   title: string | null;
+  selection_mode?: PracticeTestSelectionMode | null;
+  target_category?: FinancialTopic | null;
+  target_subtopic?: string | null;
   status: PracticeTestStatus;
   total_questions: number;
   answered_questions: number;
@@ -71,6 +99,9 @@ export interface PracticeTestSummaryResponse {
   id: string;
   user_id: string;
   title: string | null;
+  selection_mode?: PracticeTestSelectionMode | null;
+  target_category?: FinancialTopic | null;
+  target_subtopic?: string | null;
   status: PracticeTestStatus;
   total_questions: number;
   answered_questions: number;

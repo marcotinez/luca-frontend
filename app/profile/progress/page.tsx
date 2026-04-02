@@ -11,6 +11,7 @@ import { apiErrorMessage } from "@/lib/learning.utils";
 import type { PracticeTestSummaryResponse, UserLearningProfile } from "@/types";
 import { LearningStatsHeader } from "@/components/learning/LearningStatsHeader";
 import { DomainProgressList } from "@/components/learning/DomainProgressList";
+import { SubtopicProgressList } from "@/components/learning/SubtopicProgressList";
 import { PracticeHistoryTable } from "@/components/learning/PracticeHistoryTable";
 import { RecentAccuracyChart } from "@/components/learning/RecentAccuracyChart";
 
@@ -70,6 +71,9 @@ export default function ProfileProgressPage() {
               <section className="grid grid-cols-1 gap-6 lg:grid-cols-2">
                 <DomainProgressList domains={profile?.domain_knowledge || []} />
                 <RecentAccuracyChart summary={user.practice_history_summary || []} />
+              </section>
+              <section>
+                <SubtopicProgressList subtopics={profile?.subtopic_knowledge || []} />
               </section>
               <PracticeHistoryTable
                 history={profile?.practice_history || []}

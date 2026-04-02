@@ -1,5 +1,7 @@
 import axios from "axios";
 import type {
+  CreateCategoryPracticeTestRequest,
+  CreateRecommendedPracticeTestRequest,
   PracticeTestCreateRequest,
   PracticeTestDetailResponse,
   PracticeTestSummaryResponse,
@@ -14,6 +16,20 @@ export async function createPracticeTest(
   data: PracticeTestCreateRequest,
 ): Promise<PracticeTestDetailResponse> {
   const response = await axios.post(API_URL, data);
+  return response.data;
+}
+
+export async function createCategoryPracticeTest(
+  data: CreateCategoryPracticeTestRequest,
+): Promise<PracticeTestDetailResponse> {
+  const response = await axios.post(`${API_URL}/category`, data);
+  return response.data;
+}
+
+export async function createRecommendedPracticeTest(
+  data: CreateRecommendedPracticeTestRequest,
+): Promise<PracticeTestDetailResponse> {
+  const response = await axios.post(`${API_URL}/recommended`, data);
   return response.data;
 }
 

@@ -6,13 +6,22 @@ import { toast } from "sonner";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { DashboardNavbar } from "@/components/DashboardNavbar";
 import { CreateTestForm } from "@/components/learning/CreateTestForm";
-import { createPracticeTest, getPracticeTests } from "@/lib/learning.api";
+import {
+  createCategoryPracticeTest,
+  createRecommendedPracticeTest,
+  getPracticeTests,
+} from "@/lib/learning.api";
 import { getRegistrationTaxonomy } from "@/lib/auth.api";
 import { apiErrorMessage, formatDateTime } from "@/lib/learning.utils";
 import { normalizeRuntimeTaxonomy, type RuntimeTaxonomy } from "@/lib/taxonomy.utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import type { PracticeTestCreateRequest, PracticeTestSummaryResponse } from "@/types";
+import { Badge } from "@/components/ui/badge";
+import type {
+  CreateCategoryPracticeTestRequest,
+  CreateRecommendedPracticeTestRequest,
+  PracticeTestSummaryResponse,
+} from "@/types";
 
 export default function NewPracticeTestPage() {
   const router = useRouter();
@@ -48,14 +57,30 @@ export default function NewPracticeTestPage() {
     loadData();
   }, []);
 
-  const handleCreateTest = async (payload: PracticeTestCreateRequest) => {
+  const handleCreateCategoryTest = async (payload: CreateCategoryPracticeTestRequest) => {
     try {
       setLoading(true);
-      const test = await createPracticeTest(payload);
-      toast.success("Test creado correctamente");
+      const test = await createCategoryPracticeTest(payload);
+      toast.success("Evaluación por categoría creada");
       router.push(`/practice/test/${test.id}`);
     } catch (error) {
-      const message = apiErrorMessage(error, "No se pudo crear el test");
+      const message = apiErrorMessage(error, "No se pudo crear la evaluación por categoría");
+      toast.error(message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreateRecommendedTest = async (
+    payload: CreateRecommendedPracticeTestRequest,
+  ) => {
+    try {
+      setLoading(true);
+      const test = await createRecommendedPracticeTest(payload);
+      toast.success("Evaluación recomendada creada");
+      router.push(`/practice/test/${test.id}`);
+    } catch (error) {
+      const message = apiErrorMessage(error, "No se pudo crear la evaluación recomendada");
       toast.error(message);
     } finally {
       setLoading(false);
@@ -70,9 +95,9 @@ export default function NewPracticeTestPage() {
           <section className="lg:col-span-3">
             <CreateTestForm
               loading={loading || loadingTaxonomy}
-              onSubmit={handleCreateTest}
+              onSubmitCategory={handleCreateCategoryTest}
+              onSubmitRecommended={handleCreateRecommendedTest}
               categories={taxonomy.categories}
-              subtopicsByCategory={taxonomy.subtopicsByCategory}
             />
           </section>
 
@@ -107,9 +132,16 @@ export default function NewPracticeTestPage() {
                     >
                       <div>
                         <p className="font-semibold">{test.title || "Test sin título"}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {test.correct_answers}/{test.total_questions} correctas
-                        </p>
+                        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                          <span>{test.correct_answers}/{test.total_questions} correctas</span>
+                          {test.selection_mode ? (
+                            <Badge variant="outline" className="h-5">
+                              {test.selection_mode === "recommended" ? "Recomendada" : "Por categoría"}
+                            </Badge>
+                          ) : null}
+                          {test.target_category ? <span>{test.target_category}</span> : null}
+                          {test.target_subtopic ? <span>{test.target_subtopic}</span> : null}
+                        </div>
                       </div>
                       <p className="text-xs text-muted-foreground sm:text-right">{formatDateTime(test.created_at)}</p>
                     </button>

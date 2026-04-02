@@ -2,10 +2,15 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Trophy, BarChart3 } from "lucide-react";
+import type { PracticeTestSelectionMode } from "@/types";
 
 interface TestResultSummaryProps {
   title?: string | null;
+  selectionMode?: PracticeTestSelectionMode | null;
+  targetCategory?: string | null;
+  targetSubtopic?: string | null;
   correctAnswers: number;
   totalQuestions: number;
   onViewProgress: () => void;
@@ -14,6 +19,9 @@ interface TestResultSummaryProps {
 
 export function TestResultSummary({
   title,
+  selectionMode,
+  targetCategory,
+  targetSubtopic,
   correctAnswers,
   totalQuestions,
   onViewProgress,
@@ -32,6 +40,17 @@ export function TestResultSummary({
       </CardHeader>
       <CardContent className="space-y-6">
         {title ? <p className="text-sm text-muted-foreground">{title}</p> : null}
+        {selectionMode || targetCategory || targetSubtopic ? (
+          <div className="flex flex-wrap gap-2">
+            {selectionMode ? (
+              <Badge variant="outline">
+                Modo: {selectionMode === "recommended" ? "Recomendado" : "Por categoría"}
+              </Badge>
+            ) : null}
+            {targetCategory ? <Badge variant="secondary">{targetCategory}</Badge> : null}
+            {targetSubtopic ? <Badge variant="secondary">{targetSubtopic}</Badge> : null}
+          </div>
+        ) : null}
         <div className="rounded-xl border border-border/60 bg-background/70 p-4">
           <p className="text-3xl font-black">{correctAnswers}/{totalQuestions}</p>
           <p className="text-sm text-muted-foreground">Puntaje bruto</p>

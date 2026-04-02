@@ -9,6 +9,7 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { DashboardNavbar } from "@/components/DashboardNavbar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { getPracticeTest, submitPracticeTestAnswer } from "@/lib/learning.api";
 import { apiErrorMessage } from "@/lib/learning.utils";
 import type { PracticeTestDetailResponse } from "@/types";
@@ -160,6 +161,21 @@ export default function PracticeTestRunnerPage() {
             <p className="mt-1 text-sm text-muted-foreground">
               Responde cada pregunta y avanza cuando revises el feedback.
             </p>
+            {test ? (
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                {test.selection_mode ? (
+                  <Badge variant="outline">
+                    Modo: {test.selection_mode === "recommended" ? "Recomendado" : "Por categoría"}
+                  </Badge>
+                ) : null}
+                {test.target_category ? (
+                  <Badge variant="secondary">Categoría: {test.target_category}</Badge>
+                ) : null}
+                {test.target_subtopic ? (
+                  <Badge variant="secondary">Foco: {test.target_subtopic}</Badge>
+                ) : null}
+              </div>
+            ) : null}
           </section>
 
           {loading ? (

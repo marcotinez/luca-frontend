@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowRight, Clock3, FileText, Plus } from "lucide-react";
+import { ArrowRight, Flame, Plus } from "lucide-react";
 import { DashboardNavbar } from "@/components/DashboardNavbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,11 +12,8 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useAuth } from "@/hooks/useAuth";
 import { getLearningProfile } from "@/lib/users.api";
 import { createPracticeTest, getPracticeTests } from "@/lib/learning.api";
-import { apiErrorMessage, formatDateTime } from "@/lib/learning.utils";
+import { apiErrorMessage } from "@/lib/learning.utils";
 import type { PracticeTestSummaryResponse, UserLearningProfile } from "@/types";
-import { LearningStatsHeader } from "./LearningStatsHeader";
-import { DomainProgressList } from "./DomainProgressList";
-import { RecentAccuracyChart } from "./RecentAccuracyChart";
 
 export function StudentDashboard() {
   const { user } = useAuth();
@@ -26,14 +23,12 @@ export function StudentDashboard() {
   );
   const [summary, setSummary] = useState(user?.practice_history_summary || []);
   const [tests, setTests] = useState<PracticeTestSummaryResponse[]>([]);
-  const [loading, setLoading] = useState(true);
   const [creatingTopic, setCreatingTopic] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
 
     const loadData = async () => {
-      setLoading(true);
       try {
         const [profile, testList] = await Promise.all([
           getLearningProfile(user.id),
@@ -44,16 +39,14 @@ export function StudentDashboard() {
         setSummary(user.practice_history_summary || []);
       } catch (error) {
         toast.error(apiErrorMessage(error, "No se pudo cargar el dashboard de aprendizaje"));
-      } finally {
-        setLoading(false);
       }
     };
 
     loadData();
   }, [user]);
 
-  const inProgressTests = useMemo(
-    () => tests.filter((test) => test.status !== "completed").length,
+  const activeTests = useMemo(
+    () => tests.filter((test) => test.status !== "completed"),
     [tests],
   );
 
@@ -80,6 +73,46 @@ export function StudentDashboard() {
     });
   }, [user?.profile.interests]);
 
+  const weakestTopics = useMemo(() => {
+    const fromSummary = [...summary]
+      .filter((item) => item.total_seen > 0)
+      .sort((a, b) => a.recent_accuracy - b.recent_accuracy)
+      .slice(0, 3)
+      .map((item) => item.topic);
+
+    if (fromSummary.length > 0) {
+      return fromSummary;
+    }
+
+    const fromDomains = [...(learningProfile?.domain_knowledge || [])]
+      .filter((item) => item.attempts > 0)
+      .sort((a, b) => a.score - b.score)
+      .slice(0, 3)
+      .map((item) => item.topic);
+
+    return fromDomains;
+  }, [learningProfile?.domain_knowledge, summary]);
+
+  const suggestedTopics = useMemo(() => {
+    const ordered = isNewStudent
+      ? recommendedTopics
+      : [...weakestTopics, ...recommendedTopics];
+
+    return ordered.filter((topic, index) => ordered.indexOf(topic) === index).slice(0, 4);
+  }, [isNewStudent, recommendedTopics, weakestTopics]);
+
+  const userEmail = user?.email || "estudiante";
+  const currentStreak = user?.gamification.current_streak || 0;
+
+  const userName = useMemo(() => {
+    const emailName = userEmail.split("@")[0] || "estudiante";
+    return emailName
+      .split(/[._-]/)
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
+  }, [userEmail]);
+
   const handleCreateDiagnostic = async (topic?: string) => {
     try {
       setCreatingTopic(topic || "general");
@@ -104,170 +137,227 @@ export function StudentDashboard() {
       <div className="min-h-screen bg-grid-soft pb-20">
         <DashboardNavbar />
         <main className="mx-auto max-w-7xl space-y-7 px-4 py-8 sm:px-6 lg:px-8">
-          {isNewStudent ? (
-            <>
-              <section className="animate-enter-up rounded-2xl border border-primary/20 bg-card/80 p-5 shadow-sm backdrop-blur sm:p-6">
-                <div className="space-y-5">
-                  <div className="space-y-3">
-                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary/80">
-                      Primeros pasos
-                    </p>
-                    <h1 className="text-2xl font-black tracking-tight sm:text-3xl">
-                      Comencemos ✨
+          <section className="animate-enter-up rounded-3xl border border-border/70 bg-card/80 shadow-sm backdrop-blur">
+            <div className="grid grid-cols-1 gap-6 p-6 sm:p-8 lg:grid-cols-[1.5fr_0.85fr] lg:items-stretch">
+              <div className="space-y-6">
+                <div className="space-y-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary/80">
+                    {isNewStudent ? "Bienvenida" : "Inicio"}
+                  </p>
+                  <div className="space-y-2">
+                    <h1 className="text-3xl font-black tracking-tight sm:text-4xl">
+                      {`Hola, ${userName}.`}
                     </h1>
-                    <p className="max-w-2xl text-sm text-muted-foreground">
-                      Esta es tu primera vez en Luca. Empecemos con unas evaluaciones breves para
-                      entender tu punto de partida y preparar tu ruta de aprendizaje.
+                    <p className="max-w-3xl text-sm text-muted-foreground sm:text-base">
+                      {isNewStudent
+                        ? "Realiza tus pruebas de diagnóstico para que Luca pueda personalizar mejor tu experiencia."
+                        : "Encuentra recomendaciones útiles, inicia una nueva evaluación y revisa tu progreso cuando lo necesites."}
                     </p>
                   </div>
                 </div>
-              </section>
 
-              <section className="animate-enter-up-delay">
-                <Card className="border-border/70 bg-card/80 shadow-sm backdrop-blur">
-                  <CardContent className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 sm:p-5">
-                    {recommendedTopics.length === 0 ? (
-                      <div className="rounded-xl border border-border/60 bg-background/70 p-4 text-sm text-muted-foreground">
-                        No hay categorías seleccionadas todavía. Puedes comenzar con una evaluación general.
-                      </div>
-                    ) : (
-                      recommendedTopics.map((topic) => (
-                        <article
-                          key={topic}
-                          className="rounded-2xl border border-border/60 bg-background/80 p-4"
-                        >
-                          <div className="space-y-3">
-                            <div className="space-y-1">
-                              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary/80">
-                                Evaluación inicial
-                              </p>
-                              <h3 className="font-semibold text-foreground">{topic}</h3>
-                              <p className="text-sm text-muted-foreground">
-                                Responde una prueba breve para medir tu nivel en esta categoría.
-                              </p>
-                            </div>
-                            <Button
-                              className="w-full justify-between rounded-xl"
-                              disabled={creatingTopic !== null}
-                              onClick={() => handleCreateDiagnostic(topic)}
-                            >
-                              {creatingTopic === topic ? "Creando..." : "Hacer evaluación"}
-                              <ArrowRight className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </article>
-                      ))
-                    )}
-                  </CardContent>
-                </Card>
-              </section>
-            </>
-          ) : (
-            <>
-          <section className="animate-enter-up rounded-2xl border border-border/70 bg-card/70 p-5 shadow-sm backdrop-blur sm:p-6">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="space-y-2">
-                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary/80">
-                  Panel de práctica
-                </p>
-                <h1 className="text-2xl font-black tracking-tight sm:text-3xl">
-                  Dashboard de aprendizaje
-                </h1>
-                <p className="max-w-2xl text-sm text-muted-foreground">
-                  Revisa tu progreso por tema, detecta brechas y arranca un nuevo test cuando lo
-                  necesites.
-                </p>
-                <div className="flex flex-wrap items-center gap-2 pt-1">
-                  <Badge variant="secondary" className="gap-1.5 px-3 py-1">
-                    <FileText className="h-3.5 w-3.5" />
-                    Tests activos: {inProgressTests}
-                  </Badge>
-                  <Badge variant="outline" className="gap-1.5 px-3 py-1">
-                    <Clock3 className="h-3.5 w-3.5" />
-                    Datos actualizados
-                  </Badge>
+                <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+                  {!isNewStudent ? (
+                    <Button
+                      size="lg"
+                      className="h-11 w-full rounded-xl px-5 sm:w-auto"
+                      onClick={() => router.push("/practice/new")}
+                    >
+                      <Plus className="h-4 w-4" />
+                      Nueva evaluación
+                    </Button>
+                  ) : null}
+                  <Button
+                    size="lg"
+                    variant="outline"
+                    className="h-11 w-full rounded-xl px-5 sm:w-auto"
+                    onClick={() => router.push("/profile/progress")}
+                  >
+                    <span className="whitespace-nowrap">Ver progreso completo</span>
+                    <ArrowRight className="h-4 w-4" />
+                  </Button>
                 </div>
               </div>
-              <Button
-                size="lg"
-                className="h-11 rounded-xl px-5"
-                onClick={() => router.push("/practice/new")}
-              >
-                <Plus className="h-4 w-4" />
-                Comenzar práctica
-              </Button>
+
+              <div className="hidden items-center justify-center lg:flex lg:justify-end">
+                <div className="flex min-h-[200px] w-full max-w-[250px] flex-col items-center justify-center rounded-[1.75rem] border border-border/60 bg-background/85 px-5 py-6 text-center">
+                  <div className="mb-4 rounded-[1.15rem] bg-orange-500/12 p-3.5 text-orange-500">
+                    <Flame className="h-8 w-8" />
+                  </div>
+                  <p className="text-5xl font-black tracking-tight text-foreground">
+                    {currentStreak}
+                  </p>
+                  <p className="mt-2 text-xs font-black uppercase tracking-[0.28em] text-muted-foreground">
+                    Días racha
+                  </p>
+                </div>
+              </div>
             </div>
           </section>
 
-          <LearningStatsHeader
-            totalPracticeMinutes={learningProfile?.total_practice_minutes || 0}
-            lastPracticeAt={learningProfile?.last_practice_at || null}
-            totalXp={user.gamification.total_xp}
-            domainCount={learningProfile?.domain_knowledge?.length || 0}
-          />
-
-          <section className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-            <DomainProgressList domains={learningProfile?.domain_knowledge || []} />
-            <RecentAccuracyChart summary={summary} />
-          </section>
-
-          <section className="animate-enter-up-delay">
-            <Card className="border-border/70 bg-card/80 shadow-sm backdrop-blur">
-              <CardHeader className="flex flex-row items-center justify-between border-b border-border/60 pb-4">
-                <div>
-                  <CardTitle className="text-lg">Tests recientes</CardTitle>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Abre un test para continuar o revisar su resultado.
-                  </p>
-                </div>
-                <Button variant="ghost" className="rounded-lg" onClick={() => router.push("/practice/new")}>
-                  Nuevo test
-                </Button>
-              </CardHeader>
-              <CardContent className="space-y-2 p-4 sm:p-5">
-                {loading ? (
-                  <p className="text-sm text-muted-foreground">Cargando tests...</p>
-                ) : tests.length === 0 ? (
+          {isNewStudent ? (
+            <section className="grid grid-cols-1 gap-5 xl:grid-cols-[1.1fr_0.9fr]">
+              <Card className="border-border/70 bg-card/80 shadow-sm backdrop-blur">
+                <CardHeader className="border-b border-border/60 pb-4">
+                  <CardTitle className="text-lg">Pruebas de diagnóstico</CardTitle>
                   <p className="text-sm text-muted-foreground">
-                    No hay tests todavía. Crea uno para empezar.
+                    Empieza por aquí para construir tu línea base en los temas que te interesan.
                   </p>
-                ) : (
-                  tests.map((test) => (
-                    <button
-                      key={test.id}
-                      type="button"
-                      className="group flex w-full items-center justify-between gap-3 rounded-xl border border-border/60 bg-background/80 px-3 py-3 text-left transition-all hover:-translate-y-0.5 hover:border-primary/35 hover:bg-background"
-                      onClick={() =>
-                        router.push(
-                          test.status === "completed"
-                            ? `/practice/test/${test.id}/result`
-                            : `/practice/test/${test.id}`,
-                        )
-                      }
-                    >
-                      <div className="space-y-1">
-                        <p className="font-semibold text-foreground">{test.title || "Test sin título"}</p>
-                        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                          <span>
-                            {test.correct_answers}/{test.total_questions} correctas
-                          </span>
-                          <span className="h-1 w-1 rounded-full bg-muted-foreground/50" />
-                          <span>{formatDateTime(test.created_at)}</span>
+                </CardHeader>
+                <CardContent className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 sm:p-5">
+                  {recommendedTopics.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-border/60 bg-background/70 p-4 text-sm text-muted-foreground sm:col-span-2">
+                      No hay temas seleccionados todavía. Puedes comenzar con un diagnóstico general.
+                    </div>
+                  ) : (
+                    recommendedTopics.map((topic) => (
+                      <article
+                        key={topic}
+                        className="rounded-2xl border border-border/60 bg-background/80 p-4"
+                      >
+                        <div className="space-y-3">
+                          <div className="space-y-1">
+                            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary/80">
+                              Diagnóstico inicial
+                            </p>
+                            <h3 className="font-semibold text-foreground">{topic}</h3>
+                            <p className="text-sm text-muted-foreground">
+                              Responde una prueba breve para medir tu nivel actual en esta categoría.
+                            </p>
+                          </div>
+                          <Button
+                            className="w-full justify-between rounded-xl"
+                            disabled={creatingTopic !== null}
+                            onClick={() => handleCreateDiagnostic(topic)}
+                          >
+                            {creatingTopic === topic ? "Creando..." : "Hacer diagnóstico"}
+                            <ArrowRight className="h-4 w-4" />
+                          </Button>
                         </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Badge variant={test.status === "completed" ? "default" : "secondary"}>
-                          {test.status === "completed" ? "Completado" : "En curso"}
-                        </Badge>
-                        <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-                      </div>
-                    </button>
-                  ))
-                )}
-              </CardContent>
-            </Card>
-          </section>
-            </>
+                      </article>
+                    ))
+                  )}
+                </CardContent>
+              </Card>
+
+              <div className="space-y-4">
+                {activeTests.length > 0 ? (
+                  <Card className="border-border/70 bg-card/80 shadow-sm backdrop-blur">
+                    <CardHeader className="border-b border-border/60 pb-4">
+                      <CardTitle className="text-lg">Continuidad</CardTitle>
+                      <p className="text-sm text-muted-foreground">
+                        Tienes diagnósticos pendientes para retomar.
+                      </p>
+                    </CardHeader>
+                    <CardContent className="space-y-3 p-4 sm:p-5">
+                      {activeTests.slice(0, 2).map((test) => (
+                        <button
+                          key={test.id}
+                          type="button"
+                          className="flex w-full items-center justify-between rounded-2xl border border-border/60 bg-background/80 px-4 py-4 text-left transition-colors hover:border-primary/35"
+                          onClick={() => router.push(`/practice/test/${test.id}`)}
+                        >
+                          <div className="space-y-1">
+                            <p className="text-sm font-semibold">
+                              {test.title || "Diagnóstico en curso"}
+                            </p>
+                            <p className="text-sm text-muted-foreground">
+                              {test.answered_questions}/{test.total_questions} preguntas respondidas
+                            </p>
+                          </div>
+                          <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                        </button>
+                      ))}
+                    </CardContent>
+                  </Card>
+                ) : null}
+              </div>
+            </section>
+          ) : (
+            <section className="grid grid-cols-1 gap-5 xl:grid-cols-[1.1fr_0.9fr]">
+              <Card className="border-border/70 bg-card/80 shadow-sm backdrop-blur">
+                <CardHeader className="border-b border-border/60 pb-4">
+                  <CardTitle className="text-lg">Qué te conviene hacer ahora</CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    Te sugerimos evaluaciones breves según tus intereses y tus temas más débiles.
+                  </p>
+                </CardHeader>
+                <CardContent className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 sm:p-5">
+                  {suggestedTopics.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-border/60 bg-background/70 p-4 text-sm text-muted-foreground sm:col-span-2">
+                      No hay categorías sugeridas todavía. Puedes empezar con una evaluación general.
+                    </div>
+                  ) : (
+                    suggestedTopics.map((topic) => (
+                      <article
+                        key={topic}
+                        className="rounded-2xl border border-border/60 bg-background/80 p-4"
+                      >
+                        <div className="space-y-3">
+                          <div className="space-y-1">
+                            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary/80">
+                              {weakestTopics.includes(topic) ? "Refuerzo sugerido" : "Evaluación sugerida"}
+                            </p>
+                            <h3 className="font-semibold text-foreground">{topic}</h3>
+                            <p className="text-sm text-muted-foreground">
+                              {weakestTopics.includes(topic)
+                                ? "Conviene reforzar este tema con una práctica breve."
+                                : "Responde una evaluación corta para medir tu nivel en esta categoría."}
+                            </p>
+                          </div>
+                          <Button
+                            className="w-full justify-between rounded-xl"
+                            disabled={creatingTopic !== null}
+                            onClick={() => handleCreateDiagnostic(topic)}
+                          >
+                            {creatingTopic === topic ? "Creando..." : "Iniciar evaluación"}
+                            <ArrowRight className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </article>
+                    ))
+                  )}
+                </CardContent>
+              </Card>
+
+              <div className="space-y-4">
+                {activeTests.length > 0 ? (
+                  <Card className="border-border/70 bg-card/80 shadow-sm backdrop-blur">
+                    <CardHeader className="border-b border-border/60 pb-4">
+                      <CardTitle className="text-lg">Continuidad</CardTitle>
+                      <p className="text-sm text-muted-foreground">
+                        Tienes evaluaciones pendientes para retomar.
+                      </p>
+                    </CardHeader>
+                    <CardContent className="space-y-3 p-4 sm:p-5">
+                      {activeTests.slice(0, 2).map((test) => (
+                        <button
+                          key={test.id}
+                          type="button"
+                          className="flex w-full items-center justify-between rounded-2xl border border-border/60 bg-background/80 px-4 py-4 text-left transition-colors hover:border-primary/35"
+                          onClick={() => router.push(`/practice/test/${test.id}`)}
+                        >
+                        <div className="space-y-1">
+                          <p className="text-sm font-semibold">
+                            {test.title || "Evaluación en curso"}
+                          </p>
+                          <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                            <span>{test.answered_questions}/{test.total_questions} preguntas respondidas</span>
+                            {test.selection_mode ? (
+                              <Badge variant="outline">
+                                {test.selection_mode === "recommended" ? "Recomendada" : "Por categoría"}
+                              </Badge>
+                            ) : null}
+                          </div>
+                        </div>
+                          <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                        </button>
+                      ))}
+                    </CardContent>
+                  </Card>
+                ) : null}
+              </div>
+            </section>
           )}
         </main>
       </div>
