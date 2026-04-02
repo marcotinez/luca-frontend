@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from "next-themes";
-import { User, LogOut, Sun, Moon, ChevronDown, ShieldCheck, BarChart3 } from 'lucide-react';
+import { User, LogOut, Sun, Moon, ChevronDown, ShieldCheck, BarChart3, Flame, House } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -31,6 +31,8 @@ export function DashboardNavbar() {
   const [showLogoutModal, setShowLogoutModal] = useState(false);
 
   const userInitials = user?.email?.substring(0, 2).toUpperCase() || 'LU';
+  const currentStreak = user?.gamification.current_streak || 0;
+  const streakIsActive = currentStreak > 0;
 
   return (
     <>
@@ -47,6 +49,17 @@ export function DashboardNavbar() {
           </div>
 
           <div className="flex items-center gap-3">
+            <div
+              className={`inline-flex h-9 items-center gap-1.5 rounded-full border px-3 text-sm font-bold sm:hidden ${
+                streakIsActive
+                  ? "border-orange-200 bg-orange-50 text-orange-600 dark:border-orange-500/25 dark:bg-orange-500/10 dark:text-orange-400"
+                  : "border-border bg-muted/50 text-muted-foreground"
+              }`}
+            >
+              <Flame className="h-4 w-4" />
+              <span>{currentStreak}</span>
+            </div>
+
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="relative h-10 w-auto gap-2 px-2 rounded-full hover:bg-accent transition-colors">
@@ -69,6 +82,11 @@ export function DashboardNavbar() {
                 </DropdownMenuLabel>
 
                 {/* 1. Perfil */}
+                <DropdownMenuItem onClick={() => router.push('/dashboard')} className="cursor-pointer py-2.5">
+                  <House className="mr-2 h-4 w-4" />
+                  <span>Inicio</span>
+                </DropdownMenuItem>
+
                 <DropdownMenuItem onClick={() => router.push('/perfil')} className="cursor-pointer py-2.5">
                   <User className="mr-2 h-4 w-4" />
                   <span>Perfil</span>

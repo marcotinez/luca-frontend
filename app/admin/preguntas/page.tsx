@@ -304,6 +304,21 @@ export default function PreguntasPage() {
     }
   };
 
+  const openEditQuestion = (question: QuestionResponse) => {
+    setEditingQuestion(question);
+    form.reset({
+      category: question.category,
+      subtopic: question.subtopic,
+      difficulty: question.difficulty,
+      question: question.question,
+      alternatives: question.alternatives,
+      rag_reference: question.pedagogic_metadata.rag_reference,
+      complete_explanation: question.pedagogic_metadata.complete_explanation,
+      status: question.status,
+    });
+    setIsQuestionDialogOpen(true);
+  };
+
   return (
     <div className="space-y-6">
       <div className="space-y-4">
@@ -376,14 +391,14 @@ export default function PreguntasPage() {
 
       <Card>
         <CardHeader>
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="space-y-4">
             <div>
               <CardTitle>Listado de Preguntas</CardTitle>
               <CardDescription>
                 Página {page}. Mostrando {filteredPreguntas.length} de {preguntas.length} preguntas cargadas.
               </CardDescription>
             </div>
-            <div className="flex flex-col md:flex-row gap-2">
+            <div className="flex flex-col gap-2 lg:flex-row">
               <div className="relative w-full md:w-64">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
@@ -441,7 +456,7 @@ export default function PreguntasPage() {
                       aria-label="Seleccionar todas las preguntas visibles"
                     />
                   </th>
-                  <th className="text-left font-medium py-4 px-2">Pregunta</th>
+                  <th className="text-left font-medium py-4 px-2 w-[360px]">Pregunta</th>
                   <th className="text-left font-medium py-4 px-2">Categoría</th>
                   <th className="text-left font-medium py-4 px-2">Dificultad</th>
                   <th className="text-left font-medium py-4 px-2">Estado</th>
@@ -464,15 +479,20 @@ export default function PreguntasPage() {
                   </tr>
                 ) : (
                   filteredPreguntas.map((p) => (
-                    <tr key={p.id} className="border-b border-border/50 hover:bg-muted/50 transition-colors">
+                    <tr
+                      key={p.id}
+                      className="border-b border-border/50 transition-colors hover:bg-muted/50 cursor-pointer"
+                      onClick={() => openEditQuestion(p)}
+                    >
                       <td className="py-4 px-2">
                         <Checkbox
                           checked={selectedIds.has(p.id)}
                           onCheckedChange={(checked) => toggleSelectQuestion(p.id, checked === true)}
                           aria-label={`Seleccionar pregunta ${p.id}`}
+                          onClick={(event) => event.stopPropagation()}
                         />
                       </td>
-                      <td className="py-4 px-2 max-w-md">
+                      <td className="py-4 px-2 max-w-[360px]">
                         <span className="font-medium text-foreground line-clamp-2">{p.question}</span>
                         <span className="text-xs text-muted-foreground block mt-1">{p.subtopic}</span>
                       </td>
@@ -491,28 +511,21 @@ export default function PreguntasPage() {
                         </span>
                       </td>
                       <td className="py-4 px-2 text-right">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={(event) => event.stopPropagation()}
+                            >
+                              <span className="sr-only">Abrir acciones</span>
                               <MoreVertical className="h-4 w-4" />
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
                             <DropdownMenuLabel>Acciones</DropdownMenuLabel>
-                            <DropdownMenuItem onClick={() => {
-                              setEditingQuestion(p);
-                              form.reset({
-                                category: p.category,
-                                subtopic: p.subtopic,
-                                difficulty: p.difficulty,
-                                question: p.question,
-                                alternatives: p.alternatives,
-                                rag_reference: p.pedagogic_metadata.rag_reference,
-                                complete_explanation: p.pedagogic_metadata.complete_explanation,
-                                status: p.status,
-                              });
-                              setIsQuestionDialogOpen(true);
-                            }}>
+                            <DropdownMenuItem onClick={() => openEditQuestion(p)}>
                               <Pencil className="w-4 h-4 mr-2" />
                               Editar
                             </DropdownMenuItem>

@@ -94,7 +94,14 @@ export default function OpenAILogsPage() {
                 <div className="flex flex-wrap items-center gap-2 pr-3">
                   <Badge variant="outline">#{index + 1}</Badge>
                   <Badge variant="outline">{new Date(log.created_at).toLocaleString('es-CL')}</Badge>
-                  <Badge variant="outline">Modelo: {log.response.used_model}</Badge>
+                  <Badge variant="outline">
+                    Estado: {log.response.status === 'failed'
+                      ? 'Fallida'
+                      : log.response.status === 'completed_partial'
+                        ? 'Parcial'
+                        : 'Completada'}
+                  </Badge>
+                  <Badge variant="outline">Modelo: {log.response.used_model || '-'}</Badge>
                   <Badge variant="outline">Preguntas: {log.response.questions.length}</Badge>
                   <span className="text-sm text-muted-foreground line-clamp-1">
                     {log.request.user_input}
@@ -140,6 +147,40 @@ export default function OpenAILogsPage() {
                   </Card>
                 )}
 
+                {(log.response.failure_stage || (log.response.validation_issues?.length || 0) > 0) && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base">Contexto del fallo</CardTitle>
+                      <CardDescription>
+                        Metadatos de validación devueltos por el backend cuando la generación no pudo completarse.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      {log.response.failure_stage ? (
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            Etapa
+                          </p>
+                          <p className="text-sm">{log.response.failure_stage}</p>
+                        </div>
+                      ) : null}
+
+                      {(log.response.validation_issues?.length || 0) > 0 ? (
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            Validation Issues
+                          </p>
+                          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-foreground">
+                            {log.response.validation_issues?.map((issue, issueIndex) => (
+                              <li key={`${log.id}-issue-${issueIndex}`}>{issue}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+                    </CardContent>
+                  </Card>
+                )}
+
                 <Card>
                   <CardHeader>
                     <CardTitle className="text-base">Respuesta resumida</CardTitle>
@@ -147,9 +188,14 @@ export default function OpenAILogsPage() {
                   <CardContent>
                     <pre className="text-xs bg-muted/50 border border-border rounded-md p-3 overflow-x-auto">
                       {prettyJson({
+                        status: log.response.status || 'completed',
+                        error: log.response.error || null,
+                        message: log.response.message || null,
                         generated_count: log.response.generated_count,
                         semantic_total: log.response.semantic_total,
                         used_model: log.response.used_model,
+                        failure_stage: log.response.failure_stage || null,
+                        validation_issues: log.response.validation_issues || null,
                       })}
                     </pre>
                   </CardContent>
