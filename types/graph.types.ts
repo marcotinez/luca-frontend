@@ -70,10 +70,37 @@ export interface SemanticSearchResponse {
   results: SemanticResult[];
 }
 
+export interface RelationshipTypeStat {
+  relationship_type: string;
+  count: number;
+}
+
+export interface ScopedGraphStats {
+  total_relationships: number;
+  structural_relationships: number;
+  non_structural_relationships: number;
+  relationship_types: RelationshipTypeStat[];
+}
+
+export interface GraphSubcategoryStats {
+  name: string;
+  entity_count: number;
+  relationships: ScopedGraphStats;
+}
+
+export interface GraphCategoryStats {
+  name: string;
+  entity_count: number;
+  relationships: ScopedGraphStats;
+  subcategories: GraphSubcategoryStats[];
+}
+
 // Estadísticas del grafo
 export interface GraphStats {
   total_nodes: number;
   total_relationships: number;
   labels: string[];
   relationship_types: string[];
+  overall_relationships?: ScopedGraphStats;
+  categories?: GraphCategoryStats[];
 }
