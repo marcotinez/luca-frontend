@@ -1,11 +1,11 @@
 'use client';
 
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import dynamic from 'next/dynamic';
 import { getIngestionRun, startIngestion } from "@/lib/ingestion.api";
 import { getGraphStats } from "@/lib/graph.api";
 import { wipeGraph } from "@/lib/admin.api";
 import type { IngestionRun, IngestionStatus } from "@/types/ingestion.types";
-import { IngestionConfigurator } from '@/components/ingestion/IngestionConfigurator';
 import { JobsHistoryTable } from '@/components/ingestion/JobsHistoryTable';
 import { BackupManager } from '@/components/admin/BackupManager';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -32,6 +32,21 @@ import {
   Trash2,
 } from "lucide-react";
 import { toast } from 'sonner';
+
+const IngestionConfigurator = dynamic(
+  () => import('@/components/ingestion/IngestionConfigurator').then((module) => module.IngestionConfigurator),
+  {
+    ssr: false,
+    loading: () => (
+      <Card className="w-full">
+        <CardHeader>
+          <CardTitle>Nueva Ingesta</CardTitle>
+          <CardDescription>Cargando configurador de PDF...</CardDescription>
+        </CardHeader>
+      </Card>
+    ),
+  }
+);
 
 const POLLING_INTERVAL_MS = 2500;
 const FINAL_STATUSES: IngestionStatus[] = ["FINISHED", "PARTIAL", "FAILED"];
@@ -86,7 +101,7 @@ function formatDate(dateString: string): string {
   });
 }
 
-function deriveLiveStats(run: IngestionRun, requestedChunks?: number) {
+function deriveLiveStats(run: IngestionRun) {
   const processedChunkIds = new Set<number>();
   let derivedNodes = 0;
   let derivedRelations = 0;
@@ -159,7 +174,6 @@ function deriveLiveStats(run: IngestionRun, requestedChunks?: number) {
       run.total_chunks,
       derivedTotalChunks,
       maxChunkSeen,
-      requestedChunks ?? 0,
     ),
     totalNodes: Math.max(run.total_nodes, derivedNodes),
     totalRelations: Math.max(run.total_relations, derivedRelations),
@@ -173,9 +187,6 @@ export default function IngestaPage() {
   const [currentRunId, setCurrentRunId] = useState<string | null>(null);
   const [currentRun, setCurrentRun] = useState<IngestionRun | null>(null);
   const [monitorError, setMonitorError] = useState<string | null>(null);
-  const [requestedChunksByRun, setRequestedChunksByRun] = useState<
-    Record<string, number>
-  >({});
   const [stats, setStats] = useState<{ total_nodes: number; total_relationships: number } | null>(null);
   const [isWipeDialogOpen, setIsWipeDialogOpen] = useState(false);
   const [isWipingGraph, setIsWipingGraph] = useState(false);
@@ -197,7 +208,6 @@ export default function IngestaPage() {
       const result = await startIngestion(file, chunks);
       setCurrentRunId(result.run_id);
       setCurrentRun(null);
-      setRequestedChunksByRun((prev) => ({ ...prev, [result.run_id]: chunks }));
       setRefreshTrigger((prev) => prev + 1);
       toast.success(result.message || "Ingesta encolada exitosamente.");
     } catch (error) {
@@ -308,10 +318,14 @@ export default function IngestaPage() {
   useEffect(() => {
     if (!currentRunId) return;
 
-    executionCardRef.current?.scrollIntoView({
-      behavior: 'smooth',
-      block: 'start',
+    const frameId = requestAnimationFrame(() => {
+      executionCardRef.current?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      });
     });
+
+    return () => cancelAnimationFrame(frameId);
   }, [currentRunId]);
 
   const progressValue = useMemo(() => {
@@ -319,16 +333,13 @@ export default function IngestaPage() {
       return 0;
     }
 
-    const requestedChunks = currentRunId
-      ? requestedChunksByRun[currentRunId]
-      : undefined;
-    const liveStats = deriveLiveStats(currentRun, requestedChunks);
+    const liveStats = deriveLiveStats(currentRun);
     return getProgress(
       liveStats.processedChunks,
       liveStats.totalChunks,
       currentRun.status,
     );
-  }, [currentRun, currentRunId, requestedChunksByRun]);
+  }, [currentRun]);
 
   const orderedEvents = useMemo(() => {
     if (!currentRun?.events) {
@@ -349,11 +360,8 @@ export default function IngestaPage() {
     if (!currentRun) {
       return null;
     }
-    const requestedChunks = currentRunId
-      ? requestedChunksByRun[currentRunId]
-      : undefined;
-    return deriveLiveStats(currentRun, requestedChunks);
-  }, [currentRun, currentRunId, requestedChunksByRun]);
+    return deriveLiveStats(currentRun);
+  }, [currentRun]);
 
   return (
     <div className="space-y-8 p-4 sm:p-6">

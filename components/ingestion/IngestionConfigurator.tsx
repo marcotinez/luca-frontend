@@ -7,10 +7,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useDropzone } from 'react-dropzone';
-import * as pdfjsLib from 'pdfjs-dist';
-
-// Configurar worker de PDF.js
-pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 
 interface IngestionConfiguratorProps {
   onUpload: (file: File, chunks: number) => Promise<void>;
@@ -42,6 +38,11 @@ export function IngestionConfigurator({ onUpload, isUploading }: IngestionConfig
     ? Math.ceil(totalPages / pagesPerChunk)
     : 0;
 
+  const loadPdfModule = useCallback(async () => {
+    const pdfjsLib = await import('pdfjs-dist');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
+    return pdfjsLib;
+  }, []);
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     setError(null);
@@ -57,6 +58,7 @@ export function IngestionConfigurator({ onUpload, isUploading }: IngestionConfig
     setIsReadingPdf(true);
 
     try {
+      const pdfjsLib = await loadPdfModule();
       const arrayBuffer = await selectedFile.arrayBuffer();
       const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
       setPages(pdf.numPages);
@@ -69,7 +71,7 @@ export function IngestionConfigurator({ onUpload, isUploading }: IngestionConfig
     } finally {
       setIsReadingPdf(false);
     }
-  }, []);
+  }, [loadPdfModule]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
