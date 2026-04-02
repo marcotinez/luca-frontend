@@ -4,6 +4,7 @@ import type {
   UpdatePasswordRequest, UpdatePasswordResponse,
 } from '@/types';
 import axios from 'axios';
+import { clearStoredSession, getStoredToken } from '@/lib/auth-session.storage';
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 const API_URL = `${BASE_URL}/api/v1/auth`;
@@ -33,8 +34,7 @@ export interface RegistrationTaxonomyResponse {
 // ============================================================================
 axios.interceptors.request.use(
   (config) => {
-    // 1. Leer el token de localStorage
-    const token = localStorage.getItem('token');
+    const token = getStoredToken();
     // 2. Si existe, agregarlo al header Authorization
     if (token) config.headers.Authorization = `Bearer ${token}`;
     // 3. Retornar la configuración modificada
@@ -55,14 +55,14 @@ axios.interceptors.response.use(
   },
   // Si hay un error, verificar si es 401 (Unauthorized)
   (error) => {
-    if (error.response?.status === 401) {
+    const requestUrl = error.config?.url as string | undefined;
+    const isLoginRequest = typeof requestUrl === 'string' && requestUrl.includes('/auth/login');
+
+    if (error.response?.status === 401 && !isLoginRequest) {
       console.log('Token inválido o expirado');
 
-      // 1. Limpiar localStorage
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
+      clearStoredSession();
 
-      // 2. Redirigir al login (solo en el navegador)
       if (typeof window !== 'undefined') {
         window.location.href = '/login';
       }

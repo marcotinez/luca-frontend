@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { getStoredToken } from '@/lib/auth-session.storage';
 import type {
   IngestionJob,
   IngestionRun,
@@ -40,11 +41,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
 }
 
 function getAuthHeaders() {
-  if (typeof window === 'undefined') {
-    return {};
-  }
-
-  const token = localStorage.getItem('token');
+  const token = getStoredToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 

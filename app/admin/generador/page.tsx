@@ -1,4 +1,5 @@
 'use client';
+/* eslint-disable react-hooks/set-state-in-effect */
 
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -13,6 +14,7 @@ import {
   startGenerationJob,
 } from '@/lib/prompt-generation.api';
 import { addOpenAILog } from '@/lib/openai-logs.storage';
+import { readStorage, removeStorage, writeStorage } from '@/lib/client-storage';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -28,7 +30,7 @@ import { cn } from '@/lib/utils';
 
 const QUESTION_COUNT_OPTIONS = ['1', '5', '10', '15', '20'];
 const SEMANTIC_LIMIT_OPTIONS = ['5', '10', '15', '20'];
-const GENERATOR_STATE_STORAGE_KEY = 'admin_generador_state_v1';
+const GENERATOR_STATE_STORAGE_KEY = 'admin:generator-state';
 const MODEL_OPTIONS = ['gpt-5.4-nano', 'gpt-5-nano', 'gpt-5-mini', 'o4-mini'] as const;
 const JOB_POLL_INTERVAL_MS = 800;
 const STAGE_LABELS: Record<string, string> = {
@@ -43,6 +45,7 @@ const STAGE_LABELS: Record<string, string> = {
   validation_passed: 'Validación superada',
   saving_questions: 'Guardando preguntas',
   completed: 'Completado',
+  completed_partial: 'Completado parcialmente',
   failed: 'Error',
 };
 const FIXED_OUTPUT_SCHEMA: Record<string, unknown> = {
@@ -122,6 +125,28 @@ function getDifficultyTone(difficulty: Difficulty) {
   return 'border-rose-600 bg-rose-600 text-white hover:bg-rose-700';
 }
 
+type PersistedGeneratorState = {
+  difficulty?: Difficulty;
+  userInput?: string;
+  category?: string;
+  subtopic?: string;
+  questionCount?: number;
+  semanticLimit?: number;
+  semanticDepth?: 1 | 2;
+  model?: string;
+  jobId?: string | null;
+  jobStatus?: GenerationJobState['status'] | null;
+  lastRequestPayload?: GenerationQuestionRequest | null;
+};
+
+function parsePersistedGeneratorState(value: unknown): PersistedGeneratorState | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+
+  return value as PersistedGeneratorState;
+}
+
 export default function GeneradorPreguntasPage() {
   const [difficulty, setDifficulty] = useState<Difficulty>(Difficulty.FACIL);
   const [userInput, setUserInput] = useState('');
@@ -169,6 +194,51 @@ export default function GeneradorPreguntasPage() {
     }
   }, []);
 
+  const persistOpenAILog = useCallback(
+    (
+      requestPayload: GenerationQuestionRequest | null,
+      options: {
+        result?: GenerationQuestionResponse | null;
+        status: 'completed' | 'completed_partial' | 'failed';
+        error?: string | null;
+        message?: string | null;
+      }
+    ) => {
+      if (!requestPayload) return;
+
+      addOpenAILog({
+        request: requestPayload,
+        response: {
+          questions: options.result?.questions || [],
+          generated_count: options.result?.generated_count || 0,
+          requested_count: options.result?.requested_count,
+          discarded_count: options.result?.discarded_count,
+          discarded_question_indexes: options.result?.discarded_question_indexes || null,
+          semantic_total: options.result?.semantic_total || 0,
+          used_model: options.result?.used_model || requestPayload.model || '',
+          final_prompt: options.result?.final_prompt,
+          raw_output:
+            options.result?.raw_output ||
+            JSON.stringify(
+              {
+                status: options.status,
+                message: options.message || null,
+                error: options.error || null,
+              },
+              null,
+              2
+            ),
+          failure_stage: options.result?.failure_stage || null,
+          validation_issues: options.result?.validation_issues || null,
+          status: options.status,
+          error: options.error || null,
+          message: options.message || null,
+        },
+      });
+    },
+    []
+  );
+
   const applyCompletedResult = (
     currentJob: GenerationJobState,
     requestPayload: GenerationQuestionRequest | null
@@ -176,11 +246,25 @@ export default function GeneradorPreguntasPage() {
     const completedResult = currentJob.result;
     if (completedResult?.questions) {
       setResult(completedResult);
-      toast.success(`${completedResult.questions.length} pregunta(s) generada(s) y guardada(s) en revisión`);
-      if (requestPayload) {
-        addOpenAILog({ request: requestPayload, response: completedResult });
+      if (currentJob.status === 'completed_partial') {
+        toast.warning(
+          `Se generaron ${completedResult.generated_count || completedResult.questions.length} de ${completedResult.requested_count || questionCount} preguntas`
+        );
+      } else {
+        toast.success(`${completedResult.questions.length} pregunta(s) generada(s) y guardada(s) en revisión`);
       }
+      persistOpenAILog(requestPayload, {
+        result: completedResult,
+        status: currentJob.status === 'completed_partial' ? 'completed_partial' : 'completed',
+        message: currentJob.message || null,
+      });
     } else {
+      persistOpenAILog(requestPayload, {
+        result: completedResult || null,
+        status: 'failed',
+        error: currentJob.error || 'El job finalizó sin resultado de preguntas',
+        message: currentJob.message || null,
+      });
       toast.error('El job finalizó sin resultado de preguntas');
     }
   };
@@ -190,11 +274,17 @@ export default function GeneradorPreguntasPage() {
       const state = await getGenerationJob(jobId);
       setJob(state);
 
-      if (state.status === 'completed') {
+      if (state.status === 'completed' || state.status === 'completed_partial') {
         stopPolling();
         applyCompletedResult(state, requestPayload);
       } else if (state.status === 'failed') {
         stopPolling();
+        persistOpenAILog(requestPayload, {
+          result: state.result || null,
+          status: 'failed',
+          error: state.error || 'La generación falló',
+          message: state.message || null,
+        });
         toast.error(state.error || state.message || 'La generación falló');
       }
     } catch {
@@ -215,49 +305,41 @@ export default function GeneradorPreguntasPage() {
   }, [loadGenerationConfig]);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    const parsedState = readStorage<PersistedGeneratorState | null>(
+      GENERATOR_STATE_STORAGE_KEY,
+      null,
+      parsePersistedGeneratorState
+    );
 
-    try {
-      const rawState = window.localStorage.getItem(GENERATOR_STATE_STORAGE_KEY);
-      if (!rawState) {
-        setHasHydratedState(true);
-        return;
-      }
-
-      const parsedState = JSON.parse(rawState) as {
-        difficulty?: Difficulty;
-        userInput?: string;
-        category?: string;
-        subtopic?: string;
-        questionCount?: number;
-        semanticLimit?: number;
-        semanticDepth?: 1 | 2;
-        model?: string;
-        job?: GenerationJobState | null;
-        lastRequestPayload?: GenerationQuestionRequest | null;
-        result?: GenerationQuestionResponse | null;
-      };
-
-      if (parsedState.difficulty) setDifficulty(parsedState.difficulty);
-      if (typeof parsedState.userInput === 'string') setUserInput(parsedState.userInput);
-      if (typeof parsedState.category === 'string') setCategory(parsedState.category);
-      if (typeof parsedState.subtopic === 'string') setSubtopic(parsedState.subtopic);
-      if (typeof parsedState.questionCount === 'number') setQuestionCount(parsedState.questionCount);
-      if (typeof parsedState.semanticLimit === 'number') setSemanticLimit(parsedState.semanticLimit);
-      if (parsedState.semanticDepth === 1 || parsedState.semanticDepth === 2) setSemanticDepth(parsedState.semanticDepth);
-      if (typeof parsedState.model === 'string' && MODEL_OPTIONS.includes(parsedState.model as (typeof MODEL_OPTIONS)[number])) {
-        setModel(parsedState.model);
-      }
-      if (parsedState.job) setJob(parsedState.job);
-      if (parsedState.lastRequestPayload) setLastRequestPayload(parsedState.lastRequestPayload);
-      if (parsedState.result) {
-        setResult(parsedState.result);
-      }
-    } catch {
-      window.localStorage.removeItem(GENERATOR_STATE_STORAGE_KEY);
-    } finally {
+    if (!parsedState) {
       setHasHydratedState(true);
+      return;
     }
+
+    if (parsedState.difficulty) setDifficulty(parsedState.difficulty);
+    if (typeof parsedState.userInput === 'string') setUserInput(parsedState.userInput);
+    if (typeof parsedState.category === 'string') setCategory(parsedState.category);
+    if (typeof parsedState.subtopic === 'string') setSubtopic(parsedState.subtopic);
+    if (typeof parsedState.questionCount === 'number') setQuestionCount(parsedState.questionCount);
+    if (typeof parsedState.semanticLimit === 'number') setSemanticLimit(parsedState.semanticLimit);
+    if (parsedState.semanticDepth === 1 || parsedState.semanticDepth === 2) setSemanticDepth(parsedState.semanticDepth);
+    if (typeof parsedState.model === 'string' && MODEL_OPTIONS.includes(parsedState.model as (typeof MODEL_OPTIONS)[number])) {
+      setModel(parsedState.model);
+    }
+    if (parsedState.lastRequestPayload) setLastRequestPayload(parsedState.lastRequestPayload);
+    if (parsedState.jobId && parsedState.jobStatus && (parsedState.jobStatus === 'queued' || parsedState.jobStatus === 'running')) {
+      setJob({
+        job_id: parsedState.jobId,
+        status: parsedState.jobStatus,
+        progress: 0,
+        stage: 'queued',
+        message: null,
+        error: null,
+        result: null,
+      });
+    }
+
+    setHasHydratedState(true);
   }, []);
 
   useEffect(() => {
@@ -268,9 +350,9 @@ export default function GeneradorPreguntasPage() {
   }, [hasHydratedState, job?.job_id, job?.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!hasHydratedState || typeof window === 'undefined') return;
+    if (!hasHydratedState) return;
 
-    const persistedState = {
+    const persistedState: PersistedGeneratorState = {
       difficulty,
       userInput,
       category,
@@ -279,13 +361,13 @@ export default function GeneradorPreguntasPage() {
       semanticLimit,
       semanticDepth,
       model,
-      job,
+      jobId: job?.job_id ?? null,
+      jobStatus: job?.status ?? null,
       lastRequestPayload,
-      result,
     };
 
-    window.localStorage.setItem(GENERATOR_STATE_STORAGE_KEY, JSON.stringify(persistedState));
-  }, [hasHydratedState, difficulty, userInput, category, subtopic, questionCount, semanticLimit, semanticDepth, model, job, lastRequestPayload, result]);
+    writeStorage(GENERATOR_STATE_STORAGE_KEY, persistedState);
+  }, [hasHydratedState, difficulty, userInput, category, subtopic, questionCount, semanticLimit, semanticDepth, model, job?.job_id, job?.status, lastRequestPayload]);
 
   useEffect(() => {
     if (availableCategories.length === 0) {
@@ -340,9 +422,15 @@ export default function GeneradorPreguntasPage() {
       setResult(null);
       toast.success('Generación iniciada');
 
-      if (createdJob.status === 'completed') {
+      if (createdJob.status === 'completed' || createdJob.status === 'completed_partial') {
         applyCompletedResult(createdJob, requestPayload);
       } else if (createdJob.status === 'failed') {
+        persistOpenAILog(requestPayload, {
+          result: createdJob.result || null,
+          status: 'failed',
+          error: createdJob.error || 'La generación falló al iniciar',
+          message: createdJob.message || null,
+        });
         toast.error(createdJob.error || createdJob.message || 'La generación falló al iniciar');
       } else {
         startPolling(createdJob.job_id, requestPayload);
@@ -366,9 +454,7 @@ export default function GeneradorPreguntasPage() {
     setLastRequestPayload(null);
     setResult(null);
 
-    if (typeof window !== 'undefined') {
-      window.localStorage.removeItem(GENERATOR_STATE_STORAGE_KEY);
-    }
+    removeStorage(GENERATOR_STATE_STORAGE_KEY);
 
     toast.success('Estado de generación limpiado');
   };
@@ -636,8 +722,10 @@ export default function GeneradorPreguntasPage() {
                           ? 'En cola'
                           : job.status === 'running'
                             ? 'En progreso'
+                            : job.status === 'completed_partial'
+                              ? 'Completado parcialmente'
                             : job.status === 'completed'
-                              ? 'Completado'
+                              ? 'Generación completada'
                               : 'Error'}
                       </Badge>
                       <Badge variant="outline">{job.progress}%</Badge>
@@ -648,6 +736,11 @@ export default function GeneradorPreguntasPage() {
                   <p className="text-sm text-muted-foreground">
                     {job.message || getStageLabel(job.stage)}
                   </p>
+                  {job.status === 'completed_partial' && job.result ? (
+                    <p className="text-sm text-amber-700 dark:text-amber-300">
+                      Se generaron {job.result.generated_count ?? job.result.questions.length} de {job.result.requested_count ?? questionCount} preguntas. {job.result.discarded_count ?? 0} fueron descartadas por validación.
+                    </p>
+                  ) : null}
                   {job.status === 'failed' && job.error && (
                     <p className="text-sm text-destructive">{job.error}</p>
                   )}
@@ -681,10 +774,16 @@ export default function GeneradorPreguntasPage() {
                 <Sparkles className="w-5 h-5 text-primary" />
                 Resultado de generación
               </CardTitle>
-              <CardDescription>Preguntas creadas y guardadas con estado en revisión.</CardDescription>
+              <CardDescription>
+                {job?.status === 'completed_partial'
+                  ? 'Generación completada parcialmente. Las preguntas válidas quedaron guardadas para revisión.'
+                  : 'Preguntas creadas y guardadas con estado en revisión.'}
+              </CardDescription>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Badge variant="outline">Preguntas: {displayedGeneratedCount}</Badge>
+              <Badge variant="outline">Generadas: {result.generated_count ?? displayedGeneratedCount}</Badge>
+              <Badge variant="outline">Solicitadas: {result.requested_count ?? questionCount}</Badge>
+              <Badge variant="outline">Descartadas: {result.discarded_count ?? 0}</Badge>
               <Badge variant="outline">Semantic total: {result.semantic_total}</Badge>
               <Badge variant="outline">{result.used_model}</Badge>
             </div>
@@ -694,19 +793,57 @@ export default function GeneradorPreguntasPage() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div className="rounded-xl border bg-muted/20 p-4">
                 <p className="text-xs text-muted-foreground">Generadas</p>
-                <p className="mt-2 text-2xl font-semibold">{displayedGeneratedCount}</p>
+                <p className="mt-2 text-2xl font-semibold">{result.generated_count ?? displayedGeneratedCount}</p>
+              </div>
+              <div className="rounded-xl border bg-muted/20 p-4">
+                <p className="text-xs text-muted-foreground">Solicitadas / descartadas</p>
+                <p className="mt-2 text-base font-semibold">
+                  {result.requested_count ?? questionCount} / {result.discarded_count ?? 0}
+                </p>
               </div>
               <div className="rounded-xl border bg-muted/20 p-4">
                 <p className="text-xs text-muted-foreground">Modelo usado</p>
-                <p className="mt-2 text-base font-semibold">{result.used_model}</p>
-              </div>
-              <div className="rounded-xl border bg-muted/20 p-4">
-                <p className="text-xs text-muted-foreground">Primera creación</p>
-                <p className="mt-2 text-sm font-semibold">
-                  {result.questions[0] ? new Date(result.questions[0].created_at).toLocaleString('es-CL') : '-'}
-                </p>
+                <p className="mt-2 text-sm font-semibold">{result.used_model}</p>
               </div>
             </div>
+
+            {job?.status === 'completed_partial' ? (
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-800 dark:text-amber-200">
+                Se generaron {result.generated_count ?? displayedGeneratedCount} de {result.requested_count ?? questionCount} preguntas.
+                {(result.discarded_count ?? 0) > 0
+                  ? ` ${result.discarded_count} preguntas fueron descartadas por validación.`
+                  : null}
+              </div>
+            ) : null}
+
+            {(result.validation_issues?.length || 0) > 0 || result.failure_stage ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Detalles técnicos</CardTitle>
+                  <CardDescription>
+                    Información adicional del backend sobre validación y etapas del flujo.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {result.failure_stage ? (
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Failure Stage</p>
+                      <p className="text-sm">{result.failure_stage}</p>
+                    </div>
+                  ) : null}
+                  {(result.validation_issues?.length || 0) > 0 ? (
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Validation Issues</p>
+                      <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
+                        {result.validation_issues?.map((issue, index) => (
+                          <li key={`result-validation-${index}`}>{issue}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                </CardContent>
+              </Card>
+            ) : null}
 
             <Accordion type="multiple" className="w-full rounded-md border px-4">
               {result.questions.map((question, questionIndex) => (

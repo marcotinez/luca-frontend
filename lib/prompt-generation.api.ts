@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { Difficulty } from '@/types';
+import { getStoredToken } from '@/lib/auth-session.storage';
 
 const DEFAULT_BASE_URL = 'http://localhost:8000';
 
@@ -49,13 +50,18 @@ export interface GeneratedQuestion {
 export interface GenerationQuestionResponse {
   questions: GeneratedQuestion[];
   generated_count: number;
+  requested_count?: number;
+  discarded_count?: number;
+  discarded_question_indexes?: number[] | null;
   semantic_total: number;
   used_model: string;
   final_prompt?: string;
   raw_output: string;
+  failure_stage?: string | null;
+  validation_issues?: string[] | null;
 }
 
-export type GenerationJobStatus = 'queued' | 'running' | 'completed' | 'failed';
+export type GenerationJobStatus = 'queued' | 'running' | 'completed' | 'completed_partial' | 'failed';
 
 export interface GenerationJobState {
   job_id: string;
@@ -130,13 +136,7 @@ export type GenerationConfigPatchRequest = Partial<{
 }>;
 
 function getAuthHeaders() {
-  if (typeof window === 'undefined') {
-    return {
-      'Content-Type': 'application/json',
-    };
-  }
-
-  const token = localStorage.getItem('token');
+  const token = getStoredToken();
 
   return {
     'Content-Type': 'application/json',

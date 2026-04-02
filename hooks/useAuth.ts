@@ -7,6 +7,7 @@ import {
   refreshToken as apiRefreshToken,
   updatePassword as apiUpdatePassword
 } from '@/lib/auth.api';
+import { clearStoredSession, getStoredToken, getStoredUser, setStoredToken, setStoredUser } from '@/lib/auth-session.storage';
 import { UserResponse, LoginRequest, RegisterRequest, UpdatePasswordRequest } from '@/types';
 
 export function useAuth() {
@@ -17,48 +18,56 @@ export function useAuth() {
   // Función para iniciar sesión
   const login = async (credentials: LoginRequest) => {
     const response = await apiLogin(credentials);
-    localStorage.setItem('token', response.access_token);
-    localStorage.setItem('user', JSON.stringify(response.user));
+    setStoredToken(response.access_token);
+    setStoredUser(response.user);
     setUser(response.user);
+    setLoading(false);
   };
 
   // Función para registrarse
   const register = async (data: RegisterRequest) => {
     const response = await apiRegister(data);
-    localStorage.setItem('token', response.access_token);
-    localStorage.setItem('user', JSON.stringify(response.user));
+    setStoredToken(response.access_token);
+    setStoredUser(response.user);
     setUser(response.user);
+    setLoading(false);
   };
 
   // Función para actualizar la contraseña
   const updatePassword = async (data: UpdatePasswordRequest) => {
     const response = await apiUpdatePassword(data);
-    if (response.access_token) localStorage.setItem('token', response.access_token);
+    if (response.access_token) setStoredToken(response.access_token);
 
     await refreshUser();
   };
 
   const refreshUser = useCallback(async () => {
     const userData = await apiMe();
-    localStorage.setItem('user', JSON.stringify(userData));
+    setStoredUser(userData);
     setUser(userData);
+    setLoading(false);
   }, []);
 
   // Función para cerrar sesión
   const logout = useCallback(() => {
     setUser(null);
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
+    clearStoredSession();
     router.push('/login');
   }, [router]);
 
   // Verificar si hay sesión al cargar
   useEffect(() => {
     const validateSession = async () => {
-      const token = localStorage.getItem('token');
+      const storedUser = getStoredUser();
+      setLoading(true);
+      const token = getStoredToken();
       if (!token) {
         setLoading(false);
         return;
+      }
+
+      if (storedUser) {
+        setUser(storedUser as UserResponse);
       }
       try {
         // Intentamos obtener el usuario
@@ -66,8 +75,7 @@ export function useAuth() {
         setLoading(false);
       } catch {
         // Si no hay sesión, limpiamos y redirigimos al login
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
+        clearStoredSession();
         setUser(null);
       } finally {
         setLoading(false);
@@ -86,7 +94,7 @@ export function useAuth() {
       try {
         console.log('Renovando token...');
         const response = await apiRefreshToken();
-        localStorage.setItem('token', response.access_token);
+        setStoredToken(response.access_token);
       } catch (error) {
         console.log('Error al renovar el token', error);
         logout();
