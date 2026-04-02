@@ -10,6 +10,7 @@ import {
   Database,
   Search,
   FileSearch,
+  BarChart3,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -78,6 +79,11 @@ export function AdminLayoutShell({ children }: { children: React.ReactNode }) {
           label: "Consultas sobre el grafo",
           href: "/admin/consultas",
           icon: <Search className="w-4 h-4" />,
+        },
+        {
+          label: "Estadísticas del grafo",
+          href: "/admin/estadisticas-grafo",
+          icon: <BarChart3 className="w-4 h-4" />,
         },
       ],
     },
