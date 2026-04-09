@@ -41,7 +41,11 @@ export default function OpenAILogsPage() {
 
   const totalRequests = logs.length;
   const totalGeneratedQuestions = useMemo(
-    () => logs.reduce((acc, log) => acc + (log.response.questions?.length || 0), 0),
+    () =>
+      logs.reduce((acc, log) => {
+        const generatedFromArray = Array.isArray(log.response.questions) ? log.response.questions.length : 0;
+        return acc + (log.response.generated_count ?? generatedFromArray);
+      }, 0),
     [logs]
   );
 
@@ -102,9 +106,11 @@ export default function OpenAILogsPage() {
                         : 'Completada'}
                   </Badge>
                   <Badge variant="outline">Modelo: {log.response.used_model || '-'}</Badge>
-                  <Badge variant="outline">Preguntas: {log.response.questions.length}</Badge>
+                  <Badge variant="outline">
+                    Preguntas: {log.response.generated_count ?? (Array.isArray(log.response.questions) ? log.response.questions.length : 0)}
+                  </Badge>
                   <span className="text-sm text-muted-foreground line-clamp-1">
-                    {log.request.user_input}
+                    {`${String(log.request.category ?? 'Sin categoría')} · ${String(log.request.subtopic ?? 'Cobertura general')}`}
                   </span>
                 </div>
               </AccordionTrigger>

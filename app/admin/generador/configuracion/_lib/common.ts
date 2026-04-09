@@ -5,15 +5,23 @@ export const LARGE_TEXTAREA_CLASSNAME = 'min-h-[420px] resize-y font-mono text-s
 export const MAX_TERMS_PER_LIST = 30;
 
 export const REQUIRED_PLACEHOLDERS = {
-  generation_user_prompt_template: [
+  generation_stem_user_prompt_template: [
     'difficulty',
-    'user_input',
-    'question_count',
-    'difficulty_semantic_instruction',
-    'semantic_context_block',
-    'semantic_plan_block',
-    'avoid_block',
-    'output_rules_block',
+    'question_type',
+    'context_json',
+  ],
+  generation_distractor_user_prompt_template: [
+    'difficulty',
+    'question_type',
+    'context_json',
+    'question',
+    'correct_answer',
+  ],
+  generation_judge_user_prompt_template: [
+    'difficulty',
+    'question_type',
+    'question',
+    'alternatives_json',
   ],
   ingestion_extraction_user_prompt_template: ['file_name', 'chunk_text'],
   ingestion_refinement_user_prompt_template: ['entities_json', 'relationships_json'],
@@ -51,12 +59,6 @@ export const TERM_LIST_CONFIG: {
   },
 ];
 
-export const DIFFICULTY_PROMPT_FIELD_MAP: Record<GenerationDifficultyKey, 'facil_prompt' | 'medio_prompt' | 'dificil_prompt'> = {
-  'Fácil': 'facil_prompt',
-  Medio: 'medio_prompt',
-  'Difícil': 'dificil_prompt',
-};
-
 export function decodeEscapedSequences(value: string): string {
   return value
     .replace(/\\r\\n/g, '\n')
@@ -66,21 +68,6 @@ export function decodeEscapedSequences(value: string): string {
     .replace(/\\"/g, '"')
     .replace(/\\'/g, "'")
     .replace(/\\\\/g, '\\');
-}
-
-export function normalizeGenerationTemplate(value: string): string {
-  return value
-    .replace(
-      /\n*Matriz de variaci[oó]n obligatoria[^\n]*\n\{variation_matrix_block\}\n*/gi,
-      '\n'
-    )
-    .replace(/\{variation_matrix_block\}/g, '')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-}
-
-export function hasRemovedGenerationPlaceholder(template: string): boolean {
-  return template.includes('{variation_matrix_block}');
 }
 
 export function normalizeName(value: string): string {

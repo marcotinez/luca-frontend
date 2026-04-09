@@ -132,6 +132,72 @@ export default function ConfiguracionIngestaPage() {
   };
 
   const handleSave = async () => {
+    const requiredPromptFields: Array<{ label: string; value: string }> = [
+      {
+        label: 'ingestion_extraction_system_prompt',
+        value: draft.ingestion_extraction_system_prompt,
+      },
+      {
+        label: 'ingestion_extraction_user_prompt_template',
+        value: draft.ingestion_extraction_user_prompt_template,
+      },
+      {
+        label: 'ingestion_refinement_system_prompt',
+        value: draft.ingestion_refinement_system_prompt,
+      },
+      {
+        label: 'ingestion_refinement_user_prompt_template',
+        value: draft.ingestion_refinement_user_prompt_template,
+      },
+      {
+        label: 'ingestion_taxonomy_classification_system_prompt',
+        value: draft.ingestion_taxonomy_classification_system_prompt,
+      },
+      {
+        label: 'ingestion_taxonomy_classification_user_prompt_template',
+        value: draft.ingestion_taxonomy_classification_user_prompt_template,
+      },
+    ];
+
+    const emptyField = requiredPromptFields.find((field) => field.value.trim().length === 0);
+    if (emptyField) {
+      toast.error(`El campo ${emptyField.label} no puede estar vacío.`);
+      return;
+    }
+
+    const extractionMissing = validateTemplatePlaceholders(
+      draft.ingestion_extraction_user_prompt_template,
+      REQUIRED_PLACEHOLDERS.ingestion_extraction_user_prompt_template
+    );
+    if (extractionMissing.length > 0) {
+      toast.error(
+        `Faltan placeholders en ingestion_extraction_user_prompt_template: ${extractionMissing.map((key) => `{${key}}`).join(', ')}`
+      );
+      return;
+    }
+
+    const refinementMissing = validateTemplatePlaceholders(
+      draft.ingestion_refinement_user_prompt_template,
+      REQUIRED_PLACEHOLDERS.ingestion_refinement_user_prompt_template
+    );
+    if (refinementMissing.length > 0) {
+      toast.error(
+        `Faltan placeholders en ingestion_refinement_user_prompt_template: ${refinementMissing.map((key) => `{${key}}`).join(', ')}`
+      );
+      return;
+    }
+
+    const taxonomyMissing = validateTemplatePlaceholders(
+      draft.ingestion_taxonomy_classification_user_prompt_template,
+      REQUIRED_PLACEHOLDERS.ingestion_taxonomy_classification_user_prompt_template
+    );
+    if (taxonomyMissing.length > 0) {
+      toast.error(
+        `Faltan placeholders en ingestion_taxonomy_classification_user_prompt_template: ${taxonomyMissing.map((key) => `{${key}}`).join(', ')}`
+      );
+      return;
+    }
+
     const payload: GenerationConfigPatchRequest = {
       ingestion_extraction_system_prompt: draft.ingestion_extraction_system_prompt.trim(),
       ingestion_extraction_user_prompt_template:
@@ -208,9 +274,11 @@ export default function ConfiguracionIngestaPage() {
                   />
                   <PromptEditorField
                     label="Plantilla de usuario para extracción"
-                    description="Estructura del mensaje con variables como archivo y bloque de texto. Se muestra bloqueada para edición."
+                    description="Estructura del mensaje con variables como archivo y bloque de texto."
                     value={draft.ingestion_extraction_user_prompt_template}
-                    readOnly
+                    onChange={(value) =>
+                      handleFieldChange('ingestion_extraction_user_prompt_template', value)
+                    }
                     rows={18}
                     className={LARGE_TEXTAREA_CLASSNAME}
                     footer={
@@ -236,9 +304,11 @@ export default function ConfiguracionIngestaPage() {
                   />
                   <PromptEditorField
                     label="Plantilla de usuario para refinamiento"
-                    description="Mensaje con estructuras JSON de entrada para aplicar refinamiento. Se muestra bloqueada para edición."
+                    description="Mensaje con estructuras JSON de entrada para aplicar refinamiento."
                     value={draft.ingestion_refinement_user_prompt_template}
-                    readOnly
+                    onChange={(value) =>
+                      handleFieldChange('ingestion_refinement_user_prompt_template', value)
+                    }
                     rows={18}
                     className={LARGE_TEXTAREA_CLASSNAME}
                     footer={
@@ -268,9 +338,14 @@ export default function ConfiguracionIngestaPage() {
                   />
                   <PromptEditorField
                     label="Plantilla de usuario para clasificación taxonómica"
-                    description="Incluye taxonomía, límites de etiquetas y datos refinados para clasificar. Se muestra bloqueada para edición."
+                    description="Incluye taxonomía, límites de etiquetas y datos refinados para clasificar."
                     value={draft.ingestion_taxonomy_classification_user_prompt_template}
-                    readOnly
+                    onChange={(value) =>
+                      handleFieldChange(
+                        'ingestion_taxonomy_classification_user_prompt_template',
+                        value
+                      )
+                    }
                     rows={18}
                     className={LARGE_TEXTAREA_CLASSNAME}
                     footer={

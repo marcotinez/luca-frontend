@@ -1,8 +1,24 @@
 import axios from 'axios';
 import type { QuestionResponse, QuestionCreate, QuestionUpdate, Status } from '@/types';
+import { Difficulty } from '@/types';
+import { getStoredToken } from '@/lib/auth-session.storage';
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 const API_URL = `${BASE_URL}/api/v1/questions`;
+
+export type QuestionFilters = {
+  category: string;
+  subtopic?: string;
+  difficulty?: Difficulty;
+  status?: Status;
+  skip?: number;
+  limit?: number;
+};
+
+function authHeaders() {
+  const token = getStoredToken();
+  return token ? { Authorization: `Bearer ${token}` } : undefined;
+}
 
 /**
  * Lista todas las preguntas con paginación y filtros opcionales
@@ -19,6 +35,27 @@ export async function getQuestions(
 
   const response = await axios.get(API_URL, { params });
   return response.data;
+}
+
+/**
+ * Lista preguntas por filtros sin cargar todo el banco
+ */
+export async function listQuestions(filters: QuestionFilters): Promise<QuestionResponse[]> {
+  const params = {
+    category: filters.category,
+    subtopic: filters.subtopic || undefined,
+    difficulty: filters.difficulty || undefined,
+    status: filters.status || undefined,
+    skip: filters.skip ?? 0,
+    limit: filters.limit ?? 20,
+  };
+
+  const { data } = await axios.get(`${API_URL}/`, {
+    params,
+    headers: authHeaders(),
+  });
+
+  return data as QuestionResponse[];
 }
 
 /**

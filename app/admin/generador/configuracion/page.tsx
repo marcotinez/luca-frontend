@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { BookOpenCheck, Database, Sparkles } from 'lucide-react';
+import { BookOpenCheck, Database, Settings2, Sparkles } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 
@@ -16,9 +16,16 @@ const SECTION_LINKS = [
   {
     title: 'Configuración de la generación',
     description:
-      'Ajusta prompts base, template de generación, enfoques por dificultad y reglas de salida.',
+      'Ajusta prompts del flujo por etapas: base, stem, distractores y judge.',
     href: '/admin/generador/configuracion/generacion',
     icon: Sparkles,
+  },
+  {
+    title: 'Modelos y pipeline',
+    description:
+      'Gestiona modelos por componente y parámetros técnicos del pipeline de generación.',
+    href: '/admin/generador/configuracion/modelos-pipeline',
+    icon: Settings2,
   },
   {
     title: 'Configuración de la taxonomía',
@@ -41,7 +48,7 @@ export default function GeneradorConfiguracionIndexPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         {SECTION_LINKS.map((section) => {
           const Icon = section.icon;
           return (

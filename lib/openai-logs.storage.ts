@@ -1,17 +1,16 @@
-import { GenerationQuestionRequest, GenerationQuestionResponse } from '@/lib/prompt-generation.api';
 import { readStorage, removeStorage, writeStorage } from '@/lib/client-storage';
 
 const OPENAI_LOGS_STORAGE_KEY = 'admin:openai-generation-logs';
 const MAX_LOG_ENTRIES = 200;
 
 export interface OpenAILogResponseSnapshot {
-  questions: GenerationQuestionResponse['questions'];
-  generated_count: number;
+  questions?: unknown[];
+  generated_count?: number;
   requested_count?: number;
   discarded_count?: number;
   discarded_question_indexes?: number[] | null;
-  semantic_total: number;
-  used_model: string;
+  semantic_total?: number;
+  used_model?: string;
   final_prompt?: string;
   raw_output: string;
   failure_stage?: string | null;
@@ -19,12 +18,13 @@ export interface OpenAILogResponseSnapshot {
   status?: 'completed' | 'completed_partial' | 'failed';
   error?: string | null;
   message?: string | null;
+  meta?: Record<string, unknown>;
 }
 
 export interface OpenAILogEntry {
   id: string;
   created_at: string;
-  request: GenerationQuestionRequest;
+  request: Record<string, unknown>;
   response: OpenAILogResponseSnapshot;
 }
 
@@ -34,7 +34,7 @@ export function getOpenAILogs(): OpenAILogEntry[] {
   );
 }
 
-export function addOpenAILog(payload: { request: GenerationQuestionRequest; response: OpenAILogResponseSnapshot }) {
+export function addOpenAILog(payload: { request: Record<string, unknown>; response: OpenAILogResponseSnapshot }) {
   const currentLogs = getOpenAILogs();
   const nextEntry: OpenAILogEntry = {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
