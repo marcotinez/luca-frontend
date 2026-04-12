@@ -1,6 +1,7 @@
 import axios from 'axios';
+import { getApiBaseUrl } from '@/lib/api-base';
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+const BASE_URL = getApiBaseUrl();
 const ADMIN_API_URL = `${BASE_URL}/api/v1/admin`;
 
 function getErrorMessage(error: unknown, fallback: string): string {

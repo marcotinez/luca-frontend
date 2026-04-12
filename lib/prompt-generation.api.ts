@@ -1,8 +1,9 @@
 import axios from 'axios';
+import { getApiBaseUrl } from '@/lib/api-base';
 import { Difficulty } from '@/types';
 import { getStoredToken } from '@/lib/auth-session.storage';
 
-const DEFAULT_BASE_URL = 'http://localhost:8000';
+const DEFAULT_BASE_URL = getApiBaseUrl();
 
 function resolveApiBase(baseUrl?: string) {
   const rawBaseUrl = baseUrl || process.env.NEXT_PUBLIC_API_URL || DEFAULT_BASE_URL;

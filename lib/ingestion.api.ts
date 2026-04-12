@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { getApiBaseUrl } from '@/lib/api-base';
 import { getStoredToken } from '@/lib/auth-session.storage';
 import type {
   IngestionJob,
@@ -6,7 +7,7 @@ import type {
   StartIngestionResponse,
 } from '@/types/ingestion.types';
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const BASE_URL = getApiBaseUrl();
 const API_URL = `${BASE_URL}/api/v1/ingestion`;
 
 function getErrorMessage(error: unknown, fallback: string): string {

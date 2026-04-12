@@ -1,12 +1,18 @@
 import type {
-  LoginRequest, LoginResponse, RegisterRequest,
-  RegisterResponse, UserResponse, RefreshTokenResponse,
-  UpdatePasswordRequest, UpdatePasswordResponse,
+  LoginRequest,
+  LoginResponse,
+  RegisterRequest,
+  RegisterResponse,
+  UserResponse,
+  RefreshTokenResponse,
+  UpdatePasswordRequest,
+  UpdatePasswordResponse,
 } from '@/types';
 import axios from 'axios';
+import { getApiBaseUrl } from '@/lib/api-base';
 import { clearStoredSession, getStoredToken } from '@/lib/auth-session.storage';
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const BASE_URL = getApiBaseUrl();
 const API_URL = `${BASE_URL}/api/v1/auth`;
 
 export interface RegistrationTaxonomyCategory {

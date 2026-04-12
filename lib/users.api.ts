@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { getApiBaseUrl } from '@/lib/api-base';
 import type {
   UserLearningProfile,
   UserResponse,
@@ -7,7 +8,7 @@ import type {
   RegisterPracticeAttemptRequest,
 } from '@/types';
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const BASE_URL = getApiBaseUrl();
 const API_URL = `${BASE_URL}/api/v1/users`;
 
 export async function getUsers(): Promise<UserResponse[]> {

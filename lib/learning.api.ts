@@ -1,4 +1,5 @@
 import axios from "axios";
+import { getApiBaseUrl } from '@/lib/api-base';
 import type {
   CreateCategoryPracticeTestRequest,
   CreateRecommendedPracticeTestRequest,
@@ -9,7 +10,7 @@ import type {
   SubmitAnswerResponse,
 } from "@/types";
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const BASE_URL = getApiBaseUrl();
 const API_URL = `${BASE_URL}/api/v1/learning/tests`;
 
 export async function createPracticeTest(

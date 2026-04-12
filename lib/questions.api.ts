@@ -1,9 +1,10 @@
 import axios from 'axios';
+import { getApiBaseUrl } from '@/lib/api-base';
 import type { QuestionResponse, QuestionCreate, QuestionUpdate, Status } from '@/types';
 import { Difficulty } from '@/types';
 import { getStoredToken } from '@/lib/auth-session.storage';
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const BASE_URL = getApiBaseUrl();
 const API_URL = `${BASE_URL}/api/v1/questions`;
 
 export type QuestionFilters = {

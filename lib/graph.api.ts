@@ -1,5 +1,5 @@
 import type {
-  EntityResult,
+EntityResult,
   RelationshipResult,
   SearchResponse,
   GraphStats,
@@ -7,8 +7,9 @@ import type {
   SemanticSearchResponse,
 } from '@/types/graph.types';
 import axios from 'axios';
+import { getApiBaseUrl } from '@/lib/api-base';
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+const BASE_URL = getApiBaseUrl();
 const API_URL = `${BASE_URL}/api/v1/graph`;
 
 /**
