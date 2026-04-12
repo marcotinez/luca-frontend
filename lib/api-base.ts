@@ -10,7 +10,7 @@ function normalizeApiBase(raw?: string): string {
   try {
     const url = new URL(candidate);
 
-    if (typeof window !== 'undefined' && window.location.protocol === 'https:' && url.protocol === 'http:' && !LOCAL_HOSTS.has(url.hostname)) {
+    if (url.protocol === 'http:' && !LOCAL_HOSTS.has(url.hostname)) {
       url.protocol = 'https:';
     }
 
