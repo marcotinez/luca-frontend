@@ -14,6 +14,15 @@ ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 ENV NEXT_PUBLIC_TOKEN_REFRESH_INTERVAL_MINUTES=${NEXT_PUBLIC_TOKEN_REFRESH_INTERVAL_MINUTES}
 ENV NODE_ENV=production
 
+RUN if [ -z "$NEXT_PUBLIC_API_URL" ]; then \
+      echo "ERROR: NEXT_PUBLIC_API_URL is required at build time"; exit 1; \
+    fi
+RUN if echo "$NEXT_PUBLIC_API_URL" | grep -Eq '^http://(localhost|127\.0\.0\.1)(:[0-9]+)?(/.*)?$'; then \
+      echo "Using local API URL for local build: $NEXT_PUBLIC_API_URL"; \
+    elif ! echo "$NEXT_PUBLIC_API_URL" | grep -Eq '^https://'; then \
+      echo "ERROR: NEXT_PUBLIC_API_URL must start with https:// in non-local builds. Got: $NEXT_PUBLIC_API_URL"; exit 1; \
+    fi
+
 RUN npm run build
 
 FROM node:20-alpine AS runner
