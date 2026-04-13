@@ -200,6 +200,72 @@ export type ListUnitsRequest = {
   skip?: number;
 };
 
+export type SelectionStatus = 'active' | 'cancelled' | 'completed';
+
+export interface CreateSelectionRequest {
+  snapshot_id: string;
+  count: number;
+  difficulties?: string[];
+  question_types?: string[];
+  unit_kind?: 'entity' | 'relation';
+  search_text?: string;
+  include_failed?: boolean;
+}
+
+export interface SelectionResponse {
+  selection_id: string;
+  snapshot_id: string;
+  status: SelectionStatus;
+  requested_count: number;
+  claimed_count: number;
+  filters: Record<string, unknown>;
+  unit_ids: string[];
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface SelectionProgressResponse extends SelectionResponse {
+  total_units: number;
+  ok_units: number;
+  failed_units: number;
+  in_progress_units: number;
+  pending_units: number;
+}
+
+export interface GlobalProgressBucket {
+  key: string;
+  total_units: number;
+  pending_units: number;
+  in_progress_units: number;
+  ok_units: number;
+  failed_units: number;
+  completion_ratio: number;
+}
+
+export interface GlobalProgressCategoryDifficultyBucket {
+  category: string;
+  difficulty: string;
+  total_units: number;
+  pending_units: number;
+  in_progress_units: number;
+  ok_units: number;
+  failed_units: number;
+  completion_ratio: number;
+}
+
+export interface GlobalProgressResponse {
+  snapshot_count: number;
+  total_units: number;
+  pending_units: number;
+  in_progress_units: number;
+  ok_units: number;
+  failed_units: number;
+  completion_ratio: number;
+  by_category: GlobalProgressBucket[];
+  by_difficulty: GlobalProgressBucket[];
+  by_category_difficulty: GlobalProgressCategoryDifficultyBucket[];
+}
+
 function getAuthHeaders() {
   const token = getStoredToken();
 
@@ -711,6 +777,108 @@ function normalizeExecuteUnitResponse(data: unknown): ExecuteUnitResponse {
   };
 }
 
+function normalizeSelectionStatus(value: unknown): SelectionStatus {
+  const status = normalizeString(value).trim().toLocaleLowerCase();
+  if (status === 'cancelled' || status === 'completed' || status === 'active') {
+    return status;
+  }
+  return 'active';
+}
+
+function normalizeSelectionResponse(data: unknown): SelectionResponse {
+  const raw = data && typeof data === 'object' && !Array.isArray(data) ? (data as Record<string, unknown>) : {};
+  const unitIds = normalizeStringArray(raw.unit_ids);
+
+  return {
+    selection_id: normalizeString(raw.selection_id),
+    snapshot_id: normalizeString(raw.snapshot_id),
+    status: normalizeSelectionStatus(raw.status),
+    requested_count: normalizeNumber(raw.requested_count, unitIds.length),
+    claimed_count: normalizeNumber(raw.claimed_count, unitIds.length),
+    filters:
+      raw.filters && typeof raw.filters === 'object' && !Array.isArray(raw.filters)
+        ? (raw.filters as Record<string, unknown>)
+        : {},
+    unit_ids: unitIds,
+    created_at: normalizeString(raw.created_at) || undefined,
+    updated_at: normalizeString(raw.updated_at) || undefined,
+  };
+}
+
+function normalizeSelectionProgressResponse(data: unknown): SelectionProgressResponse {
+  const selection = normalizeSelectionResponse(data);
+  const raw = data && typeof data === 'object' && !Array.isArray(data) ? (data as Record<string, unknown>) : {};
+  const total = normalizeNumber(raw.total_units, selection.claimed_count || selection.unit_ids.length);
+
+  return {
+    ...selection,
+    total_units: total,
+    ok_units: normalizeNumber(raw.ok_units, 0),
+    failed_units: normalizeNumber(raw.failed_units, 0),
+    in_progress_units: normalizeNumber(raw.in_progress_units, 0),
+    pending_units: normalizeNumber(raw.pending_units, Math.max(0, total)),
+  };
+}
+
+function normalizeGlobalProgressBucket(value: unknown): GlobalProgressBucket | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  const raw = value as Record<string, unknown>;
+  return {
+    key: normalizeString(raw.key),
+    total_units: normalizeNumber(raw.total_units, 0),
+    pending_units: normalizeNumber(raw.pending_units, 0),
+    in_progress_units: normalizeNumber(raw.in_progress_units, 0),
+    ok_units: normalizeNumber(raw.ok_units, 0),
+    failed_units: normalizeNumber(raw.failed_units, 0),
+    completion_ratio: normalizeNumber(raw.completion_ratio, 0),
+  };
+}
+
+function normalizeGlobalProgressCategoryDifficultyBucket(
+  value: unknown
+): GlobalProgressCategoryDifficultyBucket | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  const raw = value as Record<string, unknown>;
+  return {
+    category: normalizeString(raw.category),
+    difficulty: normalizeString(raw.difficulty),
+    total_units: normalizeNumber(raw.total_units, 0),
+    pending_units: normalizeNumber(raw.pending_units, 0),
+    in_progress_units: normalizeNumber(raw.in_progress_units, 0),
+    ok_units: normalizeNumber(raw.ok_units, 0),
+    failed_units: normalizeNumber(raw.failed_units, 0),
+    completion_ratio: normalizeNumber(raw.completion_ratio, 0),
+  };
+}
+
+function normalizeGlobalProgressResponse(data: unknown): GlobalProgressResponse {
+  const raw = data && typeof data === 'object' && !Array.isArray(data) ? (data as Record<string, unknown>) : {};
+  return {
+    snapshot_count: normalizeNumber(raw.snapshot_count, 0),
+    total_units: normalizeNumber(raw.total_units, 0),
+    pending_units: normalizeNumber(raw.pending_units, 0),
+    in_progress_units: normalizeNumber(raw.in_progress_units, 0),
+    ok_units: normalizeNumber(raw.ok_units, 0),
+    failed_units: normalizeNumber(raw.failed_units, 0),
+    completion_ratio: normalizeNumber(raw.completion_ratio, 0),
+    by_category: Array.isArray(raw.by_category)
+      ? raw.by_category.map((entry) => normalizeGlobalProgressBucket(entry)).filter((entry): entry is GlobalProgressBucket => entry !== null)
+      : [],
+    by_difficulty: Array.isArray(raw.by_difficulty)
+      ? raw.by_difficulty.map((entry) => normalizeGlobalProgressBucket(entry)).filter((entry): entry is GlobalProgressBucket => entry !== null)
+      : [],
+    by_category_difficulty: Array.isArray(raw.by_category_difficulty)
+      ? raw.by_category_difficulty
+          .map((entry) => normalizeGlobalProgressCategoryDifficultyBucket(entry))
+          .filter((entry): entry is GlobalProgressCategoryDifficultyBucket => entry !== null)
+      : [],
+  };
+}
+
 export async function createSnapshot(data: CreateSnapshotRequest): Promise<SnapshotResponse> {
   const response = await axios.post(`${API_BASE}/generation/snapshots`, data, {
     headers: getAuthHeaders(),
@@ -761,6 +929,14 @@ export async function getSnapshotProgress(snapshotId: string): Promise<SnapshotP
   return normalizeSnapshotProgressResponse(response.data);
 }
 
+export async function getGlobalGenerationProgress(): Promise<GlobalProgressResponse> {
+  const response = await axios.get(`${API_BASE}/generation/progress/global`, {
+    headers: getAuthHeaders(),
+    withCredentials: true,
+  });
+  return normalizeGlobalProgressResponse(response.data);
+}
+
 export async function getNextUnit(snapshotId: string): Promise<GenerationUnitResponse | null> {
   const response = await axios.post(
     `${API_BASE}/generation/units/next`,
@@ -777,6 +953,61 @@ export async function getNextUnit(snapshotId: string): Promise<GenerationUnitRes
 
   const unit = normalizeGenerationUnitResponse(response.data);
   return unit.unit_id ? unit : null;
+}
+
+export async function createGenerationSelection(data: CreateSelectionRequest): Promise<SelectionResponse> {
+  const payload: Record<string, unknown> = {
+    snapshot_id: data.snapshot_id,
+    count: data.count,
+    include_failed: typeof data.include_failed === 'boolean' ? data.include_failed : true,
+  };
+
+  if (data.difficulties && data.difficulties.length > 0) {
+    payload.difficulties = data.difficulties;
+  }
+  if (data.question_types && data.question_types.length > 0) {
+    payload.question_types = data.question_types;
+  }
+  if (data.unit_kind) {
+    payload.unit_kind = data.unit_kind;
+  }
+  if (typeof data.search_text === 'string' && data.search_text.trim()) {
+    payload.search_text = data.search_text.trim();
+  }
+
+  const response = await axios.post(`${API_BASE}/generation/selections`, payload, {
+    headers: getAuthHeaders(),
+    withCredentials: true,
+  });
+  return normalizeSelectionResponse(response.data);
+}
+
+export async function getGenerationSelection(selectionId: string): Promise<SelectionProgressResponse> {
+  const normalizedSelectionId = (selectionId || '').trim();
+  if (!normalizedSelectionId) {
+    throw new Error('selection_id inválido');
+  }
+  const response = await axios.get(`${API_BASE}/generation/selections/${encodeURIComponent(normalizedSelectionId)}`, {
+    headers: getAuthHeaders(),
+    withCredentials: true,
+  });
+  return normalizeSelectionProgressResponse(response.data);
+}
+
+export async function cancelGenerationSelection(selectionId: string): Promise<SelectionProgressResponse> {
+  const normalizedSelectionId = (selectionId || '').trim();
+  if (!normalizedSelectionId) {
+    throw new Error('selection_id inválido');
+  }
+  const response = await axios.post(
+    `${API_BASE}/generation/selections/${encodeURIComponent(normalizedSelectionId)}/cancel`,
+    {},
+    {
+      headers: getAuthHeaders(),
+      withCredentials: true,
+    }
+  );
+  return normalizeSelectionProgressResponse(response.data);
 }
 
 export async function executeUnit(unitId: string, data?: UnitExecuteRequest): Promise<ExecuteUnitResponse> {

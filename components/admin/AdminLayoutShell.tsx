@@ -65,6 +65,11 @@ export function AdminLayoutShell({ children }: { children: React.ReactNode }) {
           href: "/admin/openai-logs",
           icon: <FileSearch className="w-4 h-4" />,
         },
+        {
+          label: "Progreso global",
+          href: "/admin/generador/progreso-global",
+          icon: <BarChart3 className="w-4 h-4" />,
+        },
       ],
     },
     {

@@ -5,15 +5,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Difficulty } from '@/types';
 import {
   buildSnapshotViewModel,
+  cancelGenerationSelection,
+  createGenerationSelection,
   createSnapshot,
   executeUnit,
+  getGenerationSelection,
   GenerationConfigResponse,
   GenerationUnitResponse,
   getGenerationConfig,
-  getNextUnit,
   getSnapshotProgress,
   listUnits,
   listSnapshots,
+  SelectionProgressResponse,
   refreshSnapshot,
   retryUnit,
   SnapshotProgressResponse,
@@ -24,6 +27,7 @@ import { addOpenAILog } from '@/lib/openai-logs.storage';
 import { readStorage, removeStorage, writeStorage } from '@/lib/client-storage';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
@@ -44,7 +48,7 @@ import { toast } from 'sonner';
 import axios from 'axios';
 
 const STATE_STORAGE_KEY = 'admin:generator-v2-state';
-const AUTO_RUN_TICK_MS = 700;
+const ENABLE_LEGACY_AUTORUN = false;
 const MAX_CONSECUTIVE_ERRORS = 5;
 
 const DIFFICULTY_OPTIONS: Difficulty[] = [Difficulty.FACIL, Difficulty.MEDIO, Difficulty.DIFICIL];
@@ -59,6 +63,8 @@ type PersistedState = {
   unitKindFilter?: string;
   includeEntities?: boolean;
   includeRelations?: boolean;
+  selectionBySnapshot?: Record<string, string>;
+  selectionConcurrency?: number;
 };
 
 type SnapshotDraft = {
@@ -68,6 +74,22 @@ type SnapshotDraft = {
   questionTypes: string[];
   includeEntities: boolean;
   includeRelations: boolean;
+};
+
+type SelectionDraft = {
+  count: number;
+  difficulties: string[];
+  questionTypes: string[];
+  unitKind: 'all' | 'entity' | 'relation';
+  includeFailed: boolean;
+};
+
+type LocalSelectionStats = {
+  total: number;
+  ok: number;
+  failed: number;
+  pending: number;
+  inProgress: number;
 };
 
 const EMPTY_PROGRESS: SnapshotProgressResponse = {
@@ -100,6 +122,11 @@ function parsePersistedState(value: unknown): PersistedState | null {
     unitKindFilter: typeof raw.unitKindFilter === 'string' ? raw.unitKindFilter : undefined,
     includeEntities: typeof raw.includeEntities === 'boolean' ? raw.includeEntities : undefined,
     includeRelations: typeof raw.includeRelations === 'boolean' ? raw.includeRelations : undefined,
+    selectionBySnapshot:
+      raw.selectionBySnapshot && typeof raw.selectionBySnapshot === 'object' && !Array.isArray(raw.selectionBySnapshot)
+        ? (raw.selectionBySnapshot as Record<string, string>)
+        : undefined,
+    selectionConcurrency: typeof raw.selectionConcurrency === 'number' ? raw.selectionConcurrency : undefined,
   };
 }
 
@@ -110,13 +137,6 @@ function getErrorMessage(error: unknown) {
   }
 
   return 'No se pudo completar la operación de generación';
-}
-
-function getSnapshotCompletion(progress: SnapshotProgressResponse): number {
-  if (progress.total_units <= 0) {
-    return 0;
-  }
-  return Math.round(((progress.ok_units + progress.failed_units) / progress.total_units) * 100);
 }
 
 function getUnitsPerMinute(startedAtMs: number | null, processedUnits: number): number {
@@ -193,14 +213,41 @@ export default function GeneradorPreguntasPage() {
   const [draft, setDraft] = useState<SnapshotDraft>({
     category: '',
     subtopic: '__ALL__',
-    targetDifficulties: [Difficulty.FACIL, Difficulty.MEDIO, Difficulty.DIFICIL],
+    targetDifficulties: [Difficulty.FACIL, Difficulty.MEDIO],
     questionTypes: [],
     includeEntities: true,
     includeRelations: true,
   });
+  const [hardDifficultyPendingConfirm, setHardDifficultyPendingConfirm] = useState(false);
 
   const [isCreatingSnapshot, setIsCreatingSnapshot] = useState(false);
   const [isRefreshingSnapshot, setIsRefreshingSnapshot] = useState(false);
+  const [selectionDraft, setSelectionDraft] = useState<SelectionDraft>({
+    count: 500,
+    difficulties: [Difficulty.FACIL, Difficulty.MEDIO],
+    questionTypes: [],
+    unitKind: 'all',
+    includeFailed: true,
+  });
+  const [selectionBySnapshot, setSelectionBySnapshot] = useState<Record<string, string>>({});
+  const [selectionSnapshot, setSelectionSnapshot] = useState<SelectionProgressResponse | null>(null);
+  const [isCreatingSelection, setIsCreatingSelection] = useState(false);
+  const [isSelectionPolling, setIsSelectionPolling] = useState(false);
+  const [isSelectionRunning, setIsSelectionRunning] = useState(false);
+  const [selectionConcurrency, setSelectionConcurrency] = useState(1);
+  const [selectionRunStartedAt, setSelectionRunStartedAt] = useState<number | null>(null);
+  const [selectionRunProcessedUnits, setSelectionRunProcessedUnits] = useState(0);
+  const [selectionConsecutiveErrors, setSelectionConsecutiveErrors] = useState(0);
+  const [selectionLastRunInfo, setSelectionLastRunInfo] = useState<{ unitId: string; status: string; at: string } | null>(null);
+  const [localSelectionStats, setLocalSelectionStats] = useState<LocalSelectionStats>({
+    total: 0,
+    ok: 0,
+    failed: 0,
+    pending: 0,
+    inProgress: 0,
+  });
+  const [localUnitStatuses, setLocalUnitStatuses] = useState<Record<string, string>>({});
+  const selectionRunTokenRef = useRef<string | null>(null);
 
   const [activeSnapshotId, setActiveSnapshotId] = useState('');
   const [snapshots, setSnapshots] = useState<SnapshotResponse[]>([]);
@@ -213,13 +260,6 @@ export default function GeneradorPreguntasPage() {
   const [unitKindFilter, setUnitKindFilter] = useState('all');
 
   const [isPolling, setIsPolling] = useState(false);
-
-  const [isAutoRunning, setIsAutoRunning] = useState(false);
-  const [autoRunStartedAt, setAutoRunStartedAt] = useState<number | null>(null);
-  const [autoRunProcessedUnits, setAutoRunProcessedUnits] = useState(0);
-  const [consecutiveErrors, setConsecutiveErrors] = useState(0);
-  const [lastRunInfo, setLastRunInfo] = useState<{ unitId: string; status: string; at: string } | null>(null);
-  const autoRunLockRef = useRef(false);
 
   const availableCategories = useMemo(() => config?.categories || [], [config]);
   const availableSubtopics = useMemo(
@@ -257,8 +297,10 @@ export default function GeneradorPreguntasPage() {
     [units]
   );
 
-  const completion = getSnapshotCompletion(progress);
-  const unitsPerMinute = getUnitsPerMinute(autoRunStartedAt, autoRunProcessedUnits);
+  const unitsPerMinute = getUnitsPerMinute(selectionRunStartedAt, selectionRunProcessedUnits);
+  const activeSelectionId = useMemo(() => {
+    return activeSnapshotId ? (selectionBySnapshot[activeSnapshotId] || '') : '';
+  }, [activeSnapshotId, selectionBySnapshot]);
   const snapshotsForSelect = useMemo(() => {
     if (!activeSnapshotId) return snapshots;
     if (snapshots.some((item) => item.snapshot_id === activeSnapshotId)) return snapshots;
@@ -283,6 +325,12 @@ export default function GeneradorPreguntasPage() {
     if (!activeSnapshotMetadata) return null;
     return buildSnapshotViewModel(activeSnapshotMetadata, progress);
   }, [activeSnapshotMetadata, progress]);
+  const selectionCompletion = useMemo(() => {
+    const total = selectionSnapshot?.total_units ?? localSelectionStats.total;
+    if (!total || total <= 0) return 0;
+    const done = (selectionSnapshot?.ok_units ?? localSelectionStats.ok) + (selectionSnapshot?.failed_units ?? localSelectionStats.failed);
+    return Math.round((done / total) * 100);
+  }, [localSelectionStats.failed, localSelectionStats.ok, localSelectionStats.total, selectionSnapshot?.failed_units, selectionSnapshot?.ok_units, selectionSnapshot?.total_units]);
 
   const loadConfig = useCallback(async () => {
     try {
@@ -324,20 +372,24 @@ export default function GeneradorPreguntasPage() {
     }
   }, []);
 
-  const loadUnitsList = useCallback(async (snapshotId: string) => {
+  const loadUnitsList = useCallback(async (snapshotId: string, selectionId?: string) => {
     if (!snapshotId) return;
+    if (!selectionId) {
+      setUnits([]);
+      return;
+    }
 
     setIsPolling(true);
     try {
+      const selection = await getGenerationSelection(selectionId);
+      const selectedUnitIds = new Set(selection.unit_ids);
       const primary = await listUnits(snapshotId, { limit: 500, skip: 0 });
-      let items = primary.items;
+      let items = primary.items.filter((item) => selectedUnitIds.has(item.unit_id));
 
-      // Fallback: algunos escenarios devuelven vacío en consulta general.
-      // Reintentamos por estado y consolidamos resultados.
-      if (items.length === 0 && progress.total_units > 0) {
+      if (items.length === 0 && selection.total_units > 0) {
         const statuses = ['pending', 'in_progress', 'ok', 'failed'] as const;
         const chunks = await Promise.all(statuses.map((status) => listUnits(snapshotId, { status, limit: 500, skip: 0 })));
-        const merged = chunks.flatMap((chunk) => chunk.items);
+        const merged = chunks.flatMap((chunk) => chunk.items).filter((item) => selectedUnitIds.has(item.unit_id));
         const uniqueById = new Map<string, GenerationUnitResponse>();
         for (const item of merged) {
           const key = (item.unit_id || '').trim();
@@ -349,15 +401,37 @@ export default function GeneradorPreguntasPage() {
 
       setUnits(items);
 
-      if (items.length === 0 && progress.total_units > 0) {
-        toast.warning('No se pudieron cargar units, aunque el progreso indica unidades disponibles.');
+      if (items.length === 0 && selection.total_units > 0) {
+        toast.warning('No se pudieron cargar las unidades del lote activo.');
       }
     } catch (error) {
       toast.error(getErrorMessage(error));
     } finally {
       setIsPolling(false);
     }
-  }, [progress.total_units]);
+  }, []);
+
+  const loadSelectionProgress = useCallback(async (selectionId: string) => {
+    if (!selectionId) return null;
+    setIsSelectionPolling(true);
+    try {
+      const selection = await getGenerationSelection(selectionId);
+      setSelectionSnapshot(selection);
+      setLocalSelectionStats({
+        total: selection.total_units || selection.claimed_count || selection.unit_ids.length,
+        ok: selection.ok_units,
+        failed: selection.failed_units,
+        pending: selection.pending_units,
+        inProgress: selection.in_progress_units,
+      });
+      return selection;
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+      return null;
+    } finally {
+      setIsSelectionPolling(false);
+    }
+  }, []);
 
   useEffect(() => {
     void loadConfig();
@@ -377,6 +451,12 @@ export default function GeneradorPreguntasPage() {
     if (typeof parsed.includeRelations === 'boolean') {
       setDraft((prev) => ({ ...prev, includeRelations: parsed.includeRelations as boolean }));
     }
+    if (parsed.selectionBySnapshot) {
+      setSelectionBySnapshot(parsed.selectionBySnapshot);
+    }
+    if (typeof parsed.selectionConcurrency === 'number') {
+      setSelectionConcurrency(Math.max(1, Math.min(3, Math.round(parsed.selectionConcurrency))));
+    }
   }, [loadConfig]);
 
   useEffect(() => {
@@ -389,6 +469,8 @@ export default function GeneradorPreguntasPage() {
       unitKindFilter,
       includeEntities: draft.includeEntities,
       includeRelations: draft.includeRelations,
+      selectionBySnapshot,
+      selectionConcurrency,
     });
   }, [
     activeSnapshotId,
@@ -399,6 +481,8 @@ export default function GeneradorPreguntasPage() {
     unitKindFilter,
     draft.includeEntities,
     draft.includeRelations,
+    selectionBySnapshot,
+    selectionConcurrency,
   ]);
 
   useEffect(() => {
@@ -408,92 +492,47 @@ export default function GeneradorPreguntasPage() {
   }, [activeSnapshotId, loadSnapshotProgress]);
 
   useEffect(() => {
-    if (!isAutoRunning || !activeSnapshotId) return;
+    if (!activeSelectionId) {
+      setSelectionSnapshot(null);
+      setUnits([]);
+      return;
+    }
+    void loadSelectionProgress(activeSelectionId);
+  }, [activeSelectionId, loadSelectionProgress]);
 
+  useEffect(() => {
+    if (!activeSnapshotId || !activeSelectionId) return;
+    void loadUnitsList(activeSnapshotId, activeSelectionId);
+  }, [activeSnapshotId, activeSelectionId, loadUnitsList]);
+
+  useEffect(() => {
+    const statuses = Object.values(localUnitStatuses);
+    if (statuses.length === 0) {
+      return;
+    }
+    const ok = statuses.filter((status) => status === 'ok').length;
+    const failed = statuses.filter((status) => status === 'failed').length;
+    const inProgress = statuses.filter((status) => status === 'in_progress').length;
+    const total = selectionSnapshot?.total_units || statuses.length;
+    setLocalSelectionStats({
+      total,
+      ok,
+      failed,
+      inProgress,
+      pending: Math.max(0, total - ok - failed - inProgress),
+    });
+  }, [localUnitStatuses, selectionSnapshot?.total_units]);
+
+  useEffect(() => {
+    if (!isSelectionRunning || !activeSelectionId) return;
     const timer = window.setInterval(() => {
-      if (autoRunLockRef.current) return;
-      autoRunLockRef.current = true;
-
-      void (async () => {
-        try {
-          const nextUnit = await getNextUnit(activeSnapshotId);
-          if (!nextUnit?.unit_id) {
-            setIsAutoRunning(false);
-            toast.success('No quedan units pendientes o fallidas para ejecutar.');
-            return;
-          }
-
-          const execution = await executeUnit(nextUnit.unit_id);
-          const status = execution.status || 'unknown';
-
-          setLastRunInfo({
-            unitId: nextUnit.unit_id,
-            status,
-            at: new Date().toISOString(),
-          });
-
-          if (status === 'ok') {
-            setConsecutiveErrors(0);
-          } else {
-            setConsecutiveErrors((previous) => {
-              const nextCount = previous + 1;
-              if (nextCount >= MAX_CONSECUTIVE_ERRORS) {
-                setIsAutoRunning(false);
-                toast.error(`Auto-run detenido por ${MAX_CONSECUTIVE_ERRORS} errores consecutivos.`);
-              }
-              return nextCount;
-            });
-          }
-
-          setAutoRunProcessedUnits((previous) => previous + 1);
-
-          addOpenAILog({
-            request: {
-              endpoint: `/generation/units/${nextUnit.unit_id}/execute`,
-              snapshot_id: activeSnapshotId,
-              unit_id: nextUnit.unit_id,
-              category: draft.category,
-              subtopic: draft.subtopic === '__ALL__' ? null : draft.subtopic,
-              mode: 'v2_unit_execute',
-            },
-            response: {
-              status: status === 'ok' ? 'completed' : 'failed',
-              generated_count: status === 'ok' ? 1 : 0,
-              semantic_total: 0,
-              used_model: config?.llm_default_model || '',
-              raw_output: JSON.stringify(execution, null, 2),
-              error: execution.error || null,
-              message: execution.message || null,
-              meta: {
-                snapshot_id: activeSnapshotId,
-                unit_id: nextUnit.unit_id,
-                unit_status: status,
-              },
-            },
-          });
-
-          await loadSnapshotProgress(activeSnapshotId);
-        } catch (error) {
-          setConsecutiveErrors((previous) => {
-            const nextCount = previous + 1;
-            if (nextCount >= MAX_CONSECUTIVE_ERRORS) {
-              setIsAutoRunning(false);
-              toast.error(`Auto-run detenido por ${MAX_CONSECUTIVE_ERRORS} errores consecutivos.`);
-            }
-            return nextCount;
-          });
-          toast.error(getErrorMessage(error));
-        } finally {
-          autoRunLockRef.current = false;
-        }
-      })();
-    }, AUTO_RUN_TICK_MS);
-
-    return () => {
-      window.clearInterval(timer);
-      autoRunLockRef.current = false;
-    };
-  }, [activeSnapshotId, config?.llm_default_model, draft.category, draft.subtopic, isAutoRunning, loadSnapshotProgress]);
+      void loadSelectionProgress(activeSelectionId);
+      if (activeSnapshotId) {
+        void loadSnapshotProgress(activeSnapshotId);
+      }
+    }, 4000);
+    return () => window.clearInterval(timer);
+  }, [isSelectionRunning, activeSelectionId, activeSnapshotId, loadSelectionProgress, loadSnapshotProgress]);
 
   const handleCreateSnapshot = async () => {
     if (!canCreateSnapshot) {
@@ -514,11 +553,11 @@ export default function GeneradorPreguntasPage() {
 
       setSnapshots((previous) => [created, ...previous.filter((item) => item.snapshot_id !== created.snapshot_id)]);
       setActiveSnapshotId(created.snapshot_id);
-      setIsAutoRunning(false);
-      setConsecutiveErrors(0);
-      setAutoRunProcessedUnits(0);
-      setAutoRunStartedAt(null);
-      setLastRunInfo(null);
+      setSelectionConsecutiveErrors(0);
+      setSelectionRunProcessedUnits(0);
+      setSelectionRunStartedAt(null);
+      setSelectionLastRunInfo(null);
+      setHardDifficultyPendingConfirm(false);
       toast.success(`Snapshot ${created.snapshot_id} creado.`);
     } catch (error) {
       toast.error(getErrorMessage(error));
@@ -580,6 +619,7 @@ export default function GeneradorPreguntasPage() {
         request: {
           endpoint: `/generation/units/${unitId}/execute`,
           snapshot_id: activeSnapshotId,
+          selection_id: activeSelectionId || null,
           unit_id: unitId,
           category: draft.category,
           subtopic: draft.subtopic === '__ALL__' ? null : draft.subtopic,
@@ -622,24 +662,190 @@ export default function GeneradorPreguntasPage() {
     }
   };
 
-  const handleStartAutoRun = () => {
+  const handleCreateSelection = async () => {
     if (!activeSnapshotId) {
-      toast.error('Selecciona o crea un snapshot antes de iniciar auto-run.');
+      toast.error('Selecciona un snapshot activo.');
       return;
     }
-
-    setConsecutiveErrors(0);
-    setAutoRunProcessedUnits(0);
-    setAutoRunStartedAt(Date.now());
-    setIsAutoRunning(true);
+    if (selectionDraft.count <= 0) {
+      toast.error('El count debe ser mayor que 0.');
+      return;
+    }
+    try {
+      setIsCreatingSelection(true);
+      const selection = await createGenerationSelection({
+        snapshot_id: activeSnapshotId,
+        count: selectionDraft.count,
+        difficulties: selectionDraft.difficulties.length > 0 ? selectionDraft.difficulties : undefined,
+        question_types: selectionDraft.questionTypes.length > 0 ? selectionDraft.questionTypes : undefined,
+        unit_kind: selectionDraft.unitKind === 'all' ? undefined : selectionDraft.unitKind,
+        include_failed: selectionDraft.includeFailed,
+      });
+      setSelectionBySnapshot((prev) => ({ ...prev, [activeSnapshotId]: selection.selection_id }));
+      const details = await loadSelectionProgress(selection.selection_id);
+      if (details && details.claimed_count < selectionDraft.count) {
+        toast.warning('No había suficientes unidades elegibles para completar el count solicitado.');
+      } else {
+        toast.success(`Selección creada: ${selection.selection_id}`);
+      }
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    } finally {
+      setIsCreatingSelection(false);
+    }
   };
 
-  const handleStopAutoRun = () => {
-    setIsAutoRunning(false);
+  const stopSelectionRunner = () => {
+    selectionRunTokenRef.current = null;
+    setIsSelectionRunning(false);
+  };
+
+  const handleRunSelection = async () => {
+    if (!activeSnapshotId || !activeSelectionId) {
+      toast.error('Crea o selecciona un lote antes de ejecutar.');
+      return;
+    }
+    if (isSelectionRunning) return;
+
+    try {
+      const [selection, unitsResponse] = await Promise.all([
+        getGenerationSelection(activeSelectionId),
+        listUnits(activeSnapshotId, { limit: 2000, skip: 0 }),
+      ]);
+      setSelectionSnapshot(selection);
+
+      const statusById: Record<string, string> = {};
+      for (const unit of unitsResponse.items) {
+        if (unit.unit_id) {
+          statusById[unit.unit_id] = unit.status;
+        }
+      }
+
+      setLocalUnitStatuses(statusById);
+      const unitIds = selection.unit_ids || [];
+      const selectedIdSet = new Set(unitIds);
+      setUnits(unitsResponse.items.filter((unit) => selectedIdSet.has(unit.unit_id)));
+      const queue = unitIds.filter((unitId) => {
+        const status = statusById[unitId];
+        return status !== 'ok' && status !== 'failed';
+      });
+
+      if (queue.length === 0) {
+        toast.success('La selección no tiene unidades pendientes para ejecutar.');
+        return;
+      }
+
+      const runToken = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      selectionRunTokenRef.current = runToken;
+      setIsSelectionRunning(true);
+      setSelectionRunStartedAt(Date.now());
+      setSelectionRunProcessedUnits(0);
+      setSelectionConsecutiveErrors(0);
+
+      let cursor = 0;
+      const worker = async () => {
+        while (selectionRunTokenRef.current === runToken) {
+          const index = cursor++;
+          if (index >= queue.length) {
+            return;
+          }
+          const unitId = queue[index];
+          setLocalUnitStatuses((prev) => ({ ...prev, [unitId]: 'in_progress' }));
+          try {
+            const result = await executeUnit(unitId);
+            const status = result.status || 'failed';
+            setSelectionLastRunInfo({
+              unitId,
+              status,
+              at: new Date().toISOString(),
+            });
+            setSelectionRunProcessedUnits((prev) => prev + 1);
+            if (status === 'ok') {
+              setSelectionConsecutiveErrors(0);
+            } else {
+              setSelectionConsecutiveErrors((prev) => {
+                const next = prev + 1;
+                if (next >= MAX_CONSECUTIVE_ERRORS) {
+                  selectionRunTokenRef.current = null;
+                  setIsSelectionRunning(false);
+                  toast.error(`Runner detenido por ${MAX_CONSECUTIVE_ERRORS} errores consecutivos.`);
+                }
+                return next;
+              });
+            }
+            setLocalUnitStatuses((prev) => ({ ...prev, [unitId]: status }));
+            addOpenAILog({
+              request: {
+                endpoint: `/generation/units/${unitId}/execute`,
+                snapshot_id: activeSnapshotId,
+                selection_id: activeSelectionId,
+                unit_id: unitId,
+                category: draft.category,
+                subtopic: draft.subtopic === '__ALL__' ? null : draft.subtopic,
+                mode: 'v2_selection_execute',
+              },
+              response: {
+                status: status === 'ok' ? 'completed' : 'failed',
+                generated_count: status === 'ok' ? 1 : 0,
+                semantic_total: 0,
+                used_model: config?.llm_default_model || '',
+                raw_output: JSON.stringify(result, null, 2),
+                error: result.error || null,
+                message: result.message || null,
+                meta: {
+                  snapshot_id: activeSnapshotId,
+                  selection_id: activeSelectionId,
+                  unit_id: unitId,
+                  unit_status: status,
+                },
+              },
+            });
+          } catch {
+            setSelectionRunProcessedUnits((prev) => prev + 1);
+            setSelectionConsecutiveErrors((prev) => {
+              const next = prev + 1;
+              if (next >= MAX_CONSECUTIVE_ERRORS) {
+                selectionRunTokenRef.current = null;
+                setIsSelectionRunning(false);
+                toast.error(`Runner detenido por ${MAX_CONSECUTIVE_ERRORS} errores consecutivos.`);
+              }
+              return next;
+            });
+            setLocalUnitStatuses((prev) => ({ ...prev, [unitId]: 'failed' }));
+          }
+        }
+      };
+
+      await Promise.all(Array.from({ length: Math.max(1, Math.min(3, selectionConcurrency)) }, () => worker()));
+
+      if (selectionRunTokenRef.current === runToken) {
+        selectionRunTokenRef.current = null;
+        setIsSelectionRunning(false);
+        void loadSelectionProgress(activeSelectionId);
+        void loadSnapshotProgress(activeSnapshotId);
+        toast.success('Ejecución de selección finalizada.');
+      }
+    } catch (error) {
+      setIsSelectionRunning(false);
+      selectionRunTokenRef.current = null;
+      toast.error(getErrorMessage(error));
+    }
+  };
+
+  const handleCancelSelection = async () => {
+    if (!activeSelectionId) return;
+    stopSelectionRunner();
+    try {
+      await cancelGenerationSelection(activeSelectionId);
+      await Promise.all([loadSelectionProgress(activeSelectionId), loadSnapshotProgress(activeSnapshotId)]);
+      toast.success('Selección cancelada.');
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    }
   };
 
   const handleClearState = () => {
-    setIsAutoRunning(false);
+    stopSelectionRunner();
     setActiveSnapshotId('');
     setSnapshots([]);
     setProgress(EMPTY_PROGRESS);
@@ -648,10 +854,13 @@ export default function GeneradorPreguntasPage() {
     setDifficultyFilter('all');
     setQuestionTypeFilter('all');
     setUnitKindFilter('all');
-    setLastRunInfo(null);
-    setConsecutiveErrors(0);
-    setAutoRunProcessedUnits(0);
-    setAutoRunStartedAt(null);
+    setSelectionSnapshot(null);
+    setSelectionBySnapshot({});
+    setSelectionLastRunInfo(null);
+    setSelectionConsecutiveErrors(0);
+    setSelectionRunProcessedUnits(0);
+    setSelectionRunStartedAt(null);
+    setLocalUnitStatuses({});
     removeStorage(STATE_STORAGE_KEY);
     toast.success('Estado operativo limpiado.');
   };
@@ -665,7 +874,7 @@ export default function GeneradorPreguntasPage() {
             Operación de Generación V2
           </h1>
           <p className="text-muted-foreground mt-1">
-            Gestiona snapshots y units en tiempo real con ejecución manual o auto-run serial.
+            Gestiona snapshots y ejecución por lote (selecciones) con progreso y reanudación.
           </p>
         </div>
         <div className="ml-auto flex w-full flex-col items-start gap-3 sm:w-auto sm:items-end">
@@ -680,7 +889,7 @@ export default function GeneradorPreguntasPage() {
               <Badge variant="outline">Config actualizada: {new Date(config.updated_at).toLocaleString('es-CL')}</Badge>
             )}
             {activeSnapshotId && <Badge variant="outline">Snapshot activo: {activeSnapshotId}</Badge>}
-            <Badge variant="outline">Auto-run: {isAutoRunning ? 'Activo' : 'Detenido'}</Badge>
+            <Badge variant="outline">Runner selección: {isSelectionRunning ? 'Activo' : 'Detenido'}</Badge>
           </div>
         </div>
       </div>
@@ -769,6 +978,17 @@ export default function GeneradorPreguntasPage() {
                             checked={checked}
                             onCheckedChange={(nextValue) => {
                               const shouldInclude = Boolean(nextValue);
+                              if (difficulty === Difficulty.DIFICIL && shouldInclude && !checked) {
+                                if (!hardDifficultyPendingConfirm) {
+                                  setHardDifficultyPendingConfirm(true);
+                                  toast.info('Haz click nuevamente en "Difícil" para confirmar su inclusión.');
+                                  return;
+                                }
+                                setHardDifficultyPendingConfirm(false);
+                              }
+                              if (difficulty !== Difficulty.DIFICIL || !shouldInclude) {
+                                setHardDifficultyPendingConfirm(false);
+                              }
                               setDraft((prev) => {
                                 const next = shouldInclude
                                   ? [...prev.targetDifficulties, difficulty]
@@ -934,17 +1154,9 @@ export default function GeneradorPreguntasPage() {
                   )}
                   Actualizar
                 </Button>
-                {!isAutoRunning ? (
-                  <Button onClick={handleStartAutoRun} disabled={!activeSnapshotId}>
-                    <Play className="w-4 h-4 mr-2" />
-                    Auto-run
-                  </Button>
-                ) : (
-                  <Button variant="destructive" onClick={handleStopAutoRun}>
-                    <StopCircle className="w-4 h-4 mr-2" />
-                    Detener
-                  </Button>
-                )}
+                {ENABLE_LEGACY_AUTORUN ? (
+                  <Badge variant="outline">Modo legacy habilitado</Badge>
+                ) : null}
               </div>
             </div>
 
@@ -956,14 +1168,14 @@ export default function GeneradorPreguntasPage() {
               <div className="rounded-lg border px-3 py-2 text-sm">
                 <p className="text-xs text-muted-foreground">Errores consecutivos</p>
                 <p className="font-semibold">
-                  {consecutiveErrors}/{MAX_CONSECUTIVE_ERRORS}
+                  {selectionConsecutiveErrors}/{MAX_CONSECUTIVE_ERRORS}
                 </p>
               </div>
               <div className="rounded-lg border px-3 py-2 text-sm">
                 <p className="text-xs text-muted-foreground">Última ejecución</p>
                 <p className="font-semibold truncate">
-                  {lastRunInfo
-                    ? `${lastRunInfo.unitId} · ${lastRunInfo.status} · ${new Date(lastRunInfo.at).toLocaleTimeString('es-CL')}`
+                  {selectionLastRunInfo
+                    ? `${selectionLastRunInfo.unitId} · ${selectionLastRunInfo.status} · ${new Date(selectionLastRunInfo.at).toLocaleTimeString('es-CL')}`
                     : 'Sin ejecuciones'}
                 </p>
               </div>
@@ -1047,57 +1259,253 @@ export default function GeneradorPreguntasPage() {
 
       <Card className="border-2 shadow-sm">
         <CardHeader>
-          <CardTitle>Progreso en tiempo real</CardTitle>
-          <CardDescription>Estado agregado por snapshot.</CardDescription>
+          <CardTitle>Generación por Lote (Selección)</CardTitle>
+          <CardDescription>
+            Crea un lote de unidades del snapshot activo y ejecútalo una por una con control local de concurrencia.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-            <div className="rounded-lg border p-3">
-              <p className="text-xs text-muted-foreground">Total</p>
-              <p className="text-xl font-semibold">{progress.total_units}</p>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <div className="space-y-2">
+              <Label>Cantidad de unidades</Label>
+              <Input
+                type="number"
+                min={1}
+                value={selectionDraft.count}
+                onChange={(e) =>
+                  setSelectionDraft((prev) => ({ ...prev, count: Math.max(1, Number(e.target.value) || 1) }))
+                }
+              />
+              <p className="text-xs text-muted-foreground">
+                Define cuántas unidades se intentarán reservar para este lote.
+              </p>
             </div>
-            <div className="rounded-lg border p-3">
-              <p className="text-xs text-muted-foreground">Pendientes</p>
-              <p className="text-xl font-semibold">{progress.pending_units}</p>
+            <div className="space-y-2">
+              <Label>Tipo de unidad</Label>
+              <Select
+                value={selectionDraft.unitKind}
+                onValueChange={(value) =>
+                  setSelectionDraft((prev) => ({ ...prev, unitKind: value as 'all' | 'entity' | 'relation' }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas</SelectItem>
+                  <SelectItem value="entity">Entidad</SelectItem>
+                  <SelectItem value="relation">Relación</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Elige si el lote incluirá entidades, relaciones o ambos tipos.
+              </p>
             </div>
-            <div className="rounded-lg border p-3">
-              <p className="text-xs text-muted-foreground">En progreso</p>
-              <p className="text-xl font-semibold">{progress.in_progress_units}</p>
-            </div>
-            <div className="rounded-lg border p-3">
-              <p className="text-xs text-muted-foreground">Correctas</p>
-              <p className="text-xl font-semibold">{progress.ok_units}</p>
-            </div>
-            <div className="rounded-lg border p-3">
-              <p className="text-xs text-muted-foreground">Con error</p>
-              <p className="text-xl font-semibold">{progress.failed_units}</p>
+            <div className="space-y-2">
+              <Label>Concurrencia de ejecución</Label>
+              <Select
+                value={String(selectionConcurrency)}
+                onValueChange={(value) => setSelectionConcurrency(Math.max(1, Math.min(3, Number(value) || 1)))}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">1</SelectItem>
+                  <SelectItem value="2">2</SelectItem>
+                  <SelectItem value="3">3</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Controla cuántas unidades se ejecutan al mismo tiempo (recomendado: 1 para mayor estabilidad).
+              </p>
             </div>
           </div>
 
-          <div className="space-y-2">
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Completitud</span>
-              <span className="font-medium">{completion}%</span>
+          <div className="rounded-2xl border bg-card p-4 shadow-sm">
+            <p className="text-sm font-semibold mb-2">Dificultades del lote</p>
+            <p className="mb-3 text-xs text-muted-foreground">
+              Filtra las unidades por nivel de dificultad para enfocar la generación.
+            </p>
+            <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+              {DIFFICULTY_OPTIONS.map((difficulty) => {
+                const checked = selectionDraft.difficulties.includes(difficulty);
+                return (
+                  <label key={`selection-difficulty-${difficulty}`} className="flex items-center gap-2 rounded-lg border p-2">
+                    <Checkbox
+                      checked={checked}
+                      onCheckedChange={(next) => {
+                        const shouldInclude = Boolean(next);
+                        setSelectionDraft((prev) => ({
+                          ...prev,
+                          difficulties: shouldInclude
+                            ? Array.from(new Set([...prev.difficulties, difficulty]))
+                            : prev.difficulties.filter((item) => item !== difficulty),
+                        }));
+                      }}
+                    />
+                    <span>{difficulty}</span>
+                  </label>
+                );
+              })}
             </div>
-            <Progress value={completion} />
+          </div>
+
+          <div className="rounded-2xl border bg-card p-4 shadow-sm">
+            <p className="text-sm font-semibold mb-2">Tipos de pregunta del lote</p>
+            <p className="mb-3 text-xs text-muted-foreground">
+              Limita el lote a tipos específicos de pregunta según el objetivo pedagógico.
+            </p>
+            <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+              {availableQuestionTypes.map((questionType) => {
+                const checked = selectionDraft.questionTypes.includes(questionType);
+                return (
+                  <label key={`selection-qtype-${questionType}`} className="flex items-center gap-2 rounded-lg border p-2">
+                    <Checkbox
+                      checked={checked}
+                      onCheckedChange={(next) => {
+                        const shouldInclude = Boolean(next);
+                        setSelectionDraft((prev) => ({
+                          ...prev,
+                          questionTypes: shouldInclude
+                            ? Array.from(new Set([...prev.questionTypes, questionType]))
+                            : prev.questionTypes.filter((item) => item !== questionType),
+                        }));
+                      }}
+                    />
+                    <span>{formatQuestionTypeLabel(questionType)}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox
+              checked={selectionDraft.includeFailed}
+              onCheckedChange={(next) => setSelectionDraft((prev) => ({ ...prev, includeFailed: Boolean(next) }))}
+            />
+            Incluir unidades previamente fallidas
+          </label>
+          <p className="text-xs text-muted-foreground">
+            Si está activo, el lote también puede tomar unidades que fallaron en ejecuciones anteriores.
+          </p>
+
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={handleCreateSelection} disabled={!activeSnapshotId || isCreatingSelection}>
+              {isCreatingSelection ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
+              Crear selección
+            </Button>
+            {!isSelectionRunning ? (
+              <Button variant="secondary" onClick={handleRunSelection} disabled={!activeSelectionId}>
+                <Play className="h-4 w-4 mr-2" />
+                Ejecutar selección
+              </Button>
+            ) : (
+              <Button variant="destructive" onClick={stopSelectionRunner}>
+                <StopCircle className="h-4 w-4 mr-2" />
+                Detener ejecución
+              </Button>
+            )}
+            <Button variant="outline" onClick={handleCancelSelection} disabled={!activeSelectionId}>
+              Cancelar selección
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => (activeSelectionId ? void loadSelectionProgress(activeSelectionId) : undefined)}
+              disabled={!activeSelectionId || isSelectionPolling}
+            >
+              {isSelectionPolling ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+              Refrescar selección
+            </Button>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <div className="rounded-lg border p-3">
+              <p className="text-xs text-muted-foreground">ID de selección</p>
+              <p className="text-sm font-semibold truncate">{activeSelectionId || '-'}</p>
+            </div>
+            <div className="rounded-lg border p-3">
+              <p className="text-xs text-muted-foreground">Total</p>
+              <p className="text-sm font-semibold">{selectionSnapshot?.total_units ?? localSelectionStats.total}</p>
+            </div>
+            <div className="rounded-lg border p-3">
+              <p className="text-xs text-muted-foreground">Correctas</p>
+              <p className="text-sm font-semibold">{selectionSnapshot?.ok_units ?? localSelectionStats.ok}</p>
+            </div>
+            <div className="rounded-lg border p-3">
+              <p className="text-xs text-muted-foreground">Fallidas</p>
+              <p className="text-sm font-semibold">{selectionSnapshot?.failed_units ?? localSelectionStats.failed}</p>
+            </div>
+            <div className="rounded-lg border p-3">
+              <p className="text-xs text-muted-foreground">Pendientes</p>
+              <p className="text-sm font-semibold">
+                {selectionSnapshot?.pending_units ?? localSelectionStats.pending}
+              </p>
+            </div>
           </div>
         </CardContent>
       </Card>
 
       <Card className="border-2 shadow-sm">
         <CardHeader>
-          <CardTitle>Unidades</CardTitle>
-          <CardDescription>Listado filtrable con acciones por unidad (carga manual).</CardDescription>
+          <CardTitle>Progreso del lote activo</CardTitle>
+          <CardDescription>
+            Estado de la selección actual del snapshot activo. Refleja solo el lote en ejecución/seguimiento.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <div className="rounded-lg border p-3">
+              <p className="text-xs text-muted-foreground">Total</p>
+              <p className="text-xl font-semibold">{selectionSnapshot?.total_units ?? localSelectionStats.total}</p>
+            </div>
+            <div className="rounded-lg border p-3">
+              <p className="text-xs text-muted-foreground">Pendientes</p>
+              <p className="text-xl font-semibold">{selectionSnapshot?.pending_units ?? localSelectionStats.pending}</p>
+            </div>
+            <div className="rounded-lg border p-3">
+              <p className="text-xs text-muted-foreground">En progreso</p>
+              <p className="text-xl font-semibold">
+                {selectionSnapshot?.in_progress_units ?? localSelectionStats.inProgress}
+              </p>
+            </div>
+            <div className="rounded-lg border p-3">
+              <p className="text-xs text-muted-foreground">Correctas</p>
+              <p className="text-xl font-semibold">{selectionSnapshot?.ok_units ?? localSelectionStats.ok}</p>
+            </div>
+            <div className="rounded-lg border p-3">
+              <p className="text-xs text-muted-foreground">Fallidas</p>
+              <p className="text-xl font-semibold">{selectionSnapshot?.failed_units ?? localSelectionStats.failed}</p>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Completitud</span>
+              <span className="font-medium">{selectionCompletion}%</span>
+            </div>
+            <Progress value={selectionCompletion} />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-2 shadow-sm">
+        <CardHeader>
+          <CardTitle>Unidades del lote activo</CardTitle>
+          <CardDescription>
+            Listado filtrable de unidades pertenecientes a la selección activa del snapshot.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex justify-end">
             <Button
               variant="outline"
-              onClick={() => void loadUnitsList(activeSnapshotId)}
-              disabled={!activeSnapshotId || isPolling}
+              onClick={() => void loadUnitsList(activeSnapshotId, activeSelectionId)}
+              disabled={!activeSnapshotId || !activeSelectionId || isPolling}
             >
               {isPolling ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              Cargar/actualizar units
+              Cargar/actualizar unidades del lote
             </Button>
           </div>
 
@@ -1168,10 +1576,14 @@ export default function GeneradorPreguntasPage() {
           </div>
 
           {isPolling ? (
-            <div className="rounded-md border border-dashed p-5 text-sm text-muted-foreground">Actualizando units...</div>
+            <div className="rounded-md border border-dashed p-5 text-sm text-muted-foreground">Actualizando unidades del lote...</div>
+          ) : !activeSelectionId ? (
+            <div className="rounded-md border border-dashed p-5 text-sm text-muted-foreground">
+              No hay lote activo. Crea una selección para ver sus unidades.
+            </div>
           ) : filteredUnits.length === 0 ? (
             <div className="rounded-md border border-dashed p-5 text-sm text-muted-foreground">
-              No hay units para el snapshot/filtros seleccionados.
+              No hay unidades para el lote/filtros seleccionados.
             </div>
           ) : (
             <div className="space-y-2">
