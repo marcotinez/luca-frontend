@@ -36,6 +36,20 @@ export type RubricConfig = {
   pass_threshold: number;
 };
 
+export interface ModelCatalogItem {
+  type: 'llm' | 'embedding' | string;
+  key: string;
+  display_name: string;
+  publisher?: string | null;
+  architecture?: string | null;
+  capabilities?: Record<string, unknown> | null;
+  max_context_length?: number | null;
+}
+
+export interface ModelCatalogResponse {
+  models: ModelCatalogItem[];
+}
+
 export interface GenerationConfigResponse {
   generation_stem_system_prompt: string;
   generation_stem_user_prompt_template: string;
@@ -45,11 +59,12 @@ export interface GenerationConfigResponse {
   generation_judge_user_prompt_template: string;
   llm_default_model: string;
   llm_models: Record<string, string>;
+  llm_model_sections: string[];
   embedding_default_model: string;
   embedding_models: Record<string, string>;
+  embedding_model_sections: string[];
   question_type_catalog: string[];
   rubric_config: RubricConfig;
-  llm_providers: Record<string, Record<string, string>>;
   ingestion_extraction_system_prompt: string;
   ingestion_extraction_user_prompt_template: string;
   ingestion_refinement_system_prompt: string;
@@ -74,11 +89,12 @@ export type GenerationConfigPatchRequest = Partial<{
   generation_judge_user_prompt_template: string;
   llm_default_model: string;
   llm_models: Record<string, string>;
+  llm_model_sections: string[];
   embedding_default_model: string;
   embedding_models: Record<string, string>;
+  embedding_model_sections: string[];
   question_type_catalog: string[];
   rubric_config: RubricConfig;
-  llm_providers: Record<string, Record<string, string>>;
   ingestion_extraction_system_prompt: string;
   ingestion_extraction_user_prompt_template: string;
   ingestion_refinement_system_prompt: string;
@@ -548,22 +564,42 @@ function normalizeRubricConfig(value: unknown): RubricConfig {
   };
 }
 
-function normalizeLLMProviders(value: unknown): Record<string, Record<string, string>> {
+function normalizeModelCatalogItem(value: unknown): ModelCatalogItem | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return {};
+    return null;
   }
 
   const raw = value as Record<string, unknown>;
-  const providers: Record<string, Record<string, string>> = {};
-  for (const [providerName, providerValue] of Object.entries(raw)) {
-    const key = normalizeString(providerName).trim();
-    if (!key) continue;
-    if (!providerValue || typeof providerValue !== 'object' || Array.isArray(providerValue)) {
-      continue;
-    }
-    providers[key] = normalizeStringMap(providerValue);
+  const key = normalizeString(raw.key).trim();
+  if (!key) {
+    return null;
   }
-  return providers;
+
+  return {
+    type: normalizeString(raw.type).trim() || 'llm',
+    key,
+    display_name: normalizeString(raw.display_name).trim() || key,
+    publisher: normalizeString(raw.publisher).trim() || null,
+    architecture: normalizeString(raw.architecture).trim() || null,
+    capabilities:
+      raw.capabilities && typeof raw.capabilities === 'object' && !Array.isArray(raw.capabilities)
+        ? (raw.capabilities as Record<string, unknown>)
+        : null,
+    max_context_length: Number.isFinite(Number(raw.max_context_length)) ? Number(raw.max_context_length) : null,
+  };
+}
+
+function normalizeModelCatalogResponse(data: unknown): ModelCatalogResponse {
+  const raw =
+    data && typeof data === 'object' && !Array.isArray(data)
+      ? (data as Record<string, unknown>)
+      : {};
+  const models = Array.isArray(raw.models)
+    ? raw.models
+        .map((entry) => normalizeModelCatalogItem(entry))
+        .filter((entry): entry is ModelCatalogItem => entry !== null)
+    : [];
+  return { models };
 }
 
 function normalizeGenerationConfig(data: unknown): GenerationConfigResponse {
@@ -598,11 +634,12 @@ function normalizeGenerationConfig(data: unknown): GenerationConfigResponse {
     generation_judge_user_prompt_template: normalizeString(raw.generation_judge_user_prompt_template),
     llm_default_model: normalizeString(raw.llm_default_model),
     llm_models: normalizeStringMap(raw.llm_models),
+    llm_model_sections: normalizeStringArray(raw.llm_model_sections),
     embedding_default_model: normalizeString(raw.embedding_default_model),
     embedding_models: normalizeStringMap(raw.embedding_models),
+    embedding_model_sections: normalizeStringArray(raw.embedding_model_sections),
     question_type_catalog: normalizeQuestionTypeCatalog(raw.question_type_catalog),
     rubric_config: normalizeRubricConfig(raw.rubric_config),
-    llm_providers: normalizeLLMProviders(raw.llm_providers),
     ingestion_extraction_system_prompt: normalizeString(raw.ingestion_extraction_system_prompt),
     ingestion_extraction_user_prompt_template: normalizeString(raw.ingestion_extraction_user_prompt_template),
     ingestion_refinement_system_prompt: normalizeString(raw.ingestion_refinement_system_prompt),
@@ -1071,6 +1108,15 @@ export async function listUnits(snapshotId: string, options?: ListUnitsRequest):
     items,
     total: normalizeNumber(raw.total, items.length),
   };
+}
+
+export async function getModelCatalog(baseUrl?: string): Promise<ModelCatalogResponse> {
+  const apiBase = resolveApiBase(baseUrl);
+  const response = await axios.get(`${apiBase}/models`, {
+    headers: getAuthHeaders(),
+    withCredentials: true,
+  });
+  return normalizeModelCatalogResponse(response.data);
 }
 
 export async function getGenerationConfig(baseUrl?: string): Promise<GenerationConfigResponse> {
