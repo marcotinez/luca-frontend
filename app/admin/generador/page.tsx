@@ -4,10 +4,12 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Difficulty } from '@/types';
 import {
+  backfillGenerationOrigins,
   buildSnapshotViewModel,
   cancelGenerationSelection,
   createGenerationSelection,
   createSnapshot,
+  deleteSnapshot,
   executeUnit,
   getGenerationSelection,
   GenerationConfigResponse,
@@ -33,6 +35,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import {
   Loader2,
@@ -42,6 +45,7 @@ import {
   Sparkles,
   StopCircle,
   RefreshCw,
+  Trash2,
   WandSparkles,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -222,6 +226,11 @@ export default function GeneradorPreguntasPage() {
 
   const [isCreatingSnapshot, setIsCreatingSnapshot] = useState(false);
   const [isRefreshingSnapshot, setIsRefreshingSnapshot] = useState(false);
+  const [isDeletingSnapshot, setIsDeletingSnapshot] = useState(false);
+  const [deletingSnapshotId, setDeletingSnapshotId] = useState('');
+  const [snapshotToDelete, setSnapshotToDelete] = useState<SnapshotResponse | null>(null);
+  const [isBackfillingOrigins, setIsBackfillingOrigins] = useState(false);
+  const [backfillForce, setBackfillForce] = useState(false);
   const [selectionDraft, setSelectionDraft] = useState<SelectionDraft>({
     count: 500,
     difficulties: [Difficulty.FACIL, Difficulty.MEDIO],
@@ -605,6 +614,52 @@ export default function GeneradorPreguntasPage() {
     }
   };
 
+  const handleDeleteSnapshot = async () => {
+    if (!snapshotToDelete?.snapshot_id || isDeletingSnapshot) return;
+
+    const targetId = snapshotToDelete.snapshot_id;
+    try {
+      setIsDeletingSnapshot(true);
+      setDeletingSnapshotId(targetId);
+      const deleted = await deleteSnapshot(targetId);
+      setSnapshots((previous) => previous.filter((item) => item.snapshot_id !== targetId));
+      if (activeSnapshotId === targetId) {
+        setActiveSnapshotId('');
+        setProgress(EMPTY_PROGRESS);
+        setUnits([]);
+      }
+      toast.success(
+        `Snapshot eliminado. snapshots:${deleted.deleted_snapshots} units:${deleted.deleted_units} runs:${deleted.deleted_runs} selections:${deleted.deleted_selections}`
+      );
+      setSnapshotToDelete(null);
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 409) {
+        toast.warning('No se puede borrar: existen unidades en progreso.');
+      } else if (axios.isAxiosError(error) && error.response?.status === 404) {
+        toast.error('Snapshot no encontrado.');
+      } else {
+        toast.error(getErrorMessage(error));
+      }
+    } finally {
+      setIsDeletingSnapshot(false);
+      setDeletingSnapshotId('');
+    }
+  };
+
+  const handleBackfillOrigins = async () => {
+    try {
+      setIsBackfillingOrigins(true);
+      const result = await backfillGenerationOrigins(backfillForce);
+      toast.success(
+        `Backfill OK. scanned:${result.scanned_units} updated:${result.updated_questions} sin_question:${result.skipped_without_question} sin_snapshot:${result.skipped_missing_snapshot} ya_origen:${result.skipped_already_present}`
+      );
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    } finally {
+      setIsBackfillingOrigins(false);
+    }
+  };
+
   const handleExecuteUnit = async (unitId: string) => {
     if (!activeSnapshotId) return;
     if (!unitId.trim()) {
@@ -901,7 +956,10 @@ export default function GeneradorPreguntasPage() {
               <Sparkles className="w-5 h-5 text-primary" />
               Crear Snapshot
             </CardTitle>
-            <CardDescription>Define el alcance operativo con bloques separados y legibles.</CardDescription>
+            <CardDescription>
+              Define el alcance operativo con bloques separados y legibles. Algunas unidades pueden quedar en ok
+              automáticamente por reutilización de preguntas existentes.
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             {isLoadingConfig ? (
@@ -1154,10 +1212,35 @@ export default function GeneradorPreguntasPage() {
                   )}
                   Actualizar
                 </Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => setSnapshotToDelete(activeSnapshotMetadata)}
+                  disabled={!activeSnapshotId || deletingSnapshotId === activeSnapshotId || isDeletingSnapshot}
+                >
+                  {deletingSnapshotId === activeSnapshotId ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-4 h-4 mr-2" />
+                  )}
+                  Eliminar
+                </Button>
                 {ENABLE_LEGACY_AUTORUN ? (
                   <Badge variant="outline">Modo legacy habilitado</Badge>
                 ) : null}
               </div>
+            </div>
+            <div className="rounded-lg border p-3 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm font-medium">Mantenimiento</p>
+                <Button variant="outline" onClick={handleBackfillOrigins} disabled={isBackfillingOrigins}>
+                  {isBackfillingOrigins ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                  Backfill Orígenes
+                </Button>
+              </div>
+              <label className="flex items-center gap-2 text-sm">
+                <Checkbox checked={backfillForce} onCheckedChange={(v) => setBackfillForce(Boolean(v))} />
+                Forzar sobrescritura (force=true)
+              </label>
             </div>
 
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
@@ -1420,72 +1503,34 @@ export default function GeneradorPreguntasPage() {
             </Button>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-            <div className="rounded-lg border p-3">
-              <p className="text-xs text-muted-foreground">ID de selección</p>
-              <p className="text-sm font-semibold truncate">{activeSelectionId || '-'}</p>
+          <div className="rounded-xl border bg-muted/10 p-4 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-xs text-muted-foreground">Selección activa</p>
+                <p className="text-sm font-semibold truncate">{activeSelectionId || '-'}</p>
+              </div>
+              <Badge variant={isSelectionRunning ? 'secondary' : 'outline'}>
+                {isSelectionRunning ? 'Ejecución activa' : 'Ejecución detenida'}
+              </Badge>
             </div>
-            <div className="rounded-lg border p-3">
-              <p className="text-xs text-muted-foreground">Total</p>
-              <p className="text-sm font-semibold">{selectionSnapshot?.total_units ?? localSelectionStats.total}</p>
-            </div>
-            <div className="rounded-lg border p-3">
-              <p className="text-xs text-muted-foreground">Correctas</p>
-              <p className="text-sm font-semibold">{selectionSnapshot?.ok_units ?? localSelectionStats.ok}</p>
-            </div>
-            <div className="rounded-lg border p-3">
-              <p className="text-xs text-muted-foreground">Fallidas</p>
-              <p className="text-sm font-semibold">{selectionSnapshot?.failed_units ?? localSelectionStats.failed}</p>
-            </div>
-            <div className="rounded-lg border p-3">
-              <p className="text-xs text-muted-foreground">Pendientes</p>
-              <p className="text-sm font-semibold">
-                {selectionSnapshot?.pending_units ?? localSelectionStats.pending}
-              </p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
 
-      <Card className="border-2 shadow-sm">
-        <CardHeader>
-          <CardTitle>Progreso del lote activo</CardTitle>
-          <CardDescription>
-            Estado de la selección actual del snapshot activo. Refleja solo el lote en ejecución/seguimiento.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-            <div className="rounded-lg border p-3">
-              <p className="text-xs text-muted-foreground">Total</p>
-              <p className="text-xl font-semibold">{selectionSnapshot?.total_units ?? localSelectionStats.total}</p>
+            <div className="flex flex-wrap gap-2">
+              <Badge variant="outline">Total: {selectionSnapshot?.total_units ?? localSelectionStats.total}</Badge>
+              <Badge variant="outline">Pendientes: {selectionSnapshot?.pending_units ?? localSelectionStats.pending}</Badge>
+              <Badge variant="outline">
+                En progreso: {selectionSnapshot?.in_progress_units ?? localSelectionStats.inProgress}
+              </Badge>
+              <Badge variant="outline">Correctas: {selectionSnapshot?.ok_units ?? localSelectionStats.ok}</Badge>
+              <Badge variant="outline">Fallidas: {selectionSnapshot?.failed_units ?? localSelectionStats.failed}</Badge>
             </div>
-            <div className="rounded-lg border p-3">
-              <p className="text-xs text-muted-foreground">Pendientes</p>
-              <p className="text-xl font-semibold">{selectionSnapshot?.pending_units ?? localSelectionStats.pending}</p>
-            </div>
-            <div className="rounded-lg border p-3">
-              <p className="text-xs text-muted-foreground">En progreso</p>
-              <p className="text-xl font-semibold">
-                {selectionSnapshot?.in_progress_units ?? localSelectionStats.inProgress}
-              </p>
-            </div>
-            <div className="rounded-lg border p-3">
-              <p className="text-xs text-muted-foreground">Correctas</p>
-              <p className="text-xl font-semibold">{selectionSnapshot?.ok_units ?? localSelectionStats.ok}</p>
-            </div>
-            <div className="rounded-lg border p-3">
-              <p className="text-xs text-muted-foreground">Fallidas</p>
-              <p className="text-xl font-semibold">{selectionSnapshot?.failed_units ?? localSelectionStats.failed}</p>
-            </div>
-          </div>
 
-          <div className="space-y-2">
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Completitud</span>
-              <span className="font-medium">{selectionCompletion}%</span>
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Completitud del lote</span>
+                <span className="font-medium">{selectionCompletion}%</span>
+              </div>
+              <Progress value={selectionCompletion} />
             </div>
-            <Progress value={selectionCompletion} />
           </div>
         </CardContent>
       </Card>
@@ -1643,6 +1688,52 @@ export default function GeneradorPreguntasPage() {
           </Button>
         </CardContent>
       </Card>
+
+      <Dialog
+        open={Boolean(snapshotToDelete)}
+        onOpenChange={(open) => {
+          if (!open && !isDeletingSnapshot) {
+            setSnapshotToDelete(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>¿Eliminar snapshot?</DialogTitle>
+            <DialogDescription>
+              Esta acción eliminará unidades/runs/selections del snapshot, pero no eliminará preguntas del banco.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rounded-md border p-3 text-sm space-y-1">
+            <p>
+              <span className="font-medium">Snapshot:</span> {snapshotToDelete?.snapshot_id || '-'}
+            </p>
+            <p>
+              <span className="font-medium">Categoría:</span> {snapshotToDelete?.category || 'N/A'}
+            </p>
+            <p>
+              <span className="font-medium">Subtópico:</span> {snapshotToDelete?.subtopic || 'General'}
+            </p>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setSnapshotToDelete(null)}
+              disabled={isDeletingSnapshot}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteSnapshot}
+              disabled={isDeletingSnapshot}
+            >
+              {isDeletingSnapshot ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Trash2 className="w-4 h-4 mr-2" />}
+              Confirmar eliminación
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

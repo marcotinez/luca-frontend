@@ -143,6 +143,14 @@ export type RefreshSnapshotResponse = {
   updated_at?: string;
 };
 
+export type DeleteSnapshotResponse = {
+  snapshot_id: string;
+  deleted_snapshots: number;
+  deleted_units: number;
+  deleted_runs: number;
+  deleted_selections: number;
+};
+
 export type SnapshotProgressResponse = {
   snapshot_id: string;
   ok_units: number;
@@ -281,6 +289,14 @@ export interface GlobalProgressResponse {
   by_difficulty: GlobalProgressBucket[];
   by_category_difficulty: GlobalProgressCategoryDifficultyBucket[];
 }
+
+export type BackfillGenerationOriginsResponse = {
+  scanned_units: number;
+  updated_questions: number;
+  skipped_without_question: number;
+  skipped_missing_snapshot: number;
+  skipped_already_present: number;
+};
 
 function getAuthHeaders() {
   const token = getStoredToken();
@@ -711,6 +727,28 @@ function normalizeRefreshSnapshotResponse(data: unknown): RefreshSnapshotRespons
   };
 }
 
+function normalizeDeleteSnapshotResponse(data: unknown): DeleteSnapshotResponse {
+  const raw = data && typeof data === 'object' && !Array.isArray(data) ? (data as Record<string, unknown>) : {};
+  return {
+    snapshot_id: normalizeString(raw.snapshot_id),
+    deleted_snapshots: normalizeNumber(raw.deleted_snapshots, 0),
+    deleted_units: normalizeNumber(raw.deleted_units, 0),
+    deleted_runs: normalizeNumber(raw.deleted_runs, 0),
+    deleted_selections: normalizeNumber(raw.deleted_selections, 0),
+  };
+}
+
+function normalizeBackfillGenerationOriginsResponse(data: unknown): BackfillGenerationOriginsResponse {
+  const raw = data && typeof data === 'object' && !Array.isArray(data) ? (data as Record<string, unknown>) : {};
+  return {
+    scanned_units: normalizeNumber(raw.scanned_units, 0),
+    updated_questions: normalizeNumber(raw.updated_questions, 0),
+    skipped_without_question: normalizeNumber(raw.skipped_without_question, 0),
+    skipped_missing_snapshot: normalizeNumber(raw.skipped_missing_snapshot, 0),
+    skipped_already_present: normalizeNumber(raw.skipped_already_present, 0),
+  };
+}
+
 export function buildSnapshotViewModel(
   snapshot: SnapshotResponse,
   progress?: SnapshotProgressResponse
@@ -956,6 +994,34 @@ export async function refreshSnapshot(snapshotId: string): Promise<RefreshSnapsh
     }
   );
   return normalizeRefreshSnapshotResponse(response.data);
+}
+
+export async function deleteSnapshot(snapshotId: string): Promise<DeleteSnapshotResponse> {
+  const normalizedSnapshotId = (snapshotId || '').trim();
+  if (!normalizedSnapshotId) {
+    throw new Error('snapshot_id inválido');
+  }
+  const response = await axios.delete(
+    `${API_BASE}/generation/snapshots/${encodeURIComponent(normalizedSnapshotId)}`,
+    {
+      headers: getAuthHeaders(),
+      withCredentials: true,
+    }
+  );
+  return normalizeDeleteSnapshotResponse(response.data);
+}
+
+export async function backfillGenerationOrigins(force = false): Promise<BackfillGenerationOriginsResponse> {
+  const response = await axios.post(
+    `${API_BASE}/generation/backfill/origins`,
+    {},
+    {
+      headers: getAuthHeaders(),
+      withCredentials: true,
+      params: { force },
+    }
+  );
+  return normalizeBackfillGenerationOriginsResponse(response.data);
 }
 
 export async function getSnapshotProgress(snapshotId: string): Promise<SnapshotProgressResponse> {
