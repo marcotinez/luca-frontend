@@ -54,6 +54,25 @@ function getStatusBadge(status: IngestionStatus) {
   }
 }
 
+function getVisualStatusBadge(run: IngestionRun, runs: IngestionRun[]) {
+  const isResolvedByRetry =
+    run.status === "PARTIAL"
+    && runs.some(
+      (candidate) =>
+        candidate.retry_of_run_id === run.run_id && candidate.status === "FINISHED",
+    );
+
+  if (isResolvedByRetry) {
+    return (
+      <Badge className="bg-emerald-600 hover:bg-emerald-700">
+        Resuelto por retry
+      </Badge>
+    );
+  }
+
+  return getStatusBadge(run.status);
+}
+
 export function JobsHistoryTable({
   refreshTrigger,
   currentRunId,
@@ -140,7 +159,7 @@ export function JobsHistoryTable({
                       {run.file_name}
                     </TableCell>
                     <TableCell className="text-center">
-                      {getStatusBadge(run.status)}
+                      {getVisualStatusBadge(run, runs)}
                     </TableCell>
                     <TableCell className="text-center">
                       {run.total_nodes}
