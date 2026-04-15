@@ -22,6 +22,7 @@ interface JobsHistoryTableProps {
 }
 
 const HISTORY_POLLING_INTERVAL_MS = 4000;
+const POST_UPLOAD_REFRESH_DELAY_MS = 1800;
 
 function formatDate(dateString: string): string {
   const date = new Date(dateString);
@@ -82,34 +83,60 @@ export function JobsHistoryTable({
 }: JobsHistoryTableProps) {
   const [runs, setRuns] = useState<IngestionRun[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
-  const fetchRuns = useCallback(async () => {
+  const fetchRuns = useCallback(async (options?: { silent?: boolean; resetPage?: boolean }) => {
+    const silent = options?.silent ?? false;
+    const resetPage = options?.resetPage ?? false;
+
     try {
-      setLoading(true);
+      if (silent) {
+        setIsRefreshing(true);
+      } else {
+        setLoading(true);
+      }
       const data = await getIngestionRuns();
       const sortedRuns = [...data].sort(
         (a, b) =>
           new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
       );
       setRuns(sortedRuns);
-      setPage(1);
+      if (resetPage) {
+        setPage(1);
+      }
     } catch (error) {
       console.error("Error fetching ingestion runs:", error);
       setRuns([]);
     } finally {
-      setLoading(false);
+      if (silent) {
+        setIsRefreshing(false);
+      } else {
+        setLoading(false);
+      }
     }
   }, []);
 
   useEffect(() => {
-    fetchRuns();
+    void fetchRuns({ resetPage: true });
+  }, [fetchRuns]);
+
+  useEffect(() => {
+    if (refreshTrigger === undefined) {
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      void fetchRuns({ silent: true, resetPage: true });
+    }, POST_UPLOAD_REFRESH_DELAY_MS);
+
+    return () => clearTimeout(timeoutId);
   }, [fetchRuns, refreshTrigger]);
 
   useEffect(() => {
     const intervalId = setInterval(() => {
-      void fetchRuns();
+      void fetchRuns({ silent: true });
     }, HISTORY_POLLING_INTERVAL_MS);
 
     return () => clearInterval(intervalId);
@@ -130,11 +157,10 @@ export function JobsHistoryTable({
         <Button
           variant="ghost"
           size="sm"
-          onClick={fetchRuns}
-          disabled={loading}
+          onClick={() => void fetchRuns({ resetPage: true })}
         >
           <RefreshCw
-            className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`}
+            className={`w-4 h-4 mr-2 ${(loading || isRefreshing) ? "animate-spin" : ""}`}
           />
           Actualizar
         </Button>
