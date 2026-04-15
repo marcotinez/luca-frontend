@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import dynamic from 'next/dynamic';
-import { getIngestionRun, startIngestion } from "@/lib/ingestion.api";
+import { getIngestionRun, retryIngestionRun, startIngestion } from "@/lib/ingestion.api";
 import { getGraphStats } from "@/lib/graph.api";
 import { wipeGraph } from "@/lib/admin.api";
 import type { IngestionRun, IngestionStatus } from "@/types/ingestion.types";
@@ -32,6 +32,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { toast } from 'sonner';
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 const IngestionConfigurator = dynamic(
   () => import('@/components/ingestion/IngestionConfigurator').then((module) => module.IngestionConfigurator),
@@ -182,7 +183,11 @@ function deriveLiveStats(run: IngestionRun) {
 }
 
 export default function IngestaPage() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [isUploading, setIsUploading] = useState(false);
+  const [retryLoading, setRetryLoading] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [currentRunId, setCurrentRunId] = useState<string | null>(null);
   const [currentRun, setCurrentRun] = useState<IngestionRun | null>(null);
@@ -196,9 +201,42 @@ export default function IngestaPage() {
     getGraphStats().then((s) => setStats(s)).catch(() => {});
   }, []);
 
+  const syncRunIdInUrl = useCallback((runId: string | null) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (runId) {
+      params.set("run_id", runId);
+    } else {
+      params.delete("run_id");
+    }
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  }, [pathname, router, searchParams]);
+
+  const reloadRuns = useCallback(async () => {
+    setRefreshTrigger((prev) => prev + 1);
+  }, []);
+
+  const startPollingRun = useCallback((runId: string) => {
+    setCurrentRunId(runId);
+    setCurrentRun(null);
+    setMonitorError(null);
+    syncRunIdInUrl(runId);
+  }, [syncRunIdInUrl]);
+
   useEffect(() => {
     fetchGraphStats();
   }, [fetchGraphStats]);
+
+  useEffect(() => {
+    const runIdFromQuery = searchParams.get("run_id");
+    if (!runIdFromQuery || runIdFromQuery === currentRunId) {
+      return;
+    }
+
+    setCurrentRunId(runIdFromQuery);
+    setCurrentRun(null);
+    setMonitorError(null);
+  }, [currentRunId, searchParams]);
 
   const handleUpload = useCallback(async (file: File, chunks: number) => {
     setIsUploading(true);
@@ -206,9 +244,8 @@ export default function IngestaPage() {
 
     try {
       const result = await startIngestion(file, chunks);
-      setCurrentRunId(result.run_id);
-      setCurrentRun(null);
-      setRefreshTrigger((prev) => prev + 1);
+      startPollingRun(result.run_id);
+      await reloadRuns();
       toast.success(result.message || "Ingesta encolada exitosamente.");
     } catch (error) {
       console.error(error);
@@ -220,20 +257,19 @@ export default function IngestaPage() {
     } finally {
       setIsUploading(false);
     }
-  }, []);
+  }, [reloadRuns, startPollingRun]);
 
   const handleSelectRun = useCallback((runId: string) => {
-    setCurrentRunId(runId);
-    setCurrentRun(null);
-    setMonitorError(null);
-  }, []);
+    startPollingRun(runId);
+  }, [startPollingRun]);
 
   const handleBackToHistory = useCallback(() => {
     setCurrentRunId(null);
     setCurrentRun(null);
     setMonitorError(null);
-    setRefreshTrigger((prev) => prev + 1);
-  }, []);
+    syncRunIdInUrl(null);
+    void reloadRuns();
+  }, [reloadRuns, syncRunIdInUrl]);
 
   const handleConfirmWipeGraph = useCallback(async () => {
     try {
@@ -245,7 +281,8 @@ export default function IngestaPage() {
       setCurrentRunId(null);
       setCurrentRun(null);
       setMonitorError(null);
-      setRefreshTrigger((prev) => prev + 1);
+      syncRunIdInUrl(null);
+      await reloadRuns();
     } catch (error) {
       console.error(error);
       toast.error(
@@ -256,15 +293,42 @@ export default function IngestaPage() {
     } finally {
       setIsWipingGraph(false);
     }
-  }, [fetchGraphStats]);
+  }, [fetchGraphStats, reloadRuns, syncRunIdInUrl]);
 
   const handleDatabaseChanged = useCallback(async () => {
     await fetchGraphStats();
     setCurrentRunId(null);
     setCurrentRun(null);
     setMonitorError(null);
-    setRefreshTrigger((prev) => prev + 1);
-  }, [fetchGraphStats]);
+    syncRunIdInUrl(null);
+    await reloadRuns();
+  }, [fetchGraphStats, reloadRuns, syncRunIdInUrl]);
+
+  const handleRetryRun = useCallback(async (runId: string) => {
+    try {
+      setRetryLoading(true);
+      const retry = await retryIngestionRun(runId);
+      toast.success("Retry encolado");
+      startPollingRun(retry.run_id);
+      await reloadRuns();
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "No se pudo reintentar.";
+      if (
+        detail.includes("no tiene archivo fuente persistido para retry")
+        || detail.includes("No se encontró el archivo fuente para retry")
+      ) {
+        toast.error("Este run es antiguo y no soporta retry automático. Sube el PDF nuevamente.");
+        return;
+      }
+      if (detail.includes("Run de ingesta no encontrado")) {
+        toast.error("Run de ingesta no encontrado.");
+        return;
+      }
+      toast.error(detail);
+    } finally {
+      setRetryLoading(false);
+    }
+  }, [reloadRuns, startPollingRun]);
 
   useEffect(() => {
     if (!currentRunId) {
@@ -456,8 +520,28 @@ export default function IngestaPage() {
                         <span className="text-xs text-muted-foreground">
                           Actualizado: {formatDate(currentRun.updated_at)}
                         </span>
+                        {currentRun.retry_of_run_id && (
+                          <span className="text-xs text-muted-foreground">
+                            Retry de: <span className="font-mono">{currentRun.retry_of_run_id}</span>
+                          </span>
+                        )}
                       </div>
-                      <span className="font-mono text-sm">{progressValue}%</span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-sm">{progressValue}%</span>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleRetryRun(currentRun.run_id)}
+                          disabled={
+                            retryLoading
+                            || currentRun.status === "RUNNING"
+                            || currentRun.status === "QUEUED"
+                            || (currentRun.status !== "PARTIAL" && currentRun.status !== "FAILED")
+                          }
+                        >
+                          {retryLoading ? "Reintentando..." : "Reintentar"}
+                        </Button>
+                      </div>
                     </div>
 
                     <Progress value={progressValue} className="h-2" />
