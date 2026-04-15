@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Eye, RefreshCw } from "lucide-react";
+import { ChevronLeft, ChevronRight, Eye, RefreshCw } from "lucide-react";
 import { getIngestionRuns } from "@/lib/ingestion.api";
 import type { IngestionRun, IngestionStatus } from "@/types/ingestion.types";
 
@@ -80,6 +80,8 @@ export function JobsHistoryTable({
 }: JobsHistoryTableProps) {
   const [runs, setRuns] = useState<IngestionRun[]>([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const fetchRuns = useCallback(async () => {
     try {
@@ -90,6 +92,7 @@ export function JobsHistoryTable({
           new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
       );
       setRuns(sortedRuns);
+      setPage(1);
     } catch (error) {
       console.error("Error fetching ingestion runs:", error);
       setRuns([]);
@@ -101,6 +104,12 @@ export function JobsHistoryTable({
   useEffect(() => {
     fetchRuns();
   }, [fetchRuns, refreshTrigger]);
+
+  const totalPages = Math.max(1, Math.ceil(runs.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const startIndex = (safePage - 1) * pageSize;
+  const endIndex = startIndex + pageSize;
+  const paginatedRuns = runs.slice(startIndex, endIndex);
 
   return (
     <div className="space-y-4">
@@ -144,7 +153,7 @@ export function JobsHistoryTable({
                 </TableCell>
               </TableRow>
             ) : (
-              runs.map((run) => {
+              paginatedRuns.map((run) => {
                 const isSelected = currentRunId === run.run_id;
 
                 return (
@@ -188,6 +197,51 @@ export function JobsHistoryTable({
           </TableBody>
         </Table>
       </div>
+
+      {runs.length > 0 && (
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <p className="text-xs text-muted-foreground">
+            Mostrando {startIndex + 1}-{Math.min(endIndex, runs.length)} de {runs.length}
+          </p>
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-muted-foreground" htmlFor="history-page-size">
+              Filas
+            </label>
+            <select
+              id="history-page-size"
+              className="h-8 rounded-md border bg-background px-2 text-sm"
+              value={pageSize}
+              onChange={(event) => {
+                setPageSize(Number(event.target.value));
+                setPage(1);
+              }}
+            >
+              <option value={10}>10</option>
+              <option value={20}>20</option>
+              <option value={50}>50</option>
+            </select>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+              disabled={safePage <= 1}
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </Button>
+            <span className="text-sm min-w-16 text-center">
+              {safePage} / {totalPages}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+              disabled={safePage >= totalPages}
+            >
+              <ChevronRight className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

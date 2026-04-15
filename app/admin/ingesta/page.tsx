@@ -62,8 +62,12 @@ function getProgress(
   totalChunks: number,
   status: IngestionStatus,
 ): number {
+  if (status === "FINISHED") {
+    return 100;
+  }
+
   if (totalChunks <= 0) {
-    return status === "FINISHED" || status === "PARTIAL" ? 100 : 0;
+    return status === "PARTIAL" ? 100 : 0;
   }
 
   return Math.min(100, Math.round((processedChunks / totalChunks) * 100));
@@ -166,16 +170,14 @@ function deriveLiveStats(run: IngestionRun) {
   }
 
   return {
-    processedChunks: Math.max(
-      run.processed_chunks,
-      processedChunkIds.size,
-      derivedProcessedChunks,
-    ),
-    totalChunks: Math.max(
-      run.total_chunks,
-      derivedTotalChunks,
-      maxChunkSeen,
-    ),
+    processedChunks:
+      derivedProcessedChunks > 0
+        ? derivedProcessedChunks
+        : Math.max(run.processed_chunks, processedChunkIds.size),
+    totalChunks:
+      derivedTotalChunks > 0
+        ? derivedTotalChunks
+        : Math.max(run.total_chunks, processedChunkIds.size, maxChunkSeen),
     totalNodes: Math.max(run.total_nodes, derivedNodes),
     totalRelations: Math.max(run.total_relations, derivedRelations),
     totalErrors: Math.max(run.errors.length, derivedErrorEvents),
@@ -229,14 +231,14 @@ export default function IngestaPage() {
 
   useEffect(() => {
     const runIdFromQuery = searchParams.get("run_id");
-    if (!runIdFromQuery || runIdFromQuery === currentRunId) {
+    if (!runIdFromQuery) {
       return;
     }
 
     setCurrentRunId(runIdFromQuery);
     setCurrentRun(null);
     setMonitorError(null);
-  }, [currentRunId, searchParams]);
+  }, []);
 
   const handleUpload = useCallback(async (file: File, chunks: number) => {
     setIsUploading(true);
@@ -244,7 +246,6 @@ export default function IngestaPage() {
 
     try {
       const result = await startIngestion(file, chunks);
-      startPollingRun(result.run_id);
       await reloadRuns();
       toast.success(result.message || "Ingesta encolada exitosamente.");
     } catch (error) {
@@ -257,7 +258,7 @@ export default function IngestaPage() {
     } finally {
       setIsUploading(false);
     }
-  }, [reloadRuns, startPollingRun]);
+  }, [reloadRuns]);
 
   const handleSelectRun = useCallback((runId: string) => {
     startPollingRun(runId);
