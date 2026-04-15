@@ -21,6 +21,8 @@ interface JobsHistoryTableProps {
   onSelectRun?: (runId: string) => void;
 }
 
+const HISTORY_POLLING_INTERVAL_MS = 4000;
+
 function formatDate(dateString: string): string {
   const date = new Date(dateString);
   if (Number.isNaN(date.getTime())) {
@@ -56,7 +58,7 @@ function getStatusBadge(status: IngestionStatus) {
 
 function getVisualStatusBadge(run: IngestionRun, runs: IngestionRun[]) {
   const isResolvedByRetry =
-    run.status === "PARTIAL"
+    (run.status === "PARTIAL" || run.status === "FAILED")
     && runs.some(
       (candidate) =>
         candidate.retry_of_run_id === run.run_id && candidate.status === "FINISHED",
@@ -104,6 +106,14 @@ export function JobsHistoryTable({
   useEffect(() => {
     fetchRuns();
   }, [fetchRuns, refreshTrigger]);
+
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      void fetchRuns();
+    }, HISTORY_POLLING_INTERVAL_MS);
+
+    return () => clearInterval(intervalId);
+  }, [fetchRuns]);
 
   const totalPages = Math.max(1, Math.ceil(runs.length / pageSize));
   const safePage = Math.min(page, totalPages);
