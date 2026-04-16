@@ -247,6 +247,7 @@ export default function GeneradorPreguntasPage() {
   const [selectionRunStartedAt, setSelectionRunStartedAt] = useState<number | null>(null);
   const [selectionRunProcessedUnits, setSelectionRunProcessedUnits] = useState(0);
   const [selectionConsecutiveErrors, setSelectionConsecutiveErrors] = useState(0);
+  const [isRetryingFailedUnits, setIsRetryingFailedUnits] = useState(false);
   const [selectionLastRunInfo, setSelectionLastRunInfo] = useState<{ unitId: string; status: string; at: string } | null>(null);
   const [localSelectionStats, setLocalSelectionStats] = useState<LocalSelectionStats>({
     total: 0,
@@ -257,6 +258,7 @@ export default function GeneradorPreguntasPage() {
   });
   const [localUnitStatuses, setLocalUnitStatuses] = useState<Record<string, string>>({});
   const selectionRunTokenRef = useRef<string | null>(null);
+  const selectionConsecutiveErrorsRef = useRef(0);
 
   const [activeSnapshotId, setActiveSnapshotId] = useState('');
   const [snapshots, setSnapshots] = useState<SnapshotResponse[]>([]);
@@ -755,6 +757,70 @@ export default function GeneradorPreguntasPage() {
     setIsSelectionRunning(false);
   };
 
+  const handleRetryFailedUnitsAndRun = async () => {
+    if (!activeSnapshotId || !activeSelectionId) {
+      toast.error('Selecciona un snapshot y un lote activo.');
+      return;
+    }
+    if (isSelectionRunning) {
+      toast.warning('Detén la ejecución actual antes de reintentar fallidas.');
+      return;
+    }
+    const failedUnitIds = units
+      .filter((unit) => unit.status === 'failed' && !!unit.unit_id)
+      .map((unit) => unit.unit_id);
+    if (failedUnitIds.length === 0) {
+      toast.info('No hay unidades fallidas para reintentar.');
+      return;
+    }
+
+    try {
+      setIsRetryingFailedUnits(true);
+      let retried = 0;
+      let retryErrors = 0;
+      const retriedUnitIds: string[] = [];
+      for (const unitId of failedUnitIds) {
+        try {
+          await retryUnit(unitId);
+          retried += 1;
+          retriedUnitIds.push(unitId);
+        } catch {
+          retryErrors += 1;
+        }
+      }
+
+      if (retried > 0) {
+        setLocalUnitStatuses((prev) => {
+          const next = { ...prev };
+          for (const unitId of retriedUnitIds) next[unitId] = 'pending';
+          return next;
+        });
+      }
+
+      await Promise.all([
+        loadSelectionProgress(activeSelectionId),
+        loadSnapshotProgress(activeSnapshotId),
+        loadUnitsList(activeSnapshotId, activeSelectionId),
+      ]);
+
+      if (retried === 0) {
+        toast.error('No se pudo reintentar ninguna unidad fallida.');
+        return;
+      }
+
+      if (retryErrors > 0) {
+        toast.warning(`Reintentos aplicados: ${retried}. Fallaron: ${retryErrors}.`);
+      } else {
+        toast.success(`Reintentos aplicados: ${retried}. Iniciando ejecución del lote...`);
+      }
+      await handleRunSelection();
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    } finally {
+      setIsRetryingFailedUnits(false);
+    }
+  };
+
   const handleRunSelection = async () => {
     if (!activeSnapshotId || !activeSelectionId) {
       toast.error('Crea o selecciona un lote antes de ejecutar.');
@@ -795,6 +861,7 @@ export default function GeneradorPreguntasPage() {
       setIsSelectionRunning(true);
       setSelectionRunStartedAt(Date.now());
       setSelectionRunProcessedUnits(0);
+      selectionConsecutiveErrorsRef.current = 0;
       setSelectionConsecutiveErrors(0);
 
       let cursor = 0;
@@ -816,17 +883,16 @@ export default function GeneradorPreguntasPage() {
             });
             setSelectionRunProcessedUnits((prev) => prev + 1);
             if (status === 'ok') {
+              selectionConsecutiveErrorsRef.current = 0;
               setSelectionConsecutiveErrors(0);
             } else {
-              setSelectionConsecutiveErrors((prev) => {
-                const next = prev + 1;
-                if (next >= MAX_CONSECUTIVE_ERRORS) {
-                  selectionRunTokenRef.current = null;
-                  setIsSelectionRunning(false);
-                  toast.error(`Runner detenido por ${MAX_CONSECUTIVE_ERRORS} errores consecutivos.`);
-                }
-                return next;
-              });
+              selectionConsecutiveErrorsRef.current += 1;
+              setSelectionConsecutiveErrors(selectionConsecutiveErrorsRef.current);
+              if (selectionConsecutiveErrorsRef.current >= MAX_CONSECUTIVE_ERRORS) {
+                selectionRunTokenRef.current = null;
+                setIsSelectionRunning(false);
+                toast.error(`Runner detenido por ${MAX_CONSECUTIVE_ERRORS} errores consecutivos.`);
+              }
             }
             setLocalUnitStatuses((prev) => ({ ...prev, [unitId]: status }));
             addOpenAILog({
@@ -857,15 +923,13 @@ export default function GeneradorPreguntasPage() {
             });
           } catch {
             setSelectionRunProcessedUnits((prev) => prev + 1);
-            setSelectionConsecutiveErrors((prev) => {
-              const next = prev + 1;
-              if (next >= MAX_CONSECUTIVE_ERRORS) {
-                selectionRunTokenRef.current = null;
-                setIsSelectionRunning(false);
-                toast.error(`Runner detenido por ${MAX_CONSECUTIVE_ERRORS} errores consecutivos.`);
-              }
-              return next;
-            });
+            selectionConsecutiveErrorsRef.current += 1;
+            setSelectionConsecutiveErrors(selectionConsecutiveErrorsRef.current);
+            if (selectionConsecutiveErrorsRef.current >= MAX_CONSECUTIVE_ERRORS) {
+              selectionRunTokenRef.current = null;
+              setIsSelectionRunning(false);
+              toast.error(`Runner detenido por ${MAX_CONSECUTIVE_ERRORS} errores consecutivos.`);
+            }
             setLocalUnitStatuses((prev) => ({ ...prev, [unitId]: 'failed' }));
           }
         }
@@ -912,6 +976,7 @@ export default function GeneradorPreguntasPage() {
     setSelectionSnapshot(null);
     setSelectionBySnapshot({});
     setSelectionLastRunInfo(null);
+    selectionConsecutiveErrorsRef.current = 0;
     setSelectionConsecutiveErrors(0);
     setSelectionRunProcessedUnits(0);
     setSelectionRunStartedAt(null);
@@ -1544,14 +1609,24 @@ export default function GeneradorPreguntasPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex justify-end">
-            <Button
-              variant="outline"
-              onClick={() => void loadUnitsList(activeSnapshotId, activeSelectionId)}
-              disabled={!activeSnapshotId || !activeSelectionId || isPolling}
-            >
-              {isPolling ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              Cargar/actualizar unidades del lote
-            </Button>
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button
+                variant="secondary"
+                onClick={handleRetryFailedUnitsAndRun}
+                disabled={!activeSnapshotId || !activeSelectionId || isPolling || isSelectionRunning || isRetryingFailedUnits}
+              >
+                {isRetryingFailedUnits ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />}
+                Reintentar fallidas y ejecutar
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => void loadUnitsList(activeSnapshotId, activeSelectionId)}
+                disabled={!activeSnapshotId || !activeSelectionId || isPolling}
+              >
+                {isPolling ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Cargar/actualizar unidades del lote
+              </Button>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
