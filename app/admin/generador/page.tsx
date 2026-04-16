@@ -754,6 +754,8 @@ export default function GeneradorPreguntasPage() {
 
   const stopSelectionRunner = () => {
     selectionRunTokenRef.current = null;
+    selectionConsecutiveErrorsRef.current = 0;
+    setSelectionConsecutiveErrors(0);
     setIsSelectionRunning(false);
   };
 
@@ -826,6 +828,11 @@ export default function GeneradorPreguntasPage() {
       toast.error('Crea o selecciona un lote antes de ejecutar.');
       return;
     }
+
+    // Siempre reinicia el contador al iniciar una nueva corrida manual.
+    selectionConsecutiveErrorsRef.current = 0;
+    setSelectionConsecutiveErrors(0);
+
     if (isSelectionRunning) return;
 
     try {
