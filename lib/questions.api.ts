@@ -34,7 +34,7 @@ export async function getQuestions(
   if (category) params.category = category;
   if (status) params.status = status;
 
-  const response = await axios.get(API_URL, { params });
+  const response = await axios.get(API_URL, { params, headers: authHeaders() });
   return response.data;
 }
 
@@ -63,7 +63,7 @@ export async function listQuestions(filters: QuestionFilters): Promise<QuestionR
  * Obtiene una pregunta por su ID
  */
 export async function getQuestion(id: string): Promise<QuestionResponse> {
-  const response = await axios.get(`${API_URL}/${id}`);
+  const response = await axios.get(`${API_URL}/${id}`, { headers: authHeaders() });
   return response.data;
 }
 
@@ -71,7 +71,7 @@ export async function getQuestion(id: string): Promise<QuestionResponse> {
  * Crea una nueva pregunta
  */
 export async function createQuestion(data: QuestionCreate): Promise<QuestionResponse> {
-  const response = await axios.post(API_URL, data);
+  const response = await axios.post(API_URL, data, { headers: authHeaders() });
   return response.data;
 }
 
@@ -79,7 +79,7 @@ export async function createQuestion(data: QuestionCreate): Promise<QuestionResp
  * Actualiza una pregunta existente
  */
 export async function updateQuestion(id: string, data: QuestionUpdate): Promise<QuestionResponse> {
-  const response = await axios.put(`${API_URL}/${id}`, data);
+  const response = await axios.put(`${API_URL}/${id}`, data, { headers: authHeaders() });
   return response.data;
 }
 
@@ -87,5 +87,5 @@ export async function updateQuestion(id: string, data: QuestionUpdate): Promise<
  * Elimina una pregunta existente
  */
 export async function deleteQuestion(id: string): Promise<void> {
-  await axios.delete(`${API_URL}/${id}`);
+  await axios.delete(`${API_URL}/${id}`, { headers: authHeaders() });
 }

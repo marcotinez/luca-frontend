@@ -7,7 +7,7 @@ import { useForm } from 'react-hook-form';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { Difficulty, QuestionCreate, QuestionResponse, Status } from '@/types';
-import { listQuestions, updateQuestion } from '@/lib/questions.api';
+import { deleteQuestion, listQuestions, updateQuestion } from '@/lib/questions.api';
 import { getGenerationConfig } from '@/lib/prompt-generation.api';
 import { normalizeRuntimeTaxonomy, type RuntimeTaxonomy } from '@/lib/taxonomy.utils';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -77,6 +77,9 @@ export default function PreguntasPorCategoriaPage() {
   const [error, setError] = useState<string | null>(null);
   const [isQuestionDialogOpen, setIsQuestionDialogOpen] = useState(false);
   const [editingQuestion, setEditingQuestion] = useState<QuestionResponse | null>(null);
+  const [selectedQuestionIds, setSelectedQuestionIds] = useState<Set<string>>(new Set());
+  const [bulkStatus, setBulkStatus] = useState<Status>(Status.EN_REVISION);
+  const [isApplyingBulk, setIsApplyingBulk] = useState(false);
 
   const [filters, setFilters] = useState<FiltersState>({
     subtopic: '',
@@ -108,6 +111,8 @@ export default function PreguntasPorCategoriaPage() {
   const subtopics = useMemo(() => taxonomy.subtopicsByCategory[routeCategory] || [], [taxonomy, routeCategory]);
   const canGoPrev = pagination.skip > 0;
   const canGoNext = items.length === pagination.limit;
+  const allVisibleSelected = items.length > 0 && items.every((item) => selectedQuestionIds.has(item.id));
+  const someVisibleSelected = items.some((item) => selectedQuestionIds.has(item.id));
 
   const fetchQuestions = useCallback(async () => {
     if (!routeCategory) return;
@@ -138,6 +143,18 @@ export default function PreguntasPorCategoriaPage() {
   useEffect(() => {
     void fetchQuestions();
   }, [fetchQuestions]);
+
+  useEffect(() => {
+    setSelectedQuestionIds((prev) => {
+      if (prev.size === 0) return prev;
+      const next = new Set<string>();
+      const visibleIds = new Set(items.map((item) => item.id));
+      for (const id of prev) {
+        if (visibleIds.has(id)) next.add(id);
+      }
+      return next;
+    });
+  }, [items]);
 
   useEffect(() => {
     const loadTaxonomy = async () => {
@@ -211,6 +228,94 @@ export default function PreguntasPorCategoriaPage() {
       await fetchQuestions();
     } catch {
       toast.error('Error al guardar pregunta');
+    }
+  };
+
+  const handleToggleSelectAllVisible = (checked: boolean) => {
+    setSelectedQuestionIds((prev) => {
+      const next = new Set(prev);
+      if (checked) {
+        for (const item of items) next.add(item.id);
+      } else {
+        for (const item of items) next.delete(item.id);
+      }
+      return next;
+    });
+  };
+
+  const handleToggleQuestionSelection = (questionId: string, checked: boolean) => {
+    setSelectedQuestionIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(questionId);
+      else next.delete(questionId);
+      return next;
+    });
+  };
+
+  const handleApplyBulkStatus = async () => {
+    const selected = items.filter((item) => selectedQuestionIds.has(item.id));
+    if (selected.length === 0) {
+      toast.warning('Selecciona al menos una pregunta.');
+      return;
+    }
+    try {
+      setIsApplyingBulk(true);
+      await Promise.all(
+        selected.map((item) =>
+          updateQuestion(item.id, {
+            status: bulkStatus,
+          })
+        )
+      );
+      toast.success(`Estado actualizado en ${selected.length} pregunta(s).`);
+      await fetchQuestions();
+    } catch {
+      toast.error('No se pudo actualizar el estado del lote.');
+    } finally {
+      setIsApplyingBulk(false);
+    }
+  };
+
+  const handleDeleteSelected = async () => {
+    const selected = items.filter((item) => selectedQuestionIds.has(item.id));
+    if (selected.length === 0) {
+      toast.warning('Selecciona al menos una pregunta.');
+      return;
+    }
+    if (!window.confirm(`¿Eliminar ${selected.length} pregunta(s)? Esta acción no se puede deshacer.`)) {
+      return;
+    }
+    try {
+      setIsApplyingBulk(true);
+      await Promise.all(selected.map((item) => deleteQuestion(item.id)));
+      setSelectedQuestionIds(new Set());
+      toast.success(`Eliminadas ${selected.length} pregunta(s).`);
+      await fetchQuestions();
+    } catch {
+      toast.error('No se pudo eliminar el lote seleccionado.');
+    } finally {
+      setIsApplyingBulk(false);
+    }
+  };
+
+  const handleUpdateSingleStatus = async (question: QuestionResponse, nextStatus: Status) => {
+    try {
+      await updateQuestion(question.id, { status: nextStatus });
+      toast.success('Estado actualizado.');
+      await fetchQuestions();
+    } catch {
+      toast.error('No se pudo actualizar el estado.');
+    }
+  };
+
+  const handleDeleteSingle = async (question: QuestionResponse) => {
+    if (!window.confirm('¿Eliminar esta pregunta? Esta acción no se puede deshacer.')) return;
+    try {
+      await deleteQuestion(question.id);
+      toast.success('Pregunta eliminada.');
+      await fetchQuestions();
+    } catch {
+      toast.error('No se pudo eliminar la pregunta.');
     }
   };
 
@@ -317,32 +422,63 @@ export default function PreguntasPorCategoriaPage() {
           </div>
         </CardHeader>
         <CardContent>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border p-3">
+            <p className="text-sm text-muted-foreground">
+              Seleccionadas: <span className="font-medium text-foreground">{selectedQuestionIds.size}</span>
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <Select value={bulkStatus} onValueChange={(value) => setBulkStatus(value as Status)}>
+                <SelectTrigger className="w-[170px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={Status.EN_REVISION}>En revisión</SelectItem>
+                  <SelectItem value={Status.ACEPTADA}>Aceptada</SelectItem>
+                  <SelectItem value={Status.RECHAZADA}>Rechazada</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button variant="outline" onClick={() => void handleApplyBulkStatus()} disabled={isApplyingBulk}>
+                Aplicar estado a selección
+              </Button>
+              <Button variant="destructive" onClick={() => void handleDeleteSelected()} disabled={isApplyingBulk}>
+                Eliminar selección
+              </Button>
+            </div>
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[860px] text-sm">
               <thead>
                 <tr className="border-b border-border text-muted-foreground">
+                  <th className="py-3 px-2 text-left font-medium w-[48px]">
+                    <Checkbox
+                      checked={allVisibleSelected ? true : someVisibleSelected ? 'indeterminate' : false}
+                      onCheckedChange={(checked) => handleToggleSelectAllVisible(Boolean(checked))}
+                      aria-label="Seleccionar todas las preguntas visibles"
+                    />
+                  </th>
                   <th className="py-3 px-2 text-left font-medium w-[460px]">Pregunta</th>
                   <th className="py-3 px-2 text-left font-medium">Dificultad</th>
                   <th className="py-3 px-2 text-left font-medium">Estado</th>
                   <th className="py-3 px-2 text-left font-medium">Fecha</th>
+                  <th className="py-3 px-2 text-left font-medium">Acciones</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={4} className="py-8 text-center text-muted-foreground">
+                    <td colSpan={6} className="py-8 text-center text-muted-foreground">
                       Cargando preguntas...
                     </td>
                   </tr>
                 ) : error ? (
                   <tr>
-                    <td colSpan={4} className="py-8 text-center text-destructive">
+                    <td colSpan={6} className="py-8 text-center text-destructive">
                       {error}
                     </td>
                   </tr>
                 ) : items.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="py-8 text-center text-muted-foreground">
+                    <td colSpan={6} className="py-8 text-center text-muted-foreground">
                       No se encontraron preguntas para los filtros actuales.
                     </td>
                   </tr>
@@ -353,6 +489,13 @@ export default function PreguntasPorCategoriaPage() {
                       className="border-b border-border/50 hover:bg-muted/40 cursor-pointer"
                       onClick={() => openEditQuestion(question)}
                     >
+                      <td className="py-3 px-2" onClick={(event) => event.stopPropagation()}>
+                        <Checkbox
+                          checked={selectedQuestionIds.has(question.id)}
+                          onCheckedChange={(checked) => handleToggleQuestionSelection(question.id, Boolean(checked))}
+                          aria-label={`Seleccionar pregunta ${question.id}`}
+                        />
+                      </td>
                       <td className="py-3 px-2">
                         <p className="font-medium leading-6 line-clamp-2 min-h-[3rem]">{question.question}</p>
                         <p className="text-xs text-muted-foreground mt-1">{question.subtopic}</p>
@@ -361,6 +504,22 @@ export default function PreguntasPorCategoriaPage() {
                       <td className="py-3 px-2">{statusBadge(question.status)}</td>
                       <td className="py-3 px-2 text-xs text-muted-foreground">
                         {new Date(question.created_at).toLocaleDateString('es-CL')}
+                      </td>
+                      <td className="py-3 px-2" onClick={(event) => event.stopPropagation()}>
+                        <div className="flex flex-wrap gap-2">
+                          <Button size="sm" variant="outline" onClick={() => void handleUpdateSingleStatus(question, Status.ACEPTADA)}>
+                            Aceptar
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => void handleUpdateSingleStatus(question, Status.RECHAZADA)}>
+                            Rechazar
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => void handleUpdateSingleStatus(question, Status.EN_REVISION)}>
+                            Revisar
+                          </Button>
+                          <Button size="sm" variant="destructive" onClick={() => void handleDeleteSingle(question)}>
+                            Eliminar
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   ))
