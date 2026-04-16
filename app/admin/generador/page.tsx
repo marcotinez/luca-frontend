@@ -765,7 +765,7 @@ export default function GeneradorPreguntasPage() {
     try {
       const [selection, unitsResponse] = await Promise.all([
         getGenerationSelection(activeSelectionId),
-        listUnits(activeSnapshotId, { limit: 2000, skip: 0 }),
+        listUnits(activeSnapshotId, { limit: 500, skip: 0 }),
       ]);
       setSelectionSnapshot(selection);
 
