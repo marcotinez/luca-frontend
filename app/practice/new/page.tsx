@@ -64,6 +64,17 @@ export default function NewPracticeTestPage() {
       toast.success("Evaluación por categoría creada");
       router.push(`/practice/test/${test.id}`);
     } catch (error) {
+      const detail = (error as any)?.response?.data?.detail;
+      if (detail && typeof detail === "object" && typeof detail.message === "string") {
+        const suggestions = Array.isArray(detail.suggestions)
+          ? detail.suggestions
+            .slice(0, 3)
+            .map((item: any) => `${item.category}${item.subtopic ? ` / ${item.subtopic}` : ""} (${item.available})`)
+            .join(" • ")
+          : "";
+        toast.error(suggestions ? `${detail.message} ${suggestions}` : detail.message);
+        return;
+      }
       const message = apiErrorMessage(error, "No se pudo crear la evaluación por categoría");
       toast.error(message);
     } finally {
@@ -98,6 +109,7 @@ export default function NewPracticeTestPage() {
               onSubmitCategory={handleCreateCategoryTest}
               onSubmitRecommended={handleCreateRecommendedTest}
               categories={taxonomy.categories}
+              subtopicsByCategory={taxonomy.subtopicsByCategory}
             />
           </section>
 

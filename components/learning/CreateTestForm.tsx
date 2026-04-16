@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type {
   CreateCategoryPracticeTestRequest,
   CreateRecommendedPracticeTestRequest,
+  PracticeAvailabilityResponse,
   PracticeDifficulty,
 } from "@/types";
 import { Button } from "@/components/ui/button";
@@ -18,12 +19,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { getPracticeTestAvailability } from "@/lib/learning.api";
 
 interface CreateTestFormProps {
   onSubmitCategory: (payload: CreateCategoryPracticeTestRequest) => Promise<void>;
   onSubmitRecommended: (payload: CreateRecommendedPracticeTestRequest) => Promise<void>;
   loading?: boolean;
   categories: string[];
+  subtopicsByCategory: Record<string, string[]>;
 }
 
 type TestMode = "category" | "recommended";
@@ -35,12 +38,63 @@ export function CreateTestForm({
   onSubmitRecommended,
   loading = false,
   categories,
+  subtopicsByCategory,
 }: CreateTestFormProps) {
   const [mode, setMode] = useState<TestMode>("category");
   const [questionCount, setQuestionCount] = useState(5);
   const [title, setTitle] = useState("");
   const [category, setCategory] = useState<string>("");
+  const [subtopic, setSubtopic] = useState<string>("all");
   const [difficulty, setDifficulty] = useState<string>("all");
+  const [availability, setAvailability] = useState<PracticeAvailabilityResponse | null>(null);
+  const [availabilityLoading, setAvailabilityLoading] = useState(false);
+
+  const categorySubtopics = useMemo(() => {
+    if (!category) {
+      return [];
+    }
+    return subtopicsByCategory[category] ?? [];
+  }, [category, subtopicsByCategory]);
+
+  useEffect(() => {
+    if (subtopic !== "all" && !categorySubtopics.includes(subtopic)) {
+      setSubtopic("all");
+    }
+  }, [categorySubtopics, subtopic]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadAvailability = async () => {
+      if (mode !== "category" || !category || questionCount < 1 || questionCount > 20) {
+        setAvailability(null);
+        return;
+      }
+      setAvailabilityLoading(true);
+      try {
+        const response = await getPracticeTestAvailability({
+          category,
+          subtopic: subtopic !== "all" ? subtopic : undefined,
+          difficulty: difficulty !== "all" ? difficulty : undefined,
+          question_count: questionCount,
+        });
+        if (!cancelled) {
+          setAvailability(response);
+        }
+      } catch {
+        if (!cancelled) {
+          setAvailability(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setAvailabilityLoading(false);
+        }
+      }
+    };
+    void loadAvailability();
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, category, subtopic, difficulty, questionCount]);
 
   const canSubmit = useMemo(() => {
     if (loading || questionCount < 1 || questionCount > 20) {
@@ -51,8 +105,12 @@ export function CreateTestForm({
       return false;
     }
 
+    if (mode === "category" && availability && !availability.enough_for_requested) {
+      return false;
+    }
+
     return true;
-  }, [category, loading, mode, questionCount]);
+  }, [availability, category, loading, mode, questionCount]);
 
   const commonPayload = {
     question_count: questionCount,
@@ -69,6 +127,7 @@ export function CreateTestForm({
       void onSubmitCategory({
         ...commonPayload,
         category,
+        subtopic: subtopic !== "all" ? subtopic : undefined,
       });
       return;
     }
@@ -127,20 +186,39 @@ export function CreateTestForm({
 
       <CardContent className="space-y-5 p-5">
         {mode === "category" ? (
-          <div className="space-y-2">
-            <Label>Categoría</Label>
-            <Select value={category} onValueChange={setCategory}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Selecciona una categoría" />
-              </SelectTrigger>
-              <SelectContent>
-                {categories.map((topic) => (
-                  <SelectItem key={topic} value={topic}>
-                    {topic}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Categoría</Label>
+              <Select value={category} onValueChange={setCategory}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Selecciona una categoría" />
+                </SelectTrigger>
+                <SelectContent>
+                  {categories.map((topic) => (
+                    <SelectItem key={topic} value={topic}>
+                      {topic}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Subtópico (opcional)</Label>
+              <Select value={subtopic} onValueChange={setSubtopic} disabled={!category}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Todos los subtópicos" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  {categorySubtopics.map((item) => (
+                    <SelectItem key={item} value={item}>
+                      {item}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         ) : null}
 
@@ -189,6 +267,35 @@ export function CreateTestForm({
             </Select>
           </div>
         </div>
+
+        {mode === "category" && category ? (
+          <div
+            className={`rounded-xl border px-3 py-2 text-sm ${
+              availability?.enough_for_requested
+                ? "border-emerald-500/40 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300"
+                : "border-amber-500/40 bg-amber-500/5 text-amber-700 dark:text-amber-300"
+            }`}
+          >
+            {availabilityLoading ? (
+              <p>Validando disponibilidad de preguntas...</p>
+            ) : availability ? (
+              <>
+                <p>
+                  Disponibles con filtros actuales: <strong>{availability.available_total}</strong>.
+                </p>
+                {!availability.enough_for_requested && availability.suggestions.length > 0 ? (
+                  <p className="mt-1 text-xs">
+                    Sugerencias: {availability.suggestions
+                      .map((item) => `${item.category}${item.subtopic ? ` / ${item.subtopic}` : ""} (${item.available})`)
+                      .join(" • ")}
+                  </p>
+                ) : null}
+              </>
+            ) : (
+              <p>No fue posible validar disponibilidad en este momento.</p>
+            )}
+          </div>
+        ) : null}
 
         <Button
           className="w-full"

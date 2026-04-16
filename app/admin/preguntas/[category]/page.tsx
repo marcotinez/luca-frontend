@@ -298,27 +298,6 @@ export default function PreguntasPorCategoriaPage() {
     }
   };
 
-  const handleUpdateSingleStatus = async (question: QuestionResponse, nextStatus: Status) => {
-    try {
-      await updateQuestion(question.id, { status: nextStatus });
-      toast.success('Estado actualizado.');
-      await fetchQuestions();
-    } catch {
-      toast.error('No se pudo actualizar el estado.');
-    }
-  };
-
-  const handleDeleteSingle = async (question: QuestionResponse) => {
-    if (!window.confirm('¿Eliminar esta pregunta? Esta acción no se puede deshacer.')) return;
-    try {
-      await deleteQuestion(question.id);
-      toast.success('Pregunta eliminada.');
-      await fetchQuestions();
-    } catch {
-      toast.error('No se pudo eliminar la pregunta.');
-    }
-  };
-
   return (
     <div className="space-y-6 p-4 sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -328,13 +307,29 @@ export default function PreguntasPorCategoriaPage() {
             Tabla paginada por backend con filtros por subtópico, estado y dificultad.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button asChild variant="outline">
             <Link href="/admin/preguntas">Volver a categorías</Link>
           </Button>
           <Button variant="outline" onClick={() => void fetchQuestions()} disabled={loading}>
             <RefreshCcw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             Actualizar
+          </Button>
+          <Select value={bulkStatus} onValueChange={(value) => setBulkStatus(value as Status)}>
+            <SelectTrigger className="w-[170px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={Status.EN_REVISION}>En revisión</SelectItem>
+              <SelectItem value={Status.ACEPTADA}>Aceptada</SelectItem>
+              <SelectItem value={Status.RECHAZADA}>Rechazada</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button variant="outline" onClick={() => void handleApplyBulkStatus()} disabled={isApplyingBulk}>
+            Aplicar estado
+          </Button>
+          <Button variant="destructive" onClick={() => void handleDeleteSelected()} disabled={isApplyingBulk}>
+            Eliminar seleccionadas
           </Button>
         </div>
       </div>
@@ -426,24 +421,7 @@ export default function PreguntasPorCategoriaPage() {
             <p className="text-sm text-muted-foreground">
               Seleccionadas: <span className="font-medium text-foreground">{selectedQuestionIds.size}</span>
             </p>
-            <div className="flex flex-wrap items-center gap-2">
-              <Select value={bulkStatus} onValueChange={(value) => setBulkStatus(value as Status)}>
-                <SelectTrigger className="w-[170px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={Status.EN_REVISION}>En revisión</SelectItem>
-                  <SelectItem value={Status.ACEPTADA}>Aceptada</SelectItem>
-                  <SelectItem value={Status.RECHAZADA}>Rechazada</SelectItem>
-                </SelectContent>
-              </Select>
-              <Button variant="outline" onClick={() => void handleApplyBulkStatus()} disabled={isApplyingBulk}>
-                Aplicar estado a selección
-              </Button>
-              <Button variant="destructive" onClick={() => void handleDeleteSelected()} disabled={isApplyingBulk}>
-                Eliminar selección
-              </Button>
-            </div>
+            <p className="text-xs text-muted-foreground">Usa las acciones masivas en la barra superior.</p>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[860px] text-sm">
@@ -460,25 +438,24 @@ export default function PreguntasPorCategoriaPage() {
                   <th className="py-3 px-2 text-left font-medium">Dificultad</th>
                   <th className="py-3 px-2 text-left font-medium">Estado</th>
                   <th className="py-3 px-2 text-left font-medium">Fecha</th>
-                  <th className="py-3 px-2 text-left font-medium">Acciones</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={6} className="py-8 text-center text-muted-foreground">
+                    <td colSpan={5} className="py-8 text-center text-muted-foreground">
                       Cargando preguntas...
                     </td>
                   </tr>
                 ) : error ? (
                   <tr>
-                    <td colSpan={6} className="py-8 text-center text-destructive">
+                    <td colSpan={5} className="py-8 text-center text-destructive">
                       {error}
                     </td>
                   </tr>
                 ) : items.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="py-8 text-center text-muted-foreground">
+                    <td colSpan={5} className="py-8 text-center text-muted-foreground">
                       No se encontraron preguntas para los filtros actuales.
                     </td>
                   </tr>
@@ -504,22 +481,6 @@ export default function PreguntasPorCategoriaPage() {
                       <td className="py-3 px-2">{statusBadge(question.status)}</td>
                       <td className="py-3 px-2 text-xs text-muted-foreground">
                         {new Date(question.created_at).toLocaleDateString('es-CL')}
-                      </td>
-                      <td className="py-3 px-2" onClick={(event) => event.stopPropagation()}>
-                        <div className="flex flex-wrap gap-2">
-                          <Button size="sm" variant="outline" onClick={() => void handleUpdateSingleStatus(question, Status.ACEPTADA)}>
-                            Aceptar
-                          </Button>
-                          <Button size="sm" variant="outline" onClick={() => void handleUpdateSingleStatus(question, Status.RECHAZADA)}>
-                            Rechazar
-                          </Button>
-                          <Button size="sm" variant="outline" onClick={() => void handleUpdateSingleStatus(question, Status.EN_REVISION)}>
-                            Revisar
-                          </Button>
-                          <Button size="sm" variant="destructive" onClick={() => void handleDeleteSingle(question)}>
-                            Eliminar
-                          </Button>
-                        </div>
                       </td>
                     </tr>
                   ))

@@ -59,6 +59,7 @@ export interface PracticeTestCreateRequest {
 export interface CreateCategoryPracticeTestRequest {
   question_count?: number;
   category: FinancialTopic;
+  subtopic?: string;
   difficulty?: PracticeDifficulty;
   title?: string;
 }
@@ -86,6 +87,7 @@ export interface PracticeTestDetailResponse {
   selection_mode?: PracticeTestSelectionMode | null;
   target_category?: FinancialTopic | null;
   target_subtopic?: string | null;
+  recommendation_reason?: string | null;
   status: PracticeTestStatus;
   total_questions: number;
   answered_questions: number;
@@ -102,6 +104,7 @@ export interface PracticeTestSummaryResponse {
   selection_mode?: PracticeTestSelectionMode | null;
   target_category?: FinancialTopic | null;
   target_subtopic?: string | null;
+  recommendation_reason?: string | null;
   status: PracticeTestStatus;
   total_questions: number;
   answered_questions: number;
@@ -120,6 +123,24 @@ export interface SubmitAnswerResponse {
   is_correct: boolean;
   correct_option_id: number;
   feedback: string;
+}
+
+export interface PracticeAvailabilityBucket {
+  category: FinancialTopic;
+  subtopic: string | null;
+  available: number;
+  enough_for_requested: boolean;
+}
+
+export interface PracticeAvailabilityResponse {
+  requested_count: number;
+  category?: FinancialTopic | null;
+  subtopic?: string | null;
+  difficulty?: PracticeDifficulty | null;
+  available_total: number;
+  enough_for_requested: boolean;
+  buckets: PracticeAvailabilityBucket[];
+  suggestions: PracticeAvailabilityBucket[];
 }
 
 export interface RegisterPracticeAttemptRequest {

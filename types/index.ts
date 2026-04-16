@@ -62,4 +62,6 @@ export type {
   SubmitAnswerRequest,
   SubmitAnswerResponse,
   RegisterPracticeAttemptRequest,
+  PracticeAvailabilityBucket,
+  PracticeAvailabilityResponse,
 } from './learning.types';
