@@ -875,6 +875,9 @@ export default function GeneradorPreguntasPage() {
           setLocalUnitStatuses((prev) => ({ ...prev, [unitId]: 'in_progress' }));
           try {
             const result = await executeUnit(unitId);
+            if (selectionRunTokenRef.current !== runToken) {
+              return;
+            }
             const status = result.status || 'failed';
             setSelectionLastRunInfo({
               unitId,
@@ -922,6 +925,9 @@ export default function GeneradorPreguntasPage() {
               },
             });
           } catch {
+            if (selectionRunTokenRef.current !== runToken) {
+              return;
+            }
             setSelectionRunProcessedUnits((prev) => prev + 1);
             selectionConsecutiveErrorsRef.current += 1;
             setSelectionConsecutiveErrors(selectionConsecutiveErrorsRef.current);
