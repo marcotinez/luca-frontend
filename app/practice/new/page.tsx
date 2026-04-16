@@ -91,6 +91,17 @@ export default function NewPracticeTestPage() {
       toast.success("Evaluación recomendada creada");
       router.push(`/practice/test/${test.id}`);
     } catch (error) {
+      const detail = (error as any)?.response?.data?.detail;
+      if (detail && typeof detail === "object" && typeof detail.message === "string") {
+        const suggestions = Array.isArray(detail.suggestions)
+          ? detail.suggestions
+            .slice(0, 3)
+            .map((item: any) => `${item.category}${item.subtopic ? ` / ${item.subtopic}` : ""} (${item.available})`)
+            .join(" • ")
+          : "";
+        toast.error(suggestions ? `${detail.message} ${suggestions}` : detail.message);
+        return;
+      }
       const message = apiErrorMessage(error, "No se pudo crear la evaluación recomendada");
       toast.error(message);
     } finally {

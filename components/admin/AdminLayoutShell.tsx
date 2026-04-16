@@ -11,6 +11,7 @@ import {
   Search,
   FileSearch,
   BarChart3,
+  ClipboardCheck,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -49,6 +50,11 @@ export function AdminLayoutShell({ children }: { children: React.ReactNode }) {
           label: "Gestión de preguntas",
           href: "/admin/preguntas",
           icon: <Sparkles className="w-4 h-4" />,
+        },
+        {
+          label: "Gestión de tests",
+          href: "/admin/evaluaciones",
+          icon: <ClipboardCheck className="w-4 h-4" />,
         },
       ],
     },
