@@ -53,7 +53,6 @@ import axios from 'axios';
 
 const STATE_STORAGE_KEY = 'admin:generator-v2-state';
 const ENABLE_LEGACY_AUTORUN = false;
-const MAX_CONSECUTIVE_ERRORS = 5;
 
 const DIFFICULTY_OPTIONS: Difficulty[] = [Difficulty.FACIL, Difficulty.MEDIO, Difficulty.DIFICIL];
 type StatusFilter = 'all' | 'pending' | 'in_progress' | 'ok' | 'failed';
@@ -898,11 +897,6 @@ export default function GeneradorPreguntasPage() {
             } else {
               selectionConsecutiveErrorsRef.current += 1;
               setSelectionConsecutiveErrors(selectionConsecutiveErrorsRef.current);
-              if (selectionConsecutiveErrorsRef.current >= MAX_CONSECUTIVE_ERRORS) {
-                selectionRunTokenRef.current = null;
-                setIsSelectionRunning(false);
-                toast.error(`Runner detenido por ${MAX_CONSECUTIVE_ERRORS} errores consecutivos.`);
-              }
             }
             setLocalUnitStatuses((prev) => ({ ...prev, [unitId]: status }));
             addOpenAILog({
@@ -938,11 +932,6 @@ export default function GeneradorPreguntasPage() {
             setSelectionRunProcessedUnits((prev) => prev + 1);
             selectionConsecutiveErrorsRef.current += 1;
             setSelectionConsecutiveErrors(selectionConsecutiveErrorsRef.current);
-            if (selectionConsecutiveErrorsRef.current >= MAX_CONSECUTIVE_ERRORS) {
-              selectionRunTokenRef.current = null;
-              setIsSelectionRunning(false);
-              toast.error(`Runner detenido por ${MAX_CONSECUTIVE_ERRORS} errores consecutivos.`);
-            }
             setLocalUnitStatuses((prev) => ({ ...prev, [unitId]: 'failed' }));
           }
         }
@@ -1329,7 +1318,7 @@ export default function GeneradorPreguntasPage() {
               <div className="rounded-lg border px-3 py-2 text-sm">
                 <p className="text-xs text-muted-foreground">Errores consecutivos</p>
                 <p className="font-semibold">
-                  {selectionConsecutiveErrors}/{MAX_CONSECUTIVE_ERRORS}
+                  {selectionConsecutiveErrors}
                 </p>
               </div>
               <div className="rounded-lg border px-3 py-2 text-sm">
