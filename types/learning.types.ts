@@ -47,6 +47,16 @@ export interface UserLearningProfile {
 }
 
 export type PracticeTestSelectionMode = "category" | "recommended";
+export type AdaptiveQuestionTag = "reinforce" | "challenge";
+
+export interface AdaptiveContext {
+  target_category?: FinancialTopic | null;
+  target_difficulty?: PracticeDifficulty | null;
+  reason?: string | null;
+  reinforce_ratio: number;
+  challenge_ratio: number;
+  basis_accuracy?: number | null;
+}
 
 export interface PracticeTestCreateRequest {
   question_count?: number;
@@ -76,6 +86,7 @@ export interface PracticeTestQuestionPublic {
   category: FinancialTopic;
   subtopic: string;
   difficulty: PracticeDifficulty;
+  adaptive_tag?: AdaptiveQuestionTag | null;
   prompt: string;
   alternatives: { option_id: number; text: string }[];
 }
@@ -88,6 +99,7 @@ export interface PracticeTestDetailResponse {
   target_category?: FinancialTopic | null;
   target_subtopic?: string | null;
   recommendation_reason?: string | null;
+  adaptive_context?: AdaptiveContext | null;
   status: PracticeTestStatus;
   total_questions: number;
   answered_questions: number;
@@ -105,6 +117,7 @@ export interface PracticeTestSummaryResponse {
   target_category?: FinancialTopic | null;
   target_subtopic?: string | null;
   recommendation_reason?: string | null;
+  adaptive_context?: AdaptiveContext | null;
   status: PracticeTestStatus;
   total_questions: number;
   answered_questions: number;
@@ -141,6 +154,36 @@ export interface PracticeAvailabilityResponse {
   enough_for_requested: boolean;
   buckets: PracticeAvailabilityBucket[];
   suggestions: PracticeAvailabilityBucket[];
+}
+
+export interface AdaptiveCategoryAccuracy {
+  category: FinancialTopic;
+  attempts: number;
+  accuracy: number;
+}
+
+export interface AdaptiveDifficultyDistribution {
+  difficulty: string;
+  attempts: number;
+  correct_attempts: number;
+  accuracy: number;
+}
+
+export interface AdaptiveWeeklyTrendPoint {
+  week_start: string;
+  attempts: number;
+  accuracy: number;
+  avg_response_time_seconds?: number | null;
+}
+
+export interface AdaptiveStatsResponse {
+  window_size: number;
+  recommended_tests: number;
+  current_focus_category?: FinancialTopic | null;
+  current_focus_difficulty?: PracticeDifficulty | null;
+  category_accuracy: AdaptiveCategoryAccuracy[];
+  weekly_trend: AdaptiveWeeklyTrendPoint[];
+  difficulty_distribution: AdaptiveDifficultyDistribution[];
 }
 
 export interface RegisterPracticeAttemptRequest {

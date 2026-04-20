@@ -162,19 +162,29 @@ export default function PracticeTestRunnerPage() {
               Responde cada pregunta y avanza cuando revises el feedback.
             </p>
             {test ? (
-              <div className="mt-4 flex flex-wrap items-center gap-2">
-                {test.selection_mode ? (
-                  <Badge variant="outline">
-                    Modo: {test.selection_mode === "recommended" ? "Recomendado" : "Por categoría"}
-                  </Badge>
+              <>
+                <div className="mt-4 flex flex-wrap items-center gap-2">
+                  {test.selection_mode ? (
+                    <Badge variant="outline">
+                      Modo: {test.selection_mode === "recommended" ? "Recomendado" : "Por categoría"}
+                    </Badge>
+                  ) : null}
+                  {test.target_category ? (
+                    <Badge variant="secondary">Categoría: {test.target_category}</Badge>
+                  ) : null}
+                  {test.target_subtopic ? (
+                    <Badge variant="secondary">Foco: {test.target_subtopic}</Badge>
+                  ) : null}
+                  {test.adaptive_context?.target_difficulty ? (
+                    <Badge variant="secondary">Dificultad objetivo: {test.adaptive_context.target_difficulty}</Badge>
+                  ) : null}
+                </div>
+                {test.adaptive_context?.reason ? (
+                  <div className="mt-4 rounded-xl border border-primary/25 bg-primary/5 p-3 text-sm text-foreground">
+                    {test.adaptive_context.reason}
+                  </div>
                 ) : null}
-                {test.target_category ? (
-                  <Badge variant="secondary">Categoría: {test.target_category}</Badge>
-                ) : null}
-                {test.target_subtopic ? (
-                  <Badge variant="secondary">Foco: {test.target_subtopic}</Badge>
-                ) : null}
-              </div>
+              </>
             ) : null}
           </section>
 
@@ -206,6 +216,18 @@ export default function PracticeTestRunnerPage() {
                 bestStreak={bestStreak}
               />
               <QuestionCard question={currentQuestion} />
+              {currentQuestion.adaptive_tag ? (
+                <div className="animate-enter-up">
+                  <Badge
+                    variant={currentQuestion.adaptive_tag === "challenge" ? "default" : "secondary"}
+                    className="text-xs"
+                  >
+                    {currentQuestion.adaptive_tag === "challenge"
+                      ? "Pregunta desafío"
+                      : "Pregunta de reforzamiento"}
+                  </Badge>
+                </div>
+              ) : null}
               <AlternativesList
                 alternatives={currentQuestion.alternatives}
                 disabled={submitting || !!feedback}

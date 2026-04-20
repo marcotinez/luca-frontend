@@ -69,6 +69,7 @@ export default function PracticeTestResultPage() {
               selectionMode={test.selection_mode}
               targetCategory={test.target_category}
               targetSubtopic={test.target_subtopic}
+              adaptiveContext={test.adaptive_context}
               correctAnswers={test.correct_answers}
               totalQuestions={test.total_questions}
               onViewProgress={() => router.push("/profile/progress")}

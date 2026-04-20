@@ -64,4 +64,10 @@ export type {
   RegisterPracticeAttemptRequest,
   PracticeAvailabilityBucket,
   PracticeAvailabilityResponse,
+  AdaptiveContext,
+  AdaptiveQuestionTag,
+  AdaptiveCategoryAccuracy,
+  AdaptiveDifficultyDistribution,
+  AdaptiveWeeklyTrendPoint,
+  AdaptiveStatsResponse,
 } from './learning.types';

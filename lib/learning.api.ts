@@ -3,6 +3,7 @@ import { getApiBaseUrl } from '@/lib/api-base';
 import type {
   CreateCategoryPracticeTestRequest,
   CreateRecommendedPracticeTestRequest,
+  AdaptiveStatsResponse,
   PracticeAvailabilityResponse,
   PracticeTestCreateRequest,
   PracticeTestDetailResponse,
@@ -73,6 +74,13 @@ export async function getPracticeTestAvailability(params: {
       difficulty: params.difficulty || undefined,
       question_count: params.question_count ?? 5,
     },
+  });
+  return response.data;
+}
+
+export async function getAdaptiveStats(): Promise<AdaptiveStatsResponse> {
+  const response = await axios.get(`${API_URL.replace("/tests", "")}/adaptive-stats`, {
+    headers: authHeaders(),
   });
   return response.data;
 }

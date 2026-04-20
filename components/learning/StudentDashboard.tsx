@@ -11,9 +11,9 @@ import { Badge } from "@/components/ui/badge";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useAuth } from "@/hooks/useAuth";
 import { getLearningProfile } from "@/lib/users.api";
-import { createPracticeTest, getPracticeTests } from "@/lib/learning.api";
+import { createPracticeTest, getAdaptiveStats, getPracticeTests } from "@/lib/learning.api";
 import { apiErrorMessage } from "@/lib/learning.utils";
-import type { PracticeTestSummaryResponse, UserLearningProfile } from "@/types";
+import type { AdaptiveStatsResponse, PracticeTestSummaryResponse, UserLearningProfile } from "@/types";
 
 export function StudentDashboard() {
   const { user } = useAuth();
@@ -23,6 +23,7 @@ export function StudentDashboard() {
   );
   const [summary, setSummary] = useState(user?.practice_history_summary || []);
   const [tests, setTests] = useState<PracticeTestSummaryResponse[]>([]);
+  const [adaptiveStats, setAdaptiveStats] = useState<AdaptiveStatsResponse | null>(null);
   const [creatingTopic, setCreatingTopic] = useState<string | null>(null);
 
   useEffect(() => {
@@ -30,13 +31,15 @@ export function StudentDashboard() {
 
     const loadData = async () => {
       try {
-        const [profile, testList] = await Promise.all([
+        const [profile, testList, stats] = await Promise.all([
           getLearningProfile(user.id),
           getPracticeTests(),
+          getAdaptiveStats(),
         ]);
         setLearningProfile(profile);
         setTests(testList.slice(0, 6));
         setSummary(user.practice_history_summary || []);
+        setAdaptiveStats(stats);
       } catch (error) {
         toast.error(apiErrorMessage(error, "No se pudo cargar el dashboard de aprendizaje"));
       }
@@ -241,6 +244,34 @@ export function StudentDashboard() {
               </Card>
 
               <div className="space-y-4">
+                {adaptiveStats ? (
+                  <Card className="border-border/70 bg-card/80 shadow-sm backdrop-blur">
+                    <CardHeader className="border-b border-border/60 pb-4">
+                      <CardTitle className="text-lg">Ajuste adaptativo</CardTitle>
+                      <p className="text-sm text-muted-foreground">
+                        La app está ajustando las evaluaciones según tu rendimiento reciente.
+                      </p>
+                    </CardHeader>
+                    <CardContent className="space-y-2 p-4 sm:p-5 text-sm">
+                      <p>
+                        Foco actual:{" "}
+                        <span className="font-semibold">
+                          {adaptiveStats.current_focus_category || "Sin foco definido"}
+                        </span>
+                      </p>
+                      <p>
+                        Dificultad objetivo:{" "}
+                        <span className="font-semibold">
+                          {adaptiveStats.current_focus_difficulty || "Medio"}
+                        </span>
+                      </p>
+                      <p className="text-muted-foreground">
+                        Tests adaptativos realizados: {adaptiveStats.recommended_tests}
+                      </p>
+                    </CardContent>
+                  </Card>
+                ) : null}
+
                 {activeTests.length > 0 ? (
                   <Card className="border-border/70 bg-card/80 shadow-sm backdrop-blur">
                     <CardHeader className="border-b border-border/60 pb-4">

@@ -4,13 +4,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Trophy, BarChart3 } from "lucide-react";
-import type { PracticeTestSelectionMode } from "@/types";
+import type { AdaptiveContext, PracticeTestSelectionMode } from "@/types";
 
 interface TestResultSummaryProps {
   title?: string | null;
   selectionMode?: PracticeTestSelectionMode | null;
   targetCategory?: string | null;
   targetSubtopic?: string | null;
+  adaptiveContext?: AdaptiveContext | null;
   correctAnswers: number;
   totalQuestions: number;
   onViewProgress: () => void;
@@ -22,6 +23,7 @@ export function TestResultSummary({
   selectionMode,
   targetCategory,
   targetSubtopic,
+  adaptiveContext,
   correctAnswers,
   totalQuestions,
   onViewProgress,
@@ -49,6 +51,11 @@ export function TestResultSummary({
             ) : null}
             {targetCategory ? <Badge variant="secondary">{targetCategory}</Badge> : null}
             {targetSubtopic ? <Badge variant="secondary">{targetSubtopic}</Badge> : null}
+          </div>
+        ) : null}
+        {adaptiveContext?.reason ? (
+          <div className="rounded-xl border border-primary/25 bg-primary/5 p-3 text-sm text-foreground">
+            {adaptiveContext.reason}
           </div>
         ) : null}
         <div className="rounded-xl border border-border/60 bg-background/70 p-4">
