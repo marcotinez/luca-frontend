@@ -127,6 +127,22 @@ export function StudentDashboard() {
       toast.success("Prueba diagnóstica creada");
       router.push(`/practice/test/${test.id}`);
     } catch (error) {
+      const detail = (error as any)?.response?.data?.detail;
+      const categoryInvalid = typeof detail === "string" && detail.includes("no está habilitada");
+      if (categoryInvalid) {
+        try {
+          const fallback = await createPracticeTest({
+            question_count: 5,
+            title: "Diagnóstico inicial",
+          });
+          toast.success("Se creó diagnóstico general por cambios de taxonomía");
+          router.push(`/practice/test/${fallback.id}`);
+          return;
+        } catch (fallbackError) {
+          toast.error(apiErrorMessage(fallbackError, "No se pudo crear el diagnóstico general"));
+          return;
+        }
+      }
       toast.error(apiErrorMessage(error, "No se pudo crear la prueba diagnóstica"));
     } finally {
       setCreatingTopic(null);
