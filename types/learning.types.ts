@@ -3,6 +3,7 @@ import type { FinancialTopic } from "./user.types";
 export type PracticeTestStatus = "in_progress" | "completed";
 
 export type PracticeDifficulty = "Fácil" | "Medio" | "Difícil";
+export type PracticeTestDifficulty = Exclude<PracticeDifficulty, "Difícil">;
 
 export interface DomainKnowledge {
   topic: FinancialTopic;
@@ -51,7 +52,7 @@ export type AdaptiveQuestionTag = "reinforce" | "challenge";
 
 export interface AdaptiveContext {
   target_category?: FinancialTopic | null;
-  target_difficulty?: PracticeDifficulty | null;
+  target_difficulty?: PracticeTestDifficulty | null;
   reason?: string | null;
   reinforce_ratio: number;
   challenge_ratio: number;
@@ -62,7 +63,7 @@ export interface PracticeTestCreateRequest {
   question_count?: number;
   category?: FinancialTopic;
   subtopic?: string;
-  difficulty?: PracticeDifficulty;
+  difficulty?: PracticeTestDifficulty;
   title?: string;
 }
 
@@ -70,13 +71,13 @@ export interface CreateCategoryPracticeTestRequest {
   question_count?: number;
   category: FinancialTopic;
   subtopic?: string;
-  difficulty?: PracticeDifficulty;
+  difficulty?: PracticeTestDifficulty;
   title?: string;
 }
 
 export interface CreateRecommendedPracticeTestRequest {
   question_count?: number;
-  difficulty?: PracticeDifficulty;
+  difficulty?: PracticeTestDifficulty;
   title?: string;
 }
 
@@ -85,7 +86,7 @@ export interface PracticeTestQuestionPublic {
   question_id: string;
   category: FinancialTopic;
   subtopic: string;
-  difficulty: PracticeDifficulty;
+  difficulty: PracticeTestDifficulty;
   adaptive_tag?: AdaptiveQuestionTag | null;
   prompt: string;
   alternatives: { option_id: number; text: string }[];
@@ -149,7 +150,7 @@ export interface PracticeAvailabilityResponse {
   requested_count: number;
   category?: FinancialTopic | null;
   subtopic?: string | null;
-  difficulty?: PracticeDifficulty | null;
+  difficulty?: PracticeTestDifficulty | null;
   available_total: number;
   enough_for_requested: boolean;
   buckets: PracticeAvailabilityBucket[];
@@ -180,7 +181,7 @@ export interface AdaptiveStatsResponse {
   window_size: number;
   recommended_tests: number;
   current_focus_category?: FinancialTopic | null;
-  current_focus_difficulty?: PracticeDifficulty | null;
+  current_focus_difficulty?: PracticeTestDifficulty | null;
   category_accuracy: AdaptiveCategoryAccuracy[];
   weekly_trend: AdaptiveWeeklyTrendPoint[];
   difficulty_distribution: AdaptiveDifficultyDistribution[];

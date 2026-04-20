@@ -56,3 +56,71 @@ export function apiErrorMessage(error: unknown, fallback: string): string {
   }
   return fallback;
 }
+
+export interface LearningApiErrorSuggestion {
+  category: string;
+  subtopic?: string | null;
+  available?: number;
+}
+
+export interface LearningApiErrorDetail {
+  code?: string;
+  message: string;
+  suggestions: LearningApiErrorSuggestion[];
+}
+
+export function getLearningApiErrorDetail(error: unknown): LearningApiErrorDetail | null {
+  if (typeof error !== "object" || error === null) return null;
+  const maybeAxios = error as {
+    response?: {
+      data?: { detail?: unknown };
+    };
+  };
+  const detail = maybeAxios.response?.data?.detail;
+  if (typeof detail !== "object" || detail === null) return null;
+
+  const detailObj = detail as {
+    code?: unknown;
+    message?: unknown;
+    suggestions?: unknown;
+  };
+
+  if (typeof detailObj.message !== "string") return null;
+
+  const suggestions = Array.isArray(detailObj.suggestions)
+    ? detailObj.suggestions
+      .filter((item): item is LearningApiErrorSuggestion => typeof item === "object" && item !== null)
+      .map((item) => {
+        const source = item as { category?: unknown; subtopic?: unknown; available?: unknown };
+        return {
+          category: typeof source.category === "string" ? source.category : "Sin categoría",
+          subtopic: typeof source.subtopic === "string" ? source.subtopic : null,
+          available: typeof source.available === "number" ? source.available : undefined,
+        };
+      })
+    : [];
+
+  return {
+    code: typeof detailObj.code === "string" ? detailObj.code : undefined,
+    message: detailObj.message,
+    suggestions,
+  };
+}
+
+export function formatLearningSuggestions(suggestions: LearningApiErrorSuggestion[], max = 3): string {
+  if (suggestions.length === 0) return "";
+  return suggestions
+    .slice(0, max)
+    .map((item) => `${item.category}${item.subtopic ? ` / ${item.subtopic}` : ""}${typeof item.available === "number" ? ` (${item.available})` : ""}`)
+    .join(" • ");
+}
+
+export function resolveLearningApiErrorMessage(error: unknown, fallback: string): string {
+  const detail = getLearningApiErrorDetail(error);
+  if (!detail) {
+    return apiErrorMessage(error, fallback);
+  }
+
+  const formattedSuggestions = formatLearningSuggestions(detail.suggestions);
+  return formattedSuggestions ? `${detail.message} ${formattedSuggestions}` : detail.message;
+}

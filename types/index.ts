@@ -47,6 +47,7 @@ export type {
 export type {
   PracticeTestStatus,
   PracticeDifficulty,
+  PracticeTestDifficulty,
   DomainKnowledge,
   SubtopicKnowledge,
   PracticeHistoryEntry,

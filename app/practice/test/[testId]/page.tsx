@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowRight, Loader2 } from "lucide-react";
+import { ArrowRight, Loader2, Sparkles } from "lucide-react";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { DashboardNavbar } from "@/components/DashboardNavbar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -78,7 +78,7 @@ export default function PracticeTestRunnerPage() {
   }, [params?.testId, router]);
 
   useEffect(() => {
-    loadTest();
+    void loadTest();
   }, [loadTest]);
 
   const currentQuestion = useMemo(() => test?.current_question || null, [test]);
@@ -93,6 +93,11 @@ export default function PracticeTestRunnerPage() {
 
   const handleSelectOption = async (optionId: number) => {
     if (!test || !currentQuestion || submitting) return;
+    const isValidOption = currentQuestion.alternatives.some((option) => option.option_id === optionId);
+    if (!isValidOption) {
+      toast.error("La opción seleccionada no es válida para esta pregunta.");
+      return;
+    }
 
     setSelectedOptionId(optionId);
     setSubmitting(true);
@@ -155,36 +160,39 @@ export default function PracticeTestRunnerPage() {
     <ProtectedRoute>
       <div className="min-h-screen bg-grid-soft pb-14">
         <DashboardNavbar />
-        <main className="mx-auto max-w-4xl space-y-5 px-4 py-8 sm:px-6 lg:px-8">
-          <section className="animate-enter-up rounded-2xl border border-border/70 bg-card/80 p-5 shadow-sm backdrop-blur sm:p-6">
-            <h1 className="text-2xl font-black tracking-tight">Runner de práctica</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Responde cada pregunta y avanza cuando revises el feedback.
-            </p>
+        <main className="mx-auto max-w-5xl space-y-5 px-4 py-8 sm:px-6 lg:px-8">
+          <section className="animate-enter-up overflow-hidden rounded-3xl border border-border/70 bg-card/80 shadow-sm backdrop-blur">
+            <div className="border-b border-border/60 bg-gradient-to-r from-primary/15 via-primary/5 to-transparent px-5 py-4 sm:px-6">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary/80">Runner de evaluación</p>
+              <h1 className="mt-1 text-2xl font-black tracking-tight sm:text-3xl">Modo enfoque</h1>
+              <p className="mt-2 max-w-3xl text-sm text-muted-foreground">Responde cada pregunta con calma. Recibes retroalimentación inmediata y adaptamos el siguiente paso.</p>
+            </div>
+
             {test ? (
-              <>
-                <div className="mt-4 flex flex-wrap items-center gap-2">
+              <div className="space-y-3 px-5 py-4 sm:px-6">
+                <div className="flex flex-wrap items-center gap-2">
                   {test.selection_mode ? (
-                    <Badge variant="outline">
-                      Modo: {test.selection_mode === "recommended" ? "Recomendado" : "Por categoría"}
-                    </Badge>
+                    <Badge variant="outline">Modo: {test.selection_mode === "recommended" ? "Recomendado" : "Por categoría"}</Badge>
                   ) : null}
-                  {test.target_category ? (
-                    <Badge variant="secondary">Categoría: {test.target_category}</Badge>
-                  ) : null}
-                  {test.target_subtopic ? (
-                    <Badge variant="secondary">Foco: {test.target_subtopic}</Badge>
-                  ) : null}
+                  {test.target_category ? <Badge variant="secondary">Categoría: {test.target_category}</Badge> : null}
+                  {test.target_subtopic ? <Badge variant="secondary">Foco: {test.target_subtopic}</Badge> : null}
                   {test.adaptive_context?.target_difficulty ? (
                     <Badge variant="secondary">Dificultad objetivo: {test.adaptive_context.target_difficulty}</Badge>
                   ) : null}
+                  {currentQuestion?.adaptive_tag ? (
+                    <Badge variant={currentQuestion.adaptive_tag === "challenge" ? "default" : "secondary"}>
+                      {currentQuestion.adaptive_tag === "challenge" ? "Desafío" : "Refuerzo"}
+                    </Badge>
+                  ) : null}
                 </div>
-                {test.adaptive_context?.reason ? (
-                  <div className="mt-4 rounded-xl border border-primary/25 bg-primary/5 p-3 text-sm text-foreground">
-                    {test.adaptive_context.reason}
+
+                {test.recommendation_reason || test.adaptive_context?.reason ? (
+                  <div className="rounded-2xl border border-primary/25 bg-primary/7 px-4 py-3 text-sm text-foreground">
+                    <span className="inline-flex items-center gap-1 font-semibold text-primary"><Sparkles className="h-4 w-4" />Motivo adaptativo:</span>{" "}
+                    {test.recommendation_reason || test.adaptive_context?.reason}
                   </div>
                 ) : null}
-              </>
+              </div>
             ) : null}
           </section>
 
@@ -201,9 +209,7 @@ export default function PracticeTestRunnerPage() {
                 <CardTitle>Error de estado</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <p className="text-sm text-muted-foreground">
-                  Este test no tiene pregunta actual disponible.
-                </p>
+                <p className="text-sm text-muted-foreground">Este test no tiene pregunta actual disponible.</p>
                 <Button onClick={loadTest}>Reintentar</Button>
               </CardContent>
             </Card>
@@ -215,25 +221,16 @@ export default function PracticeTestRunnerPage() {
                 streak={currentStreak}
                 bestStreak={bestStreak}
               />
+
               <QuestionCard question={currentQuestion} />
-              {currentQuestion.adaptive_tag ? (
-                <div className="animate-enter-up">
-                  <Badge
-                    variant={currentQuestion.adaptive_tag === "challenge" ? "default" : "secondary"}
-                    className="text-xs"
-                  >
-                    {currentQuestion.adaptive_tag === "challenge"
-                      ? "Pregunta desafío"
-                      : "Pregunta de reforzamiento"}
-                  </Badge>
-                </div>
-              ) : null}
+
               <AlternativesList
                 alternatives={currentQuestion.alternatives}
                 disabled={submitting || !!feedback}
                 selectedOptionId={selectedOptionId}
                 onSelect={handleSelectOption}
               />
+
               {feedback ? (
                 <div className="animate-enter-up space-y-3">
                   <AnswerFeedbackPanel
@@ -242,7 +239,7 @@ export default function PracticeTestRunnerPage() {
                     correctOptionLabel={correctOptionLabel}
                   />
                   <div className="flex justify-end">
-                    <Button onClick={handleNextQuestion} disabled={!pendingNextTest} className="rounded-lg">
+                    <Button onClick={handleNextQuestion} disabled={!pendingNextTest} className="rounded-xl px-5">
                       {pendingNextTest?.status === "completed" ? "Ver resultado" : "Siguiente pregunta"}
                       <ArrowRight className="h-4 w-4" />
                     </Button>

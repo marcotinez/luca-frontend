@@ -5,6 +5,7 @@ import type {
   CreateRecommendedPracticeTestRequest,
   AdaptiveStatsResponse,
   PracticeAvailabilityResponse,
+  PracticeTestDifficulty,
   PracticeTestCreateRequest,
   PracticeTestDetailResponse,
   PracticeTestSummaryResponse,
@@ -24,7 +25,7 @@ function authHeaders() {
 export async function createPracticeTest(
   data: PracticeTestCreateRequest,
 ): Promise<PracticeTestDetailResponse> {
-  const response = await axios.post(API_URL, data);
+  const response = await axios.post(API_URL, data, { headers: authHeaders() });
   return response.data;
 }
 
@@ -63,7 +64,7 @@ export async function submitPracticeTestAnswer(
 export async function getPracticeTestAvailability(params: {
   category?: string;
   subtopic?: string;
-  difficulty?: string;
+  difficulty?: PracticeTestDifficulty;
   question_count?: number;
 }): Promise<PracticeAvailabilityResponse> {
   const response = await axios.get(`${API_URL}/availability`, {

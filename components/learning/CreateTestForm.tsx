@@ -5,7 +5,7 @@ import type {
   CreateCategoryPracticeTestRequest,
   CreateRecommendedPracticeTestRequest,
   PracticeAvailabilityResponse,
-  PracticeDifficulty,
+  PracticeTestDifficulty,
 } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,7 +31,7 @@ interface CreateTestFormProps {
 
 type TestMode = "category" | "recommended";
 
-const difficultyOptions: PracticeDifficulty[] = ["Fácil", "Medio", "Difícil"];
+const difficultyOptions: PracticeTestDifficulty[] = ["Fácil", "Medio"];
 
 export function CreateTestForm({
   onSubmitCategory,
@@ -45,7 +45,7 @@ export function CreateTestForm({
   const [title, setTitle] = useState("");
   const [category, setCategory] = useState<string>("");
   const [subtopic, setSubtopic] = useState<string>("all");
-  const [difficulty, setDifficulty] = useState<string>("all");
+  const [difficulty, setDifficulty] = useState<"all" | PracticeTestDifficulty>("all");
   const [availability, setAvailability] = useState<PracticeAvailabilityResponse | null>(null);
   const [availabilityLoading, setAvailabilityLoading] = useState(false);
 
@@ -114,7 +114,7 @@ export function CreateTestForm({
 
   const commonPayload = {
     question_count: questionCount,
-    difficulty: difficulty !== "all" ? (difficulty as PracticeDifficulty) : undefined,
+    difficulty: difficulty !== "all" ? difficulty : undefined,
     title: title.trim() || undefined,
   };
 
@@ -252,7 +252,7 @@ export function CreateTestForm({
 
           <div className="space-y-2">
             <Label>Dificultad (opcional)</Label>
-            <Select value={difficulty} onValueChange={setDifficulty}>
+            <Select value={difficulty} onValueChange={(value) => setDifficulty(value as "all" | PracticeTestDifficulty)}>
               <SelectTrigger className="w-full">
                 <SelectValue placeholder="Todas las dificultades" />
               </SelectTrigger>

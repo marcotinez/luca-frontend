@@ -11,6 +11,7 @@ interface TestResultSummaryProps {
   selectionMode?: PracticeTestSelectionMode | null;
   targetCategory?: string | null;
   targetSubtopic?: string | null;
+  recommendationReason?: string | null;
   adaptiveContext?: AdaptiveContext | null;
   correctAnswers: number;
   totalQuestions: number;
@@ -23,6 +24,7 @@ export function TestResultSummary({
   selectionMode,
   targetCategory,
   targetSubtopic,
+  recommendationReason,
   adaptiveContext,
   correctAnswers,
   totalQuestions,
@@ -53,9 +55,9 @@ export function TestResultSummary({
             {targetSubtopic ? <Badge variant="secondary">{targetSubtopic}</Badge> : null}
           </div>
         ) : null}
-        {adaptiveContext?.reason ? (
+        {recommendationReason || adaptiveContext?.reason ? (
           <div className="rounded-xl border border-primary/25 bg-primary/5 p-3 text-sm text-foreground">
-            {adaptiveContext.reason}
+            {recommendationReason || adaptiveContext?.reason}
           </div>
         ) : null}
         <div className="rounded-xl border border-border/60 bg-background/70 p-4">

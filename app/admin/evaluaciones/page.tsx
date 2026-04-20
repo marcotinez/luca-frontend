@@ -10,7 +10,7 @@ import {
   getPracticeTests,
 } from "@/lib/learning.api";
 import { getRegistrationTaxonomy } from "@/lib/auth.api";
-import { apiErrorMessage, formatDateTime } from "@/lib/learning.utils";
+import { apiErrorMessage, formatDateTime, resolveLearningApiErrorMessage } from "@/lib/learning.utils";
 import { normalizeRuntimeTaxonomy, type RuntimeTaxonomy } from "@/lib/taxonomy.utils";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -54,20 +54,6 @@ export default function AdminEvaluacionesPage() {
     void loadData();
   }, []);
 
-  const resolveDetailErrorMessage = (error: unknown, fallback: string) => {
-    const detail = (error as any)?.response?.data?.detail;
-    if (detail && typeof detail === "object" && typeof detail.message === "string") {
-      const suggestions = Array.isArray(detail.suggestions)
-        ? detail.suggestions
-          .slice(0, 3)
-          .map((item: any) => `${item.category}${item.subtopic ? ` / ${item.subtopic}` : ""} (${item.available})`)
-          .join(" • ")
-        : "";
-      return suggestions ? `${detail.message} ${suggestions}` : detail.message;
-    }
-    return apiErrorMessage(error, fallback);
-  };
-
   const handleCreateCategoryTest = async (payload: CreateCategoryPracticeTestRequest) => {
     try {
       setLoading(true);
@@ -75,7 +61,7 @@ export default function AdminEvaluacionesPage() {
       toast.success("Test por categoría creado");
       router.push(`/practice/test/${test.id}`);
     } catch (error) {
-      toast.error(resolveDetailErrorMessage(error, "No se pudo crear el test por categoría"));
+      toast.error(resolveLearningApiErrorMessage(error, "No se pudo crear el test por categoría"));
     } finally {
       setLoading(false);
     }
@@ -90,7 +76,7 @@ export default function AdminEvaluacionesPage() {
       toast.success("Test adaptativo creado");
       router.push(`/practice/test/${test.id}`);
     } catch (error) {
-      toast.error(resolveDetailErrorMessage(error, "No se pudo crear el test adaptativo"));
+      toast.error(resolveLearningApiErrorMessage(error, "No se pudo crear el test adaptativo"));
     } finally {
       setLoading(false);
     }
