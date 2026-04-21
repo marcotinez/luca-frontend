@@ -12,6 +12,7 @@ import { useForm, SubmitHandler } from "react-hook-form";
 import * as z from "zod";
 import { toast } from "sonner";
 import axios from "axios";
+import { register as apiRegister } from "@/lib/auth.api";
 
 // Tipos
 import { EducationLevel, RegisterRequest } from "@/types";
@@ -34,14 +35,13 @@ import { ArrowLeft } from 'lucide-react';
 const registerSchema = z.object({
   email: z.email({ message: "Introduce un email válido" }),
   password: passwordValidation,
-  age: z.number().int({ message: "La edad debe ser un número entero" }).min(18, { message: "Debes tener al menos 18 años" }).max(120),
+  age: z.coerce.number({ invalid_type_error: "Debes ingresar una edad válida" }).int({ message: "La edad debe ser un número entero" }).min(18, { message: "Debes tener al menos 18 años" }).max(120),
   interests: z.array(z.string()),
 });
 type RegisterFormValues = z.infer<typeof registerSchema>;
 
 // Valores
 export default function RegisterPage() {
-  const { register } = useAuth();
   const router = useRouter();
 
   const form = useForm<RegisterFormValues>({
@@ -51,20 +51,19 @@ export default function RegisterPage() {
     defaultValues: {
       email: "",
       password: "",
-      age: 18,
+      age: "" as unknown as number,
       interests: [],
     },
   });
 
   const onSubmit: SubmitHandler<RegisterFormValues> = async (values) => {
     try {
-      await register({
+      await apiRegister({
         ...values,
         interests: [],
         education_level: EducationLevel.UNIVERSITARIA_INCOMPLETA,
       } as RegisterRequest);
-      toast.success("¡Cuenta creada con éxito!");
-      router.push('/dashboard');
+      router.push(`/login?registeredEmail=${encodeURIComponent(values.email)}`);
     } catch (error) {
       let errorMessage = "Error al registrar el usuario. Intenta con otro email.";
       if (axios.isAxiosError(error) && error.response?.data?.detail) {
@@ -142,8 +141,10 @@ export default function RegisterPage() {
                             <FormControl>
                               <Input
                                 type="number"
+                                placeholder="Ej: 21"
                                 {...field}
-                                onChange={(e) => field.onChange(e.target.value === '' ? 0 : Number(e.target.value))}
+                                value={field.value || ''}
+                                onChange={(e) => field.onChange(e.target.value === '' ? '' : Number(e.target.value))}
                               />
                             </FormControl>
                             <FormMessage />

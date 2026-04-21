@@ -10,6 +10,20 @@ import {
 import { clearStoredSession, getStoredToken, getStoredUser, setStoredToken, setStoredUser } from '@/lib/auth-session.storage';
 import { UserResponse, LoginRequest, RegisterRequest, UpdatePasswordRequest } from '@/types';
 
+function getTokenExpMs(token: string | null): number | null {
+  if (!token) return null;
+  try {
+    const [, payload] = token.split('.');
+    if (!payload) return null;
+    const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const json = JSON.parse(atob(normalized));
+    if (!json?.exp || typeof json.exp !== 'number') return null;
+    return json.exp * 1000;
+  } catch {
+    return null;
+  }
+}
+
 export function useAuth() {
   const [user, setUser] = useState<UserResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -84,24 +98,44 @@ export function useAuth() {
     validateSession();
   }, [refreshUser]);
 
-  // Renovar el token automaticamente cada X minutos
+  // Renovar token de forma proactiva: antes de expirar y también por intervalo fijo.
   useEffect(() => {
-    if(!user) return;
-    const refreshIntervalMinutes = Number(process.env.NEXT_PUBLIC_TOKEN_REFRESH_INTERVAL_MINUTES) || 29;
-    const refreshInterval = refreshIntervalMinutes * 60 * 1000;
+    if (!user) return;
 
-    const interval = setInterval( async () => {
-      try {
-        console.log('Renovando token...');
-        const response = await apiRefreshToken();
-        setStoredToken(response.access_token);
-      } catch (error) {
-        console.log('Error al renovar el token', error);
-        logout();
-      }
-    }, refreshInterval);
+    const configuredMinutes = Number(process.env.NEXT_PUBLIC_TOKEN_REFRESH_INTERVAL_MINUTES) || 5;
+    const configuredMs = Math.max(1, configuredMinutes) * 60 * 1000;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
 
-    return () => clearInterval(interval);
+    const scheduleNextRefresh = () => {
+      if (cancelled) return;
+
+      const token = getStoredToken();
+      const expMs = getTokenExpMs(token);
+      const now = Date.now();
+
+      // Intentar refrescar ~1 minuto antes de expirar.
+      const beforeExpiryMs = expMs ? Math.max(30_000, expMs - now - 60_000) : configuredMs;
+      const nextInMs = Math.min(configuredMs, beforeExpiryMs);
+
+      timeoutId = setTimeout(async () => {
+        try {
+          const response = await apiRefreshToken();
+          setStoredToken(response.access_token);
+          scheduleNextRefresh();
+        } catch (error) {
+          console.log('Error al renovar el token', error);
+          logout();
+        }
+      }, nextInMs);
+    };
+
+    scheduleNextRefresh();
+
+    return () => {
+      cancelled = true;
+      if (timeoutId) clearTimeout(timeoutId);
+    };
   }, [user, logout]);
 
   return { user, login, register, logout, loading, updatePassword, refreshUser };

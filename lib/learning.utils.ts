@@ -8,6 +8,22 @@ export function formatDateTime(value: string | null | undefined): string {
   }).format(date);
 }
 
+export function formatRelativeDate(value: string | null | undefined): string {
+  if (!value) return "Sin sesiones previas";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Sin sesiones previas";
+  
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  
+  if (diffDays === 0) return `Hoy, ${date.toLocaleDateString("es-CL", { day: 'numeric', month: 'short' })}`;
+  if (diffDays === 1) return `Ayer, ${date.toLocaleDateString("es-CL", { day: 'numeric', month: 'short' })}`;
+  
+  return date.toLocaleDateString("es-CL", { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+
 export function formatPracticeMinutes(totalMinutes: number): string {
   if (totalMinutes <= 0) return "0 min";
   const hours = Math.floor(totalMinutes / 60);

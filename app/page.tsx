@@ -16,7 +16,7 @@ export default function Home() {
           <div className="flex flex-col-reverse lg:grid lg:grid-cols-12 gap-12 lg:gap-8 items-center">
 
             {/* Left Column: Content (7 cols) */}
-            <div className="lg:col-span-7 text-center lg:text-left space-y-4 sm:space-y-8 animate-in fade-in slide-in-from-left-8 duration-1000 z-10 w-full -mt-28 sm:-mt-20 lg:mt-0">
+            <div className="lg:col-span-7 text-center lg:text-left space-y-4 sm:space-y-8 animate-in fade-in slide-in-from-left-8 duration-1000 z-10 w-full -mt-28 sm:-mt-20 lg:mt-0 lg:pl-10 xl:pl-16">
               <h1 className="text-4xl sm:text-5xl md:text-8xl lg:text-[100px] font-black tracking-tighter text-foreground leading-[0.9] lg:leading-[0.8]">
                 Aprende <br />
                 <span className="text-primary italic">Luca</span> a
@@ -101,57 +101,71 @@ export default function Home() {
       </section>
 
       {/* Project Explanation: The "Memoria" Section */}
-      <section id="features" className="py-24 bg-secondary/50 relative">
+      <section id="features" className="py-24 sm:py-32 bg-background relative overflow-hidden">
+        {/* Background Decorations */}
+        <div className="absolute top-0 left-0 w-full h-full overflow-hidden -z-10 pointer-events-none">
+          <div className="absolute top-[-10%] right-[-5%] w-[40%] h-[40%] bg-primary/5 rounded-full blur-[120px]" />
+          <div className="absolute bottom-[-10%] left-[-5%] w-[40%] h-[40%] bg-primary/5 rounded-full blur-[120px]" />
+        </div>
 
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-16">
+        <div className="max-w-7xl mx-auto px-6 lg:px-8">
+          <div className="text-center max-w-3xl mx-auto mb-16 sm:mb-24">
+            <h2 className="text-4xl sm:text-5xl lg:text-6xl font-black text-foreground mb-6 tracking-tight">
+              ¿Por qué nace <span className="text-primary italic">Luca</span>?
+            </h2>
+            <p className="text-lg sm:text-xl text-muted-foreground font-medium leading-relaxed">
+              En Chile, el acceso a una educación financiera de calidad es limitado. Luca nace como una respuesta tecnológica para reducir las brechas de conocimiento y fomentar una cultura de bienestar económico desde temprana edad.
+            </p>
+          </div>
 
-            <div className="md:col-span-1 space-y-4 text-center md:text-left">
-              <h2 className="text-4xl font-black text-foreground leading-tight tracking-tight">
-                ¿Por qué nace <span className="text-primary italic">Luca</span>?
-              </h2>
-              <p className="text-muted-foreground font-medium max-w-lg mx-auto md:mx-0">
-                En Chile, el acceso a una educación financiera de calidad es limitado. Luca nace como una respuesta tecnológica para reducir las brechas de conocimiento y fomentar una cultura de bienestar económico desde temprana edad.
-              </p>
-            </div>
-
-            <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-8">
-              <div className="space-y-4 flex flex-col items-center md:items-start text-center md:text-left">
-                <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center text-primary">
-                  <Target className="w-6 h-6" />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 lg:gap-8 pb-12 md:pb-24">
+            <div className="group relative overflow-hidden rounded-[2.5rem] bg-card/50 backdrop-blur-sm border border-border p-8 lg:p-12 hover:border-primary/30 transition-colors duration-500">
+              <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+              <div className="relative z-10">
+                <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center text-primary mb-8 group-hover:scale-110 group-hover:-rotate-3 transition-transform duration-500">
+                  <Target className="w-8 h-8" />
                 </div>
-                <h3 className="text-xl font-black uppercase italic tracking-tighter">Aprendizaje Adaptativo</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
+                <h3 className="text-2xl sm:text-3xl font-black mb-4 tracking-tight">Aprendizaje Adaptativo</h3>
+                <p className="text-base sm:text-lg text-muted-foreground leading-relaxed">
                   Nuestra plataforma identifica tus fortalezas y debilidades en tiempo real, personalizando cada sesión para optimizar tu tiempo y asegurar que domines cada concepto.
                 </p>
               </div>
+            </div>
 
-              <div className="space-y-4 flex flex-col items-center md:items-start text-center md:text-left">
-                <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center text-primary">
-                  <BrainCircuit className="w-6 h-6" />
+            <div className="group relative overflow-hidden rounded-[2.5rem] bg-card/50 backdrop-blur-sm border border-border p-8 lg:p-12 hover:border-primary/30 transition-colors duration-500">
+              <div className="absolute inset-0 bg-gradient-to-bl from-primary/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+              <div className="relative z-10">
+                <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center text-primary mb-8 group-hover:scale-110 group-hover:rotate-3 transition-transform duration-500">
+                  <BrainCircuit className="w-8 h-8" />
                 </div>
-                <h3 className="text-xl font-black uppercase italic tracking-tighter">Respaldo Factual</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
+                <h3 className="text-2xl sm:text-3xl font-black mb-4 tracking-tight">Respaldo Factual</h3>
+                <p className="text-base sm:text-lg text-muted-foreground leading-relaxed">
                   Utilizamos un riguroso sistema de validación de contenidos para garantizar que toda la información entregada sea precisa y actualizada.
                 </p>
               </div>
+            </div>
 
-              <div className="space-y-4 flex flex-col items-center md:items-start text-center md:text-left">
-                <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center text-primary">
-                  <Sparkles className="w-6 h-6" />
+            <div className="group relative overflow-hidden rounded-[2.5rem] bg-card/50 backdrop-blur-sm border border-border p-8 lg:p-12 hover:border-primary/30 transition-colors duration-500">
+              <div className="absolute inset-0 bg-gradient-to-tr from-primary/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+              <div className="relative z-10">
+                <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center text-primary mb-8 group-hover:scale-110 group-hover:-rotate-3 transition-transform duration-500">
+                  <Sparkles className="w-8 h-8" />
                 </div>
-                <h3 className="text-xl font-black uppercase italic tracking-tighter">Metodología Ágil</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
+                <h3 className="text-2xl sm:text-3xl font-black mb-4 tracking-tight">Metodología Ágil</h3>
+                <p className="text-base sm:text-lg text-muted-foreground leading-relaxed">
                   Transformamos conceptos complejos en actividades interactivas y rápidas, permitiéndote avanzar de forma constante y medir tu progreso mediante logros y experiencias.
                 </p>
               </div>
+            </div>
 
-              <div className="space-y-4 flex flex-col items-center md:items-start text-center md:text-left">
-                <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center text-primary">
-                  <BookOpen className="w-6 h-6" />
+            <div className="group relative overflow-hidden rounded-[2.5rem] bg-card/50 backdrop-blur-sm border border-border p-8 lg:p-12 hover:border-primary/30 transition-colors duration-500">
+              <div className="absolute inset-0 bg-gradient-to-tl from-primary/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+              <div className="relative z-10">
+                <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center text-primary mb-8 group-hover:scale-110 group-hover:rotate-3 transition-transform duration-500">
+                  <BookOpen className="w-8 h-8" />
                 </div>
-                <h3 className="text-xl font-black uppercase italic tracking-tighter">Preparación Real</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
+                <h3 className="text-2xl sm:text-3xl font-black mb-4 tracking-tight">Preparación Real</h3>
+                <p className="text-base sm:text-lg text-muted-foreground leading-relaxed">
                   Te entregamos herramientas prácticas para enfrentar decisiones financieras reales: desde la gestión de tu primer sueldo hasta la planificación de inversiones futuras.
                 </p>
               </div>

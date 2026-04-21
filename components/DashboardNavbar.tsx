@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
-import { User, LogOut, ChevronDown, ShieldCheck, BarChart3, Flame, House } from 'lucide-react';
+import { User, LogOut, ChevronDown, ShieldCheck, Flame, House, BookOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -37,27 +37,32 @@ export function DashboardNavbar() {
     <>
       <header className="bg-card border-b border-border sticky top-0 z-40 transition-colors">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div
-            className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
-            onClick={() => router.push('/dashboard')}
-          >
-            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-              <span className="text-primary-foreground font-bold italic">L</span>
-            </div>
-            <span className="text-xl font-bold tracking-tight">Luca</span>
-          </div>
-
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4">
             <div
-              className={`inline-flex h-9 items-center gap-1.5 rounded-full border px-3 text-sm font-bold sm:hidden ${
+              className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
+              onClick={() => router.push('/dashboard')}
+            >
+              <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
+                <span className="text-primary-foreground font-bold italic">L</span>
+              </div>
+              <span className="text-xl font-bold tracking-tight">Luca</span>
+            </div>
+
+            {/* Racha al lado del logo */}
+            <div
+              className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-sm font-bold transition-colors ${
                 streakIsActive
                   ? "border-orange-200 bg-orange-50 text-orange-600 dark:border-orange-500/25 dark:bg-orange-500/10 dark:text-orange-400"
-                  : "border-border bg-muted/50 text-muted-foreground"
+                  : "border-border bg-muted/30 text-muted-foreground"
               }`}
             >
-              <Flame className="h-4 w-4" />
+              <Flame className={`h-4 w-4 ${streakIsActive ? "text-orange-500" : "text-muted-foreground"}`} />
               <span>{currentStreak}</span>
             </div>
+          </div>
+
+          <div className="flex items-center gap-2 sm:gap-3">
+            <ThemeToggle compact />
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -88,12 +93,12 @@ export function DashboardNavbar() {
 
                 <DropdownMenuItem onClick={() => router.push('/perfil')} className="cursor-pointer py-2.5">
                   <User className="mr-2 h-4 w-4" />
-                  <span>Perfil</span>
+                  <span>Progreso y Perfil</span>
                 </DropdownMenuItem>
 
-                <DropdownMenuItem onClick={() => router.push('/profile/progress')} className="cursor-pointer py-2.5">
-                  <BarChart3 className="mr-2 h-4 w-4" />
-                  <span>Progreso</span>
+                <DropdownMenuItem onClick={() => router.push('/temario')} className="cursor-pointer py-2.5 text-primary">
+                  <BookOpen className="mr-2 h-4 w-4" />
+                  <span className="font-medium">¿Qué aprenderás?</span>
                 </DropdownMenuItem>
 
                 {/* 1.5 Modo Administrador (Solo si es superuser) */}
@@ -119,7 +124,6 @@ export function DashboardNavbar() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            <ThemeToggle compact />
           </div>
         </div>
       </header>
