@@ -98,6 +98,29 @@ export function StudentDashboard() {
       .join(" ");
   }, [userEmail]);
 
+  const diagnosticByCategory = useMemo(() => {
+    return INITIAL_DIAGNOSTIC_CATEGORIES.map((category) => {
+      const categoryTests = tests.filter(
+        (test) => test.target_category === category && test.selection_mode === "category",
+      );
+      const active = categoryTests.find((test) => test.status !== "completed") || null;
+      const completed = categoryTests.some((test) => test.status === "completed");
+      return {
+        category,
+        active,
+        completed,
+        status: completed ? "completed" : active ? "in_progress" : "pending",
+      };
+    });
+  }, [tests]);
+
+  const completedDiagnosticsCount = useMemo(
+    () => diagnosticByCategory.filter((item) => item.completed).length,
+    [diagnosticByCategory],
+  );
+
+  const isDiagnosticPhase = completedDiagnosticsCount < INITIAL_DIAGNOSTIC_CATEGORIES.length;
+
   const handleCreateDiagnostic = async (topic?: string) => {
     try {
       setCreatingTopic(topic || "general");
@@ -139,15 +162,13 @@ export function StudentDashboard() {
 
   if (!user) return null;
 
-  const isNewUser = completedTests === 0 && activeTests.length === 0;
-
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-grid-soft pb-20">
         <DashboardNavbar />
         <main className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
 
-          {isNewUser ? (
+          {isDiagnosticPhase ? (
             <div className="space-y-6 animate-enter-up mt-4">
               <section className="overflow-hidden rounded-3xl border border-border/70 bg-card/90 shadow-sm backdrop-blur p-6 sm:p-8">
                 <p className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">Panel del estudiante</p>
@@ -155,17 +176,27 @@ export function StudentDashboard() {
                   Hola <span className="inline-block animate-wave origin-[70%_70%]">👋</span>
                 </h1>
                 <p className="mt-2 text-sm text-muted-foreground sm:text-base max-w-2xl">
-                  Para comenzar y personalizar tu experiencia, elige una categoría y completa un breve diagnóstico de 5 preguntas.
+                  Para personalizar tus próximas evaluaciones, completa los 3 diagnósticos iniciales (uno por categoría).
+                </p>
+                <p className="mt-2 text-xs font-semibold uppercase tracking-[0.14em] text-primary/80">
+                  Progreso diagnóstico: {completedDiagnosticsCount}/{INITIAL_DIAGNOSTIC_CATEGORIES.length}
                 </p>
               </section>
 
               <section className="overflow-hidden rounded-3xl border border-border/70 bg-card/90 shadow-sm backdrop-blur p-6 sm:p-8">
                 <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-                  {INITIAL_DIAGNOSTIC_CATEGORIES.map((category) => (
+                  {diagnosticByCategory.map(({ category, status, active, completed }) => (
                     <button
                       key={category}
                       type="button"
-                      onClick={() => handleCreateDiagnostic(category)}
+                      onClick={() => {
+                        if (completed) return;
+                        if (active) {
+                          router.push(`/practice/test/${active.id}`);
+                          return;
+                        }
+                        void handleCreateDiagnostic(category);
+                      }}
                       disabled={creatingTopic !== null}
                       className="group relative overflow-hidden rounded-3xl border border-border/60 bg-card/60 p-6 text-left transition-all duration-300 hover:-translate-y-1 hover:border-primary/40 hover:bg-card hover:shadow-xl hover:shadow-primary/5"
                     >
@@ -174,10 +205,25 @@ export function StudentDashboard() {
                           <p className="text-xs font-bold uppercase tracking-[0.15em] text-primary/80">Diagnóstico</p>
                           <p className="mt-2 text-xl font-black leading-tight text-foreground">{category}</p>
                           <p className="mt-3 text-sm text-muted-foreground leading-relaxed">5 preguntas clave para definir tu punto de partida en esta área.</p>
+                          <div className="mt-3">
+                            {status === "completed" ? (
+                              <Badge className="bg-emerald-600">Completado</Badge>
+                            ) : status === "in_progress" ? (
+                              <Badge variant="secondary">En curso</Badge>
+                            ) : (
+                              <Badge variant="outline">Pendiente</Badge>
+                            )}
+                          </div>
                         </div>
                         <div className="mt-6">
                           <span className="inline-flex items-center gap-2 text-sm font-bold text-primary bg-primary/10 px-4 py-2.5 rounded-full group-hover:bg-primary/20 transition-colors">
-                            {creatingTopic === category ? "Creando..." : "Comenzar"}
+                            {completed
+                              ? "Completado"
+                              : active
+                                ? "Continuar"
+                                : creatingTopic === category
+                                  ? "Creando..."
+                                  : "Comenzar"}
                             <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
                           </span>
                         </div>

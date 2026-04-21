@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import {
   ArrowRight,
   Calendar,
+  CircleHelp,
   Lock,
   Mail,
   ShieldCheck,
@@ -30,6 +31,8 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Progress } from "@/components/ui/progress";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import {
   Dialog,
   DialogContent,
@@ -151,6 +154,41 @@ export default function PerfilPage() {
       .sort((a, b) => a.score - b.score)
       .slice(0, 3);
   }, [profile?.domain_knowledge]);
+
+  const categoryProgress = useMemo(() => {
+    if (!user) return [];
+
+    const categoryList = (user.profile.interests || []).filter(Boolean);
+    return categoryList.map((category) => {
+      const domain = (profile?.domain_knowledge || []).find((item) => item.topic === category);
+      const subtopics = (profile?.subtopic_knowledge || [])
+        .filter((item) => item.topic === category)
+        .sort((a, b) => b.attempts - a.attempts);
+
+      const subtopicAttempts = subtopics.reduce((acc, item) => acc + item.attempts, 0);
+      const subtopicCorrect = subtopics.reduce((acc, item) => acc + item.correct_attempts, 0);
+
+      const attempts = domain?.attempts ?? subtopicAttempts;
+      const correctAttempts = domain?.correct_attempts ?? subtopicCorrect;
+      const incorrectAttempts = Math.max(0, attempts - correctAttempts);
+      const accuracy = domain?.score ?? (attempts > 0 ? (correctAttempts / attempts) * 100 : 0);
+
+      return {
+        category,
+        attempts,
+        correctAttempts,
+        incorrectAttempts,
+        accuracy,
+        subtopics: subtopics.map((subtopic) => ({
+          name: subtopic.subtopic,
+          attempts: subtopic.attempts,
+          correctAttempts: subtopic.correct_attempts,
+          incorrectAttempts: Math.max(0, subtopic.attempts - subtopic.correct_attempts),
+          accuracy: subtopic.score,
+        })),
+      };
+    });
+  }, [profile?.domain_knowledge, profile?.subtopic_knowledge, user]);
 
 
   if (!user) return null;
@@ -357,6 +395,94 @@ export default function PerfilPage() {
                         )}
                       </div>
                     </div>
+                  </div>
+
+                  <div className="rounded-3xl border border-border/70 bg-card/80 p-5 shadow-sm backdrop-blur sm:p-6">
+                    <div className="mb-4 flex items-center gap-2">
+                      <h2 className="text-lg font-black">Progreso por categoría y subtópico</h2>
+                      <span
+                        className="inline-flex items-center text-muted-foreground"
+                        title="El porcentaje representa precisión: respuestas correctas sobre el total respondido."
+                      >
+                        <CircleHelp className="h-4 w-4" />
+                      </span>
+                    </div>
+
+                    <Accordion type="multiple" className="w-full space-y-3">
+                      {categoryProgress.map((categoryItem) => (
+                        <AccordionItem
+                          key={categoryItem.category}
+                          value={categoryItem.category}
+                          className="rounded-xl border border-border/65 bg-background/70 px-4"
+                        >
+                          <AccordionTrigger className="hover:no-underline">
+                            <div className="w-full pr-4 text-left">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <p className="font-semibold">{categoryItem.category}</p>
+                                <span
+                                  className={`text-sm font-bold ${scoreClass(categoryItem.accuracy)}`}
+                                  title={`Precisión en categoría: ${Math.round(categoryItem.accuracy)}%`}
+                                >
+                                  {Math.round(categoryItem.accuracy)}%
+                                </span>
+                              </div>
+                              <div className="mt-2 flex items-center gap-3">
+                                <Progress value={Math.min(100, Math.max(0, categoryItem.accuracy))} className="h-2.5 flex-1" />
+                                <span
+                                  className="text-xs text-muted-foreground"
+                                  title="Total de preguntas respondidas en esta categoría"
+                                >
+                                  {categoryItem.attempts} resp.
+                                </span>
+                              </div>
+                            </div>
+                          </AccordionTrigger>
+                          <AccordionContent className="pb-4">
+                            <div className="mb-3 grid gap-2 rounded-lg border border-border/60 bg-card/60 p-3 text-xs text-muted-foreground sm:grid-cols-3">
+                              <span title="Preguntas correctas en esta categoría">Correctas: {categoryItem.correctAttempts}</span>
+                              <span title="Preguntas incorrectas en esta categoría">Incorrectas: {categoryItem.incorrectAttempts}</span>
+                              <span title="Total de preguntas respondidas en esta categoría">Total: {categoryItem.attempts}</span>
+                            </div>
+
+                            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                              Detalle por subtópico
+                            </p>
+
+                            {categoryItem.subtopics.length === 0 ? (
+                              <p className="rounded-lg border border-dashed border-border/60 bg-background/70 p-3 text-sm text-muted-foreground">
+                                Aún no tienes respuestas en subtópicos de esta categoría.
+                              </p>
+                            ) : (
+                              <div className="space-y-2">
+                                {categoryItem.subtopics.map((subtopic) => (
+                                  <div key={`${categoryItem.category}-${subtopic.name}`} className="rounded-lg border border-border/60 bg-background/75 p-3">
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                      <p className="text-sm font-medium">{subtopic.name}</p>
+                                      <span
+                                        className={`text-xs font-bold ${scoreClass(subtopic.accuracy)}`}
+                                        title={`Precisión en subtópico: ${Math.round(subtopic.accuracy)}%`}
+                                      >
+                                        {Math.round(subtopic.accuracy)}%
+                                      </span>
+                                    </div>
+                                    <div className="mt-2 flex items-center gap-3">
+                                      <Progress value={Math.min(100, Math.max(0, subtopic.accuracy))} className="h-2" />
+                                      <span className="text-xs text-muted-foreground" title="Total de preguntas respondidas en este subtópico">
+                                        {subtopic.attempts}
+                                      </span>
+                                    </div>
+                                    <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">
+                                      <span title="Correctas en este subtópico">✅ {subtopic.correctAttempts}</span>
+                                      <span title="Incorrectas en este subtópico">❌ {subtopic.incorrectAttempts}</span>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </AccordionContent>
+                        </AccordionItem>
+                      ))}
+                    </Accordion>
                   </div>
 
                   <div className="space-y-5">
