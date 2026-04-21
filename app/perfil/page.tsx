@@ -152,11 +152,6 @@ export default function PerfilPage() {
       .slice(0, 3);
   }, [profile?.domain_knowledge]);
 
-  const recentAttempts = useMemo(() => {
-    return [...(profile?.practice_history || [])]
-      .sort((a, b) => new Date(b.practiced_at).getTime() - new Date(a.practiced_at).getTime())
-      .slice(0, 4);
-  }, [profile?.practice_history]);
 
   if (!user) return null;
 
@@ -364,36 +359,7 @@ export default function PerfilPage() {
                     </div>
                   </div>
 
-                  <div className="grid gap-5 lg:grid-cols-[1.2fr_1fr]">
-                    <div className="rounded-3xl border border-border/70 bg-card/80 p-5 shadow-sm backdrop-blur sm:p-6">
-                      <h2 className="text-lg font-black">Actividad reciente</h2>
-                      <p className="mt-1 text-sm text-muted-foreground">Tus últimas respuestas registradas.</p>
-                      <div className="mt-4 space-y-2">
-                        {recentAttempts.length === 0 ? (
-                          <p className="rounded-xl border border-dashed border-border/60 bg-background/70 p-3 text-sm text-muted-foreground">
-                            Aún no hay práctica registrada.
-                          </p>
-                        ) : (
-                          recentAttempts.map((entry, idx) => (
-                            <div key={`${entry.practiced_at}-${idx}`} className="rounded-xl border border-border/65 bg-background/75 px-3 py-2">
-                              <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-                                <div className="min-w-0">
-                                  <p className="truncate font-semibold">{entry.topic}</p>
-                                  <p className="text-xs text-muted-foreground">
-                                    {entry.subtopic || "Sin subtópico"} • {entry.difficulty || "-"}
-                                  </p>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <Badge variant={entry.is_correct ? "default" : "destructive"}>{entry.is_correct ? "Correcta" : "Incorrecta"}</Badge>
-                                  <span className="text-xs text-muted-foreground">{formatRelativeDate(entry.practiced_at)}</span>
-                                </div>
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </div>
-
+                  <div className="space-y-5">
                     <div className="rounded-3xl border border-border/70 bg-card/80 p-5 shadow-sm backdrop-blur sm:p-6">
                       <h2 className="text-lg font-black">Evaluaciones en Curso</h2>
                       <div className="mt-4 space-y-2">

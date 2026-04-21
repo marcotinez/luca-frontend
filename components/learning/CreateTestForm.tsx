@@ -222,32 +222,22 @@ export function CreateTestForm({
           </div>
         ) : null}
 
-        <div className="space-y-2">
-          <Label htmlFor="title">Título (opcional)</Label>
-          <Input
-            id="title"
-            value={title}
-            maxLength={100}
-            placeholder={
-              mode === "category"
-                ? "Evaluación de Planificación"
-                : "Evaluación recomendada"
-            }
-            onChange={(event) => setTitle(event.target.value)}
-          />
-        </div>
+
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div className="space-y-2">
-            <Label htmlFor="question-count">Cantidad de preguntas (1-20)</Label>
-            <Input
-              id="question-count"
-              type="number"
-              min={1}
-              max={20}
-              value={questionCount}
-              onChange={(event) => setQuestionCount(Number(event.target.value))}
-            />
+            <Label>Cantidad de preguntas</Label>
+            <Select value={String(questionCount)} onValueChange={(value) => setQuestionCount(Number(value))}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Selecciona la cantidad" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="5">5 preguntas</SelectItem>
+                <SelectItem value="10">10 preguntas</SelectItem>
+                <SelectItem value="15">15 preguntas</SelectItem>
+                <SelectItem value="20">20 preguntas</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="space-y-2">

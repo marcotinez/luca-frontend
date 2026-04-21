@@ -89,24 +89,33 @@ export default function NewPracticeTestPage() {
     <ProtectedRoute>
       <div className="min-h-screen bg-background pb-14">
         <DashboardNavbar />
-        <main className="mx-auto grid max-w-7xl grid-cols-1 gap-6 px-4 py-10 sm:px-6 lg:grid-cols-5 lg:px-8">
-          <section className="lg:col-span-3">
-            <CreateTestForm
-              loading={loading || loadingTaxonomy}
-              onSubmitCategory={handleCreateCategoryTest}
-              onSubmitRecommended={handleCreateRecommendedTest}
-              categories={taxonomy.categories}
-              subtopicsByCategory={taxonomy.subtopicsByCategory}
-            />
+        <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+          <section className="animate-enter-up overflow-hidden rounded-3xl border border-border/70 bg-card/90 shadow-sm backdrop-blur mb-6 p-6 sm:p-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">Práctica y aprendizaje</p>
+              <h1 className="mt-1 text-3xl font-black tracking-tight">Nueva Evaluación</h1>
+              <p className="mt-2 text-sm text-muted-foreground">Configura una evaluación a tu medida o recibe una recomendada.</p>
+            </div>
+            <Button variant="outline" onClick={() => router.push("/dashboard")} className="shrink-0">
+              Volver al Inicio
+            </Button>
           </section>
 
-          <section className="lg:col-span-2">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-5 animate-enter-up">
+            <section className="lg:col-span-3">
+              <CreateTestForm
+                loading={loading || loadingTaxonomy}
+                onSubmitCategory={handleCreateCategoryTest}
+                onSubmitRecommended={handleCreateRecommendedTest}
+                categories={taxonomy.categories}
+                subtopicsByCategory={taxonomy.subtopicsByCategory}
+              />
+            </section>
+
+            <section className="lg:col-span-2">
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between">
+              <CardHeader>
                 <CardTitle className="text-lg">Mis tests</CardTitle>
-                <Button variant="ghost" onClick={() => router.push("/dashboard")}>
-                  Dashboard
-                </Button>
               </CardHeader>
               <CardContent className="space-y-3">
                 {loadingTests ? (
@@ -149,6 +158,7 @@ export default function NewPracticeTestPage() {
               </CardContent>
             </Card>
           </section>
+          </div>
         </main>
       </div>
     </ProtectedRoute>

@@ -190,7 +190,7 @@ export function StudentDashboard() {
           ) : (
             <>
               <section className="animate-enter-up overflow-hidden rounded-3xl border border-border/70 bg-card/90 shadow-sm backdrop-blur">
-                <div className="grid gap-6 p-6 sm:p-8 lg:grid-cols-[1.35fr_1fr]">
+                <div className="p-6 sm:p-8">
                   <div className="space-y-5">
                     <div className="space-y-2">
                       <p className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">Panel del estudiante</p>
@@ -202,36 +202,31 @@ export function StudentDashboard() {
                       </p>
                     </div>
 
-                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                      <div className="rounded-2xl border border-border/60 bg-card/80 p-4">
-                        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Racha actual</p>
-                        <p className="mt-2 flex items-center gap-2 text-2xl font-black"><Flame className="h-5 w-5 text-orange-500" />{currentStreak}</p>
-                      </div>
-                      <div className="rounded-2xl border border-border/60 bg-card/80 p-4">
-                        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Tests completados</p>
-                        <p className="mt-2 text-2xl font-black">{completedTests}</p>
-                      </div>
-                      <div className="rounded-2xl border border-border/60 bg-card/80 p-4">
-                        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Pendientes</p>
-                        <p className="mt-2 text-2xl font-black">{activeTests.length}</p>
-                      </div>
-                      <div className="rounded-2xl border border-border/60 bg-card/80 p-4">
-                        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Tiempo total</p>
-                        <p className="mt-2 text-2xl font-black">{formatPracticeMinutes(learningProfile?.total_practice_minutes || 0)}</p>
-                      </div>
+                    <div className="inline-block rounded-2xl border border-border/60 bg-card/80 p-4 min-w-[200px]">
+                      <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Racha actual</p>
+                      <p className="mt-2 flex items-center gap-2 text-2xl font-black"><Flame className="h-5 w-5 text-orange-500" />{currentStreak} días</p>
                     </div>
                   </div>
+                </div>
+              </section>
 
-                  <aside className="rounded-3xl border border-primary/20 bg-primary/8 p-5 flex flex-col justify-center">
-                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary/80">Práctica Rápida</p>
-                    <h2 className="mt-2 text-xl font-black">Tu Evaluación</h2>
-                    <p className="mt-2 text-sm text-muted-foreground">Crea un test ajustado a tus necesidades eligiendo categoría, subtópico y dificultad.</p>
-                    
-                    <Button className="mt-5 w-full justify-between rounded-xl" onClick={() => router.push("/practice/new")}>
-                      Configurar Test
-                      <Plus className="h-4 w-4" />
+              <section className="animate-enter-up mt-6">
+                <div 
+                  onClick={() => router.push("/practice/new")}
+                  className="cursor-pointer group relative overflow-hidden rounded-3xl border border-primary/30 bg-gradient-to-br from-primary/10 via-primary/5 to-background p-8 transition-all hover:border-primary/60 hover:shadow-lg hover:shadow-primary/10"
+                >
+                  <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+                    <div>
+                      <h2 className="text-3xl font-black text-foreground">Crear nueva evaluación</h2>
+                      <p className="mt-2 text-lg text-muted-foreground max-w-xl">
+                        Pon a prueba tus conocimientos generando un test a tu medida o deja que te recomendemos uno.
+                      </p>
+                    </div>
+                    <Button size="lg" className="rounded-full px-8 py-6 text-lg font-bold group-hover:scale-105 transition-transform shadow-md">
+                      Comenzar <ArrowRight className="ml-2 h-5 w-5" />
                     </Button>
-                  </aside>
+                  </div>
+                  <div className="absolute -right-12 -top-12 h-64 w-64 rounded-full bg-primary/5 blur-3xl group-hover:bg-primary/10 transition-colors" />
                 </div>
               </section>
 

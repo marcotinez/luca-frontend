@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
-import { User, LogOut, ChevronDown, ShieldCheck, Flame, House, BookOpen } from 'lucide-react';
+import { User, LogOut, ChevronDown, ShieldCheck, Flame, House, BookOpen, PlusCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -85,10 +85,15 @@ export function DashboardNavbar() {
                   </div>
                 </DropdownMenuLabel>
 
-                {/* 1. Perfil */}
+                {/* Menú principal */}
                 <DropdownMenuItem onClick={() => router.push('/dashboard')} className="cursor-pointer py-2.5">
                   <House className="mr-2 h-4 w-4" />
                   <span>Inicio</span>
+                </DropdownMenuItem>
+
+                <DropdownMenuItem onClick={() => router.push('/practice/new')} className="cursor-pointer py-2.5 my-1 bg-primary/10 text-primary focus:bg-primary/20 focus:text-primary rounded-md font-bold border border-primary/20 shadow-sm">
+                  <PlusCircle className="mr-2 h-4 w-4" />
+                  <span>Crear Evaluación</span>
                 </DropdownMenuItem>
 
                 <DropdownMenuItem onClick={() => router.push('/perfil')} className="cursor-pointer py-2.5">
@@ -96,9 +101,9 @@ export function DashboardNavbar() {
                   <span>Progreso y Perfil</span>
                 </DropdownMenuItem>
 
-                <DropdownMenuItem onClick={() => router.push('/temario')} className="cursor-pointer py-2.5 text-primary">
+                <DropdownMenuItem onClick={() => router.push('/temario')} className="cursor-pointer py-2.5">
                   <BookOpen className="mr-2 h-4 w-4" />
-                  <span className="font-medium">¿Qué aprenderás?</span>
+                  <span>¿Qué aprenderás?</span>
                 </DropdownMenuItem>
 
                 {/* 1.5 Modo Administrador (Solo si es superuser) */}
