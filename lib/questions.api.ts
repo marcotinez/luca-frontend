@@ -16,6 +16,14 @@ export type QuestionFilters = {
   limit?: number;
 };
 
+export type QuestionCategoryCount = {
+  category: string;
+  total_questions: number;
+};
+
+const CATEGORY_COUNTS_CACHE_TTL_MS = 5 * 60 * 1000;
+let categoryCountsCache: { expiresAt: number; value: QuestionCategoryCount[] } | null = null;
+
 function authHeaders() {
   const token = getStoredToken();
   return token ? { Authorization: `Bearer ${token}` } : undefined;
@@ -57,6 +65,21 @@ export async function listQuestions(filters: QuestionFilters): Promise<QuestionR
   });
 
   return data as QuestionResponse[];
+}
+
+export async function getQuestionCategoryCounts(forceRefresh: boolean = false): Promise<QuestionCategoryCount[]> {
+  const now = Date.now();
+  if (!forceRefresh && categoryCountsCache && categoryCountsCache.expiresAt > now) {
+    return categoryCountsCache.value;
+  }
+
+  const { data } = await axios.get(`${API_URL}/stats/category-counts`, {
+    headers: authHeaders(),
+  });
+
+  const value = (data as QuestionCategoryCount[]) || [];
+  categoryCountsCache = { value, expiresAt: now + CATEGORY_COUNTS_CACHE_TTL_MS };
+  return value;
 }
 
 /**

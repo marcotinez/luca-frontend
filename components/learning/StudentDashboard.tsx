@@ -15,7 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useAuth } from "@/hooks/useAuth";
 import { getLearningProfile } from "@/lib/users.api";
-import { createPracticeTest, getPracticeTests } from "@/lib/learning.api";
+import { createPracticeTest, getPracticeTestAvailability, getPracticeTests } from "@/lib/learning.api";
 import { apiErrorMessage, formatPracticeMinutes } from "@/lib/learning.utils";
 import type { PracticeTestSummaryResponse, UserLearningProfile } from "@/types";
 
@@ -34,19 +34,31 @@ export function StudentDashboard() {
   const [summary, setSummary] = useState(user?.practice_history_summary || []);
   const [tests, setTests] = useState<PracticeTestSummaryResponse[]>([]);
   const [creatingTopic, setCreatingTopic] = useState<string | null>(null);
+  const [diagnosticAvailability, setDiagnosticAvailability] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (!user) return;
 
     const loadData = async () => {
       try {
-        const [profile, testList] = await Promise.all([
+        const [profile, testList, availabilityRows] = await Promise.all([
           getLearningProfile(user.id),
           getPracticeTests(),
+          Promise.all(
+            INITIAL_DIAGNOSTIC_CATEGORIES.map(async (category) => {
+              try {
+                const availability = await getPracticeTestAvailability({ category, question_count: 5 });
+                return [category, availability.available_total > 0] as const;
+              } catch {
+                return [category, false] as const;
+              }
+            }),
+          ),
         ]);
         setLearningProfile(profile);
         setTests(testList);
         setSummary(user.practice_history_summary || []);
+        setDiagnosticAvailability(Object.fromEntries(availabilityRows));
       } catch (error) {
         toast.error(apiErrorMessage(error, "No se pudo cargar el dashboard de aprendizaje"));
       }
@@ -132,29 +144,7 @@ export function StudentDashboard() {
       toast.success("Diagnóstico creado");
       router.push(`/practice/test/${test.id}`);
     } catch (error) {
-      const detail = (error as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
-      const categoryInvalid = typeof detail === "string" && detail.includes("no está habilitada");
-      const detailCode =
-        typeof detail === "object" && detail !== null && "code" in detail
-          ? String((detail as { code?: unknown }).code || "")
-          : "";
-      const noPoolForCategory =
-        detailCode === "NO_QUESTIONS_FOR_FILTERS" ||
-        detailCode === "INSUFFICIENT_QUESTIONS_FOR_REQUESTED_COUNT";
-
-      if (categoryInvalid || noPoolForCategory) {
-        try {
-          const fallback = await createPracticeTest({ question_count: 5, title: "Diagnóstico general" });
-          toast.success("Se creó un diagnóstico general");
-          router.push(`/practice/test/${fallback.id}`);
-          return;
-        } catch (fallbackError) {
-          toast.error(apiErrorMessage(fallbackError, "No se pudo crear el diagnóstico general"));
-          return;
-        }
-      }
-
-      toast.error(apiErrorMessage(error, "No se pudo crear la prueba diagnóstica"));
+      toast.error(apiErrorMessage(error, "No se pudo crear el diagnóstico para esta categoría"));
     } finally {
       setCreatingTopic(null);
     }
@@ -210,6 +200,8 @@ export function StudentDashboard() {
                               <Badge className="bg-emerald-600">Completado</Badge>
                             ) : status === "in_progress" ? (
                               <Badge variant="secondary">En curso</Badge>
+                            ) : !diagnosticAvailability[category] ? (
+                              <Badge variant="destructive">Sin preguntas por ahora</Badge>
                             ) : (
                               <Badge variant="outline">Pendiente</Badge>
                             )}
@@ -221,9 +213,11 @@ export function StudentDashboard() {
                               ? "Completado"
                               : active
                                 ? "Continuar"
-                                : creatingTopic === category
-                                  ? "Creando..."
-                                  : "Comenzar"}
+                                : !diagnosticAvailability[category]
+                                  ? "Intentar"
+                                  : creatingTopic === category
+                                    ? "Creando..."
+                                    : "Comenzar"}
                             <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
                           </span>
                         </div>

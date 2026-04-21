@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { getGenerationConfig } from '@/lib/prompt-generation.api';
+import { getQuestionCategoryCounts } from '@/lib/questions.api';
 import { normalizeRuntimeTaxonomy, type RuntimeTaxonomy } from '@/lib/taxonomy.utils';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -12,18 +13,24 @@ import { toast } from 'sonner';
 
 export default function PreguntasPage() {
   const [taxonomy, setTaxonomy] = useState<RuntimeTaxonomy>({ categories: [], subtopicsByCategory: {} });
+  const [questionCountByCategory, setQuestionCountByCategory] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const loadTaxonomy = async () => {
       try {
         setLoading(true);
-        const response = await getGenerationConfig();
-        const normalized = normalizeRuntimeTaxonomy({
-          categories: response.categories,
-          subtopics: response.subtopics,
-        });
+        const [response, counts] = await Promise.all([
+          getGenerationConfig(),
+          getQuestionCategoryCounts(),
+        ]);
+        const normalized = normalizeRuntimeTaxonomy({ categories: response.categories, subtopics: response.subtopics });
         setTaxonomy(normalized);
+        const mappedCounts = counts.reduce<Record<string, number>>((acc, item) => {
+          acc[item.category] = item.total_questions;
+          return acc;
+        }, {});
+        setQuestionCountByCategory(mappedCounts);
       } catch {
         toast.error('No se pudo cargar el catálogo de categorías');
       } finally {
@@ -38,8 +45,9 @@ export default function PreguntasPage() {
     return taxonomy.categories.map((category) => ({
       name: category,
       subtopicsCount: taxonomy.subtopicsByCategory[category]?.length || 0,
+      questionCount: questionCountByCategory[category] || 0,
     }));
-  }, [taxonomy.categories, taxonomy.subtopicsByCategory]);
+  }, [taxonomy.categories, taxonomy.subtopicsByCategory, questionCountByCategory]);
 
   return (
     <div className="space-y-6 p-4 sm:p-6">
@@ -72,7 +80,10 @@ export default function PreguntasPage() {
                 >
                   <div className="space-y-1">
                     <p className="font-medium">Preguntas de categoría {category.name}</p>
-                    <Badge variant="outline">Subtópicos: {category.subtopicsCount}</Badge>
+                    <div className="flex flex-wrap gap-2">
+                      <Badge variant="outline">Subtópicos: {category.subtopicsCount}</Badge>
+                      <Badge variant="secondary">Total preguntas: {category.questionCount}</Badge>
+                    </div>
                   </div>
                   <Button asChild>
                     <Link href={`/admin/preguntas/${encodeURIComponent(category.name)}`}>
