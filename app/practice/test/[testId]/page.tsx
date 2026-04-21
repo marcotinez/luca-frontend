@@ -161,40 +161,7 @@ export default function PracticeTestRunnerPage() {
       <div className="min-h-screen bg-grid-soft pb-14">
         <DashboardNavbar />
         <main className="mx-auto max-w-5xl space-y-5 px-4 py-8 sm:px-6 lg:px-8">
-          <section className="animate-enter-up overflow-hidden rounded-3xl border border-border/70 bg-card/80 shadow-sm backdrop-blur">
-            <div className="border-b border-border/60 bg-gradient-to-r from-primary/15 via-primary/5 to-transparent px-5 py-4 sm:px-6">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary/80">Runner de evaluación</p>
-              <h1 className="mt-1 text-2xl font-black tracking-tight sm:text-3xl">Modo enfoque</h1>
-              <p className="mt-2 max-w-3xl text-sm text-muted-foreground">Responde cada pregunta con calma. Recibes retroalimentación inmediata y adaptamos el siguiente paso.</p>
-            </div>
 
-            {test ? (
-              <div className="space-y-3 px-5 py-4 sm:px-6">
-                <div className="flex flex-wrap items-center gap-2">
-                  {test.selection_mode ? (
-                    <Badge variant="outline">Modo: {test.selection_mode === "recommended" ? "Recomendado" : "Por categoría"}</Badge>
-                  ) : null}
-                  {test.target_category ? <Badge variant="secondary">Categoría: {test.target_category}</Badge> : null}
-                  {test.target_subtopic ? <Badge variant="secondary">Foco: {test.target_subtopic}</Badge> : null}
-                  {test.adaptive_context?.target_difficulty ? (
-                    <Badge variant="secondary">Dificultad objetivo: {test.adaptive_context.target_difficulty}</Badge>
-                  ) : null}
-                  {currentQuestion?.adaptive_tag ? (
-                    <Badge variant={currentQuestion.adaptive_tag === "challenge" ? "default" : "secondary"}>
-                      {currentQuestion.adaptive_tag === "challenge" ? "Desafío" : "Refuerzo"}
-                    </Badge>
-                  ) : null}
-                </div>
-
-                {test.recommendation_reason || test.adaptive_context?.reason ? (
-                  <div className="rounded-2xl border border-primary/25 bg-primary/7 px-4 py-3 text-sm text-foreground">
-                    <span className="inline-flex items-center gap-1 font-semibold text-primary"><Sparkles className="h-4 w-4" />Motivo adaptativo:</span>{" "}
-                    {test.recommendation_reason || test.adaptive_context?.reason}
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-          </section>
 
           {loading ? (
             <Card>
