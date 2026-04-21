@@ -35,7 +35,7 @@ import { ArrowLeft } from 'lucide-react';
 const registerSchema = z.object({
   email: z.email({ message: "Introduce un email válido" }),
   password: passwordValidation,
-  age: z.coerce.number({ invalid_type_error: "Debes ingresar una edad válida" }).int({ message: "La edad debe ser un número entero" }).min(18, { message: "Debes tener al menos 18 años" }).max(120),
+  age: z.coerce.number().refine((value) => Number.isFinite(value), { message: "Debes ingresar una edad válida" }).int({ message: "La edad debe ser un número entero" }).min(18, { message: "Debes tener al menos 18 años" }).max(120),
   interests: z.array(z.string()),
 });
 type RegisterFormValues = z.infer<typeof registerSchema>;
