@@ -16,7 +16,7 @@ interface TestResultSummaryProps {
   correctAnswers: number;
   totalQuestions: number;
   onViewProgress: () => void;
-  onNewTest: () => void;
+  onGoHome: () => void;
 }
 
 export function TestResultSummary({
@@ -29,7 +29,7 @@ export function TestResultSummary({
   correctAnswers,
   totalQuestions,
   onViewProgress,
-  onNewTest,
+  onGoHome,
 }: TestResultSummaryProps) {
   const safeTotal = totalQuestions <= 0 ? 1 : totalQuestions;
   const percentage = Math.round((correctAnswers / safeTotal) * 100);
@@ -116,7 +116,7 @@ export function TestResultSummary({
             <BarChart3 className="mr-2 h-4 w-4" />
             Ver progreso
           </Button>
-          <Button onClick={onNewTest}>Nuevo test</Button>
+          <Button onClick={onGoHome}>Volver al inicio</Button>
         </div>
       </CardContent>
     </Card>
