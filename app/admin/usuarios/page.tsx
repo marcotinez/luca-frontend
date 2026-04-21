@@ -4,7 +4,7 @@ import * as z from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { useState, useEffect } from "react";
-import { getUsers, deleteUser, toggleUserStatus, createUser, updateUser } from "@/lib/users.api";
+import { getUsers, deleteUser, hardDeleteUser, toggleUserStatus, createUser, updateUser } from "@/lib/users.api";
 import { getRegistrationTaxonomy } from "@/lib/auth.api";
 import { normalizeRuntimeTaxonomy, type RuntimeTaxonomy } from "@/lib/taxonomy.utils";
 import { UserResponse, EducationLevel, RegisterRequest } from "@/types";
@@ -30,6 +30,7 @@ export default function UsuariosPage() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [hardDeleteId, setHardDeleteId] = useState<string | null>(null);
   const [taxonomy, setTaxonomy] = useState<RuntimeTaxonomy>({ categories: [], subtopicsByCategory: {} });
 
   // Estados para Creación/Edición
@@ -105,12 +106,25 @@ export default function UsuariosPage() {
     if (!deleteId) return;
     try {
       await deleteUser(deleteId);
-      toast.success("Usuario eliminado");
+      toast.success("Usuario desactivado");
       fetchUsuarios();
     } catch {
-      toast.error("Error al eliminar el usuario");
+      toast.error("Error al desactivar el usuario");
     } finally {
       setDeleteId(null);
+    }
+  };
+
+  const handleHardDelete = async () => {
+    if (!hardDeleteId) return;
+    try {
+      await hardDeleteUser(hardDeleteId);
+      toast.success("Usuario eliminado permanentemente");
+      fetchUsuarios();
+    } catch {
+      toast.error("Error al eliminar permanentemente el usuario");
+    } finally {
+      setHardDeleteId(null);
     }
   };
   const handleSaveUser = async (values: UserFormValues) => {
@@ -280,11 +294,18 @@ export default function UsuariosPage() {
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
-                              className="text-destructive focus:text-destructive focus:bg-destructive/5"
+                              className="text-amber-600 focus:text-amber-700 focus:bg-amber-500/10"
                               onClick={() => setDeleteId(u.id)}
                             >
+                              <UserX className="w-4 h-4 mr-2" />
+                              Eliminar (desactivar)
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive focus:bg-destructive/5"
+                              onClick={() => setHardDeleteId(u.id)}
+                            >
                               <Trash2 className="w-4 h-4 mr-2" />
-                              Eliminar
+                              Eliminar permanentemente
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
@@ -301,15 +322,31 @@ export default function UsuariosPage() {
       <Dialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>¿Eliminar usuario?</DialogTitle>
+            <DialogTitle>¿Desactivar usuario?</DialogTitle>
             <DialogDescription>
-              Esta acción no se puede deshacer. Se eliminarán permanentemente los datos
-              del usuario y su progreso en el sistema.
+              El usuario quedará inactivo (soft delete) y no podrá iniciar sesión.
+              Sus datos se conservan.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2 sm:gap-0">
             <Button variant="outline" onClick={() => setDeleteId(null)}>Cancelar</Button>
-            <Button variant="destructive" onClick={handleDelete}>Confirmar Eliminación</Button>
+            <Button onClick={handleDelete}>Confirmar Desactivación</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!hardDeleteId} onOpenChange={(open) => !open && setHardDeleteId(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>¿Eliminar usuario permanentemente?</DialogTitle>
+            <DialogDescription>
+              Esta acción es irreversible. Se borrarán la cuenta, historial y progreso
+              del usuario de forma definitiva.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setHardDeleteId(null)}>Cancelar</Button>
+            <Button variant="destructive" onClick={handleHardDelete}>Eliminar Permanentemente</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -38,13 +38,14 @@ const registerSchema = z.object({
   age: z.coerce.number().refine((value) => Number.isFinite(value), { message: "Debes ingresar una edad válida" }).int({ message: "La edad debe ser un número entero" }).min(18, { message: "Debes tener al menos 18 años" }).max(120),
   interests: z.array(z.string()),
 });
-type RegisterFormValues = z.infer<typeof registerSchema>;
+type RegisterFormInput = z.input<typeof registerSchema>;
+type RegisterFormValues = z.output<typeof registerSchema>;
 
 // Valores
 export default function RegisterPage() {
   const router = useRouter();
 
-  const form = useForm<RegisterFormValues>({
+  const form = useForm<RegisterFormInput, unknown, RegisterFormValues>({
     resolver: zodResolver(registerSchema),
     mode: "onSubmit",
     reValidateMode: "onSubmit",
@@ -143,7 +144,7 @@ export default function RegisterPage() {
                                 type="number"
                                 placeholder="Ej: 21"
                                 {...field}
-                                value={field.value || ''}
+                                value={typeof field.value === "number" ? field.value : ""}
                                 onChange={(e) => field.onChange(e.target.value === '' ? '' : Number(e.target.value))}
                               />
                             </FormControl>

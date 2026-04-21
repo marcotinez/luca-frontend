@@ -37,6 +37,10 @@ export async function deleteUser(id: string): Promise<void> {
   await axios.delete(`${USERS_API_URL}/${id}`);
 }
 
+export async function hardDeleteUser(id: string): Promise<void> {
+  await axios.delete(`${USERS_API_URL}/${id}/hard`);
+}
+
 export async function toggleUserStatus(id: string): Promise<UserResponse> {
   const current = await getUser(id);
   const response = await axios.put(`${USERS_API_URL}/${id}`, {
