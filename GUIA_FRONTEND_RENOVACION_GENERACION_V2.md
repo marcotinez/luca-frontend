@@ -20,6 +20,7 @@ Esta guía **reemplaza** las implementaciones/documentación legacy de generaci�
 Base API: `/api/v1`
 
 ### 2.1 Configuración global
+- `GET /api/v1/models`
 - `GET /admin/generation-config`
 - `PATCH /admin/generation-config`
 
@@ -27,9 +28,13 @@ Campos que frontend debe soportar explícitamente:
 - Prompts base: `general_prompt`, `facil_prompt`, `medio_prompt`, `dificil_prompt`
 - Prompts de etapas: `generation_stem_*`, `generation_distractor_*`, `generation_judge_*`
 - Modelos globales: `llm_default_model`, `llm_models`, `embedding_default_model`, `embedding_models`
-- Pipeline v2: `question_type_catalog`, `x_matrix_by_difficulty_and_type`, `rubric_config`, `llm_providers`
-- Parámetros vigentes adicionales: `batch_mode_by_difficulty`, `retrieval_weights_by_stage`, `ranking_light_thresholds`, `retry_budget_by_difficulty`, `scenario_catalog`, `novelty_thresholds`, `dedupe_embedding_model`, `history_window`
+- Modelos por sección: `llm_model_sections`
+- Pipeline v2: `question_type_catalog`, `rubric_config`
 - Ingesta + taxonomía: campos ya existentes de clasificación y catálogo.
+
+Notas:
+- `GET /api/v1/models` y `GET /admin/generation-config` requieren autenticación de superusuario.
+- El catálogo de modelos se usa para poblar los selectores de `llm_default_model` y `llm_models`.
 
 ### 2.2 Flujo de generación V2 (operación)
 - `POST /generation/snapshots`
@@ -130,9 +135,11 @@ Actualizar `lib/prompt-generation.api.ts`:
 ## 5.2 Configuración: modelo de datos frontend
 Ajustar tipos de `GenerationConfigResponse/Patch` para incluir:
 - `question_type_catalog`
-- `x_matrix_by_difficulty_and_type`
 - `rubric_config`
-- `llm_providers`
+- `llm_model_sections`
+- `llm_models`
+- `embedding_default_model`
+- `embedding_models`
 
 Y quitar del frontend lo que backend ya no usa:
 - `blueprint_pool_size_by_difficulty`
@@ -142,9 +149,11 @@ Y quitar del frontend lo que backend ya no usa:
 - Migrar `app/admin/generador/page.tsx` a operación snapshot/units real-time.
 - Mantener `app/admin/generador/configuracion/*` y extender `modelos-pipeline` con edición de:
   - `question_type_catalog`
-  - matriz X por dificultad/tipo
   - rúbrica (`weights`, `pass_threshold`)
-  - `llm_providers` (claves y modelos por proveedor)
+  - `llm_default_model`
+  - `llm_models` por sección
+  - `embedding_default_model`
+  - `embedding_models`
 
 ---
 
@@ -202,5 +211,5 @@ Se considera terminada la renovación cuando:
 3. Ejecutar una unit manualmente y validar cambio de estado.
 4. Ejecutar auto-run y confirmar avance de `pending` a `ok/failed`.
 5. Forzar fallo y reintentar unit.
-6. Cambiar `llm_providers.default` desde UI y validar que nuevas ejecuciones usen ese provider.
+6. Cambiar `llm_default_model` desde UI y validar que nuevas ejecuciones usen ese modelo por defecto.
 7. Editar rúbrica/threshold y confirmar efecto en aceptación de units.

@@ -9,6 +9,7 @@ Adaptar frontend para la nueva interfaz unificada de modelos:
 - Conexión de backend a modelos vía `env` (no desde frontend).
 - Configuración de modelos por sección desde `generation-config`.
 - Dropdown por sección usando catálogo real de `GET /api/v1/models`.
+- Las rutas `GET /api/v1/models` y `GET/PATCH /api/v1/admin/generation-config` requieren sesión autenticada de superusuario.
 - Eliminación de campos legacy (`llm_providers`, overrides de modelo por payload).
 
 ---
@@ -45,6 +46,7 @@ Notas:
 - `type` define filtro para dropdown:
   - `llm` para secciones LLM
   - `embedding` para secciones embedding
+- El backend valida este catálogo bajo autenticación de admin/superuser; el frontend debe enviar bearer token al consultar esta ruta.
 
 ### 2.2 Configuración admin
 
@@ -57,6 +59,10 @@ Campos relevantes:
 - `llm_model_sections: string[]`
 Endpoint edición:
 - `PATCH /api/v1/admin/generation-config`
+
+Notas:
+- La lectura y escritura de esta configuración está protegida por autenticación de superusuario.
+- El frontend administrativo ya debe tratar estos requests como admin-only.
 
 Enviar solo campos modificados, por ejemplo:
 ```json
@@ -157,10 +163,9 @@ export interface GenerationConfigResponse {
 
 ## 7) Checklist de implementación
 
-- [ ] Actualizar cliente API y tipos para `GET /api/v1/models`.
-- [ ] Actualizar tipos de `generation-config` (agregar `*_model_sections`, quitar legacy).
-- [ ] Implementar dropdowns por sección (solo LLM).
-- [ ] Remover UI/payload de overrides en execute unit.
-- [ ] Manejar errores 400 de validación de modelos.
+- [x] Actualizar cliente API y tipos para `GET /api/v1/models`.
+- [x] Actualizar tipos de `generation-config` (agregar `*_model_sections`, quitar legacy).
+- [x] Implementar dropdowns por sección (solo LLM).
+- [x] Remover UI/payload de overrides en execute unit.
+- [x] Manejar errores 400 de validación de modelos.
 - [ ] Probar guardado con modelos válidos y rechazo con inválidos.
-

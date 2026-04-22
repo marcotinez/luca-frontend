@@ -1,8 +1,14 @@
 import axios from 'axios';
 import { getApiBaseUrl } from '@/lib/api-base';
+import { getStoredToken } from '@/lib/auth-session.storage';
 
 const BASE_URL = getApiBaseUrl();
 const ADMIN_API_URL = `${BASE_URL}/api/v1/admin`;
+
+function authHeaders() {
+  const token = getStoredToken();
+  return token ? { Authorization: `Bearer ${token}` } : undefined;
+}
 
 function getErrorMessage(error: unknown, fallback: string): string {
   if (axios.isAxiosError(error)) {
@@ -50,7 +56,7 @@ export interface WipeGraphResponse {
  * Obtiene la lista de backups disponibles
  */
 export async function getBackups(): Promise<BackupFile[]> {
-  const response = await axios.get(`${ADMIN_API_URL}/backups`);
+  const response = await axios.get(`${ADMIN_API_URL}/backups`, { headers: authHeaders() });
   return response.data;
 }
 
@@ -58,7 +64,7 @@ export async function getBackups(): Promise<BackupFile[]> {
  * Inicia el proceso de backup de la base de datos
  */
 export async function createBackup(): Promise<CreateBackupResponse> {
-  const response = await axios.post(`${ADMIN_API_URL}/backup`);
+  const response = await axios.post(`${ADMIN_API_URL}/backup`, {}, { headers: authHeaders() });
   return response.data;
 }
 
@@ -66,7 +72,9 @@ export async function createBackup(): Promise<CreateBackupResponse> {
  * Restaura la base de datos desde un archivo de backup
  */
 export async function restoreBackup(filename: string): Promise<RestoreBackupResponse> {
-  const response = await axios.post(`${ADMIN_API_URL}/restore`, { filename });
+  const response = await axios.post(`${ADMIN_API_URL}/restore`, { filename }, {
+    headers: authHeaders(),
+  });
   return response.data;
 }
 
@@ -75,7 +83,7 @@ export async function restoreBackup(filename: string): Promise<RestoreBackupResp
  */
 export async function wipeGraph(): Promise<WipeGraphResponse> {
   try {
-    const response = await axios.post(`${ADMIN_API_URL}/wipe`);
+    const response = await axios.post(`${ADMIN_API_URL}/wipe`, {}, { headers: authHeaders() });
     return response.data;
   } catch (error) {
     throw new Error(getErrorMessage(error, 'No se pudo vaciar el grafo.'));
