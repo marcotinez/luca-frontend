@@ -4,9 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowRight, Loader2, Sparkles } from "lucide-react";
+import { ArrowRight, CheckCircle2, Flame, Loader2 } from "lucide-react";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
-import { DashboardNavbar } from "@/components/DashboardNavbar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +16,7 @@ import { TestProgressBar } from "@/components/learning/TestProgressBar";
 import { QuestionCard } from "@/components/learning/QuestionCard";
 import { AlternativesList } from "@/components/learning/AlternativesList";
 import { AnswerFeedbackPanel } from "@/components/learning/AnswerFeedbackPanel";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 export default function PracticeTestRunnerPage() {
   const params = useParams<{ testId: string }>();
@@ -33,6 +33,7 @@ export default function PracticeTestRunnerPage() {
   const [pendingNextTest, setPendingNextTest] = useState<PracticeTestDetailResponse | null>(null);
   const [currentStreak, setCurrentStreak] = useState(0);
   const [bestStreak, setBestStreak] = useState(0);
+  const [showExitModal, setShowExitModal] = useState(false);
   const questionStartRef = useRef<number>(Date.now());
   const nullQuestionRetryRef = useRef(0);
 
@@ -83,6 +84,11 @@ export default function PracticeTestRunnerPage() {
 
   const currentQuestion = useMemo(() => test?.current_question || null, [test]);
 
+  const selectedAlternative = useMemo(() => {
+    if (!currentQuestion || selectedOptionId == null) return null;
+    return currentQuestion.alternatives.find((option) => option.option_id === selectedOptionId) ?? null;
+  }, [currentQuestion, selectedOptionId]);
+
   const correctOptionLabel = useMemo(() => {
     if (!feedback || !currentQuestion) return undefined;
     const correctIndex = currentQuestion.alternatives.findIndex(
@@ -91,8 +97,8 @@ export default function PracticeTestRunnerPage() {
     return correctIndex >= 0 ? String.fromCharCode(65 + correctIndex) : undefined;
   }, [feedback, currentQuestion]);
 
-  const handleSelectOption = async (optionId: number) => {
-    if (!test || !currentQuestion || submitting) return;
+  const handleSelectOption = (optionId: number) => {
+    if (!currentQuestion || submitting || feedback) return;
     const isValidOption = currentQuestion.alternatives.some((option) => option.option_id === optionId);
     if (!isValidOption) {
       toast.error("La opción seleccionada no es válida para esta pregunta.");
@@ -100,12 +106,17 @@ export default function PracticeTestRunnerPage() {
     }
 
     setSelectedOptionId(optionId);
+  };
+
+  const handleConfirmAnswer = async () => {
+    if (!test || !currentQuestion || submitting || selectedOptionId == null) return;
+
     setSubmitting(true);
     const elapsedSeconds = Math.max(1, Math.round((Date.now() - questionStartRef.current) / 1000));
 
     try {
       const response = await submitPracticeTestAnswer(test.id, {
-        selected_option_id: optionId,
+        selected_option_id: selectedOptionId,
         response_time_seconds: elapsedSeconds,
       });
       setFeedback({
@@ -143,6 +154,12 @@ export default function PracticeTestRunnerPage() {
     }
   };
 
+  const displayedFeedback = useMemo(() => {
+    if (!feedback) return "";
+    if (feedback.isCorrect) return feedback.feedback;
+    return feedback.feedback.replace(/^\s*Correcto[.:]?\s*/i, "").trim();
+  }, [feedback]);
+
   const handleNextQuestion = () => {
     if (!pendingNextTest) return;
     if (pendingNextTest.status === "completed") {
@@ -156,10 +173,14 @@ export default function PracticeTestRunnerPage() {
     questionStartRef.current = Date.now();
   };
 
+  const handleConfirmExit = () => {
+    setShowExitModal(false);
+    router.push("/dashboard");
+  };
+
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-grid-soft pb-14">
-        <DashboardNavbar />
         <main className="mx-auto max-w-5xl space-y-5 px-4 py-8 sm:px-6 lg:px-8">
 
 
@@ -185,9 +206,19 @@ export default function PracticeTestRunnerPage() {
               <TestProgressBar
                 answered={test.answered_questions}
                 total={test.total_questions}
-                streak={currentStreak}
-                bestStreak={bestStreak}
+                onExit={() => setShowExitModal(true)}
               />
+              <section className="animate-enter-up-delay rounded-2xl border border-border/70 bg-card/80 p-4 shadow-sm">
+                <div className="flex flex-wrap items-center gap-2 text-sm">
+                  <Badge variant={currentStreak > 0 ? "default" : "secondary"} className="gap-1.5 px-2.5 py-1">
+                    <Flame className="h-3.5 w-3.5" />
+                    Racha evaluación: {currentStreak}
+                  </Badge>
+                  <Badge variant="outline" className="px-2.5 py-1">
+                    Mejor racha: {bestStreak}
+                  </Badge>
+                </div>
+              </section>
 
               <QuestionCard question={currentQuestion} />
 
@@ -198,12 +229,51 @@ export default function PracticeTestRunnerPage() {
                 onSelect={handleSelectOption}
               />
 
+              {!feedback ? (
+                <div className="flex justify-end">
+                  <Button
+                    onClick={handleConfirmAnswer}
+                    disabled={submitting || selectedOptionId == null}
+                    className="rounded-xl px-5"
+                  >
+                    {submitting ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Confirmando...
+                      </>
+                    ) : (
+                      <>
+                        Confirmar respuesta
+                        <CheckCircle2 className="h-4 w-4" />
+                      </>
+                    )}
+                  </Button>
+                </div>
+              ) : null}
+
               {feedback ? (
                 <div className="animate-enter-up space-y-3">
+                  {selectedAlternative ? (
+                    <article className="rounded-2xl border border-border/70 bg-card/80 p-4 shadow-sm sm:p-5">
+                      <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                        Tu respuesta
+                      </p>
+                      <p className="text-sm leading-relaxed text-foreground sm:text-[15px]">
+                        {selectedAlternative.text}
+                      </p>
+                    </article>
+                  ) : null}
                   <AnswerFeedbackPanel
                     isCorrect={feedback.isCorrect}
-                    feedback={feedback.feedback}
+                    feedback={displayedFeedback}
                     correctOptionLabel={correctOptionLabel}
+                    correctAnswerText={
+                      feedback.isCorrect
+                        ? undefined
+                        : currentQuestion.alternatives.find(
+                            (option) => option.option_id === feedback.correctOptionId,
+                          )?.text
+                    }
                   />
                   <div className="flex justify-end">
                     <Button onClick={handleNextQuestion} disabled={!pendingNextTest} className="rounded-xl px-5">
@@ -217,6 +287,24 @@ export default function PracticeTestRunnerPage() {
           )}
         </main>
       </div>
+      <Dialog open={showExitModal} onOpenChange={setShowExitModal}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>¿Salir de la evaluación?</DialogTitle>
+            <DialogDescription>
+              Si sales ahora, volverás al dashboard y tendrás que retomar después desde esta evaluación.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex gap-2 pt-2 sm:flex-row">
+            <Button variant="outline" onClick={() => setShowExitModal(false)} className="flex-1">
+              Cancelar
+            </Button>
+            <Button variant="destructive" onClick={handleConfirmExit} className="flex-1">
+              Salir
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </ProtectedRoute>
   );
 }

@@ -16,14 +16,15 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useAuth } from "@/hooks/useAuth";
 import { getLearningProfile } from "@/lib/users.api";
 import { createPracticeTest, getPracticeTestAvailability, getPracticeTests } from "@/lib/learning.api";
-import { apiErrorMessage, formatPracticeMinutes } from "@/lib/learning.utils";
+import {
+  apiErrorMessage,
+  formatPracticeMinutes,
+  getCompletedDiagnosticCategories,
+  INITIAL_DIAGNOSTIC_CATEGORIES,
+} from "@/lib/learning.utils";
+import { readStorage, writeStorage } from "@/lib/client-storage";
 import type { PracticeTestSummaryResponse, UserLearningProfile } from "@/types";
-
-const INITIAL_DIAGNOSTIC_CATEGORIES = [
-  "Mi Primer Sueldo y Seguridad",
-  "Planificación y Presupuesto",
-  "El Mundo del Crédito",
-];
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 export function StudentDashboard() {
   const { user } = useAuth();
@@ -35,6 +36,9 @@ export function StudentDashboard() {
   const [tests, setTests] = useState<PracticeTestSummaryResponse[]>([]);
   const [creatingTopic, setCreatingTopic] = useState<string | null>(null);
   const [diagnosticAvailability, setDiagnosticAvailability] = useState<Record<string, boolean>>({});
+  const [showUnlockModal, setShowUnlockModal] = useState(false);
+
+  const unlockModalStorageKey = user ? `diagnostic-unlock-shown:${user.id}` : null;
 
   useEffect(() => {
     if (!user) return;
@@ -59,13 +63,22 @@ export function StudentDashboard() {
         setTests(testList);
         setSummary(user.practice_history_summary || []);
         setDiagnosticAvailability(Object.fromEntries(availabilityRows));
+        const completedDiagnosticCategories = getCompletedDiagnosticCategories(testList);
+        const diagnosticsCompleted = completedDiagnosticCategories.length >= INITIAL_DIAGNOSTIC_CATEGORIES.length;
+        if (diagnosticsCompleted && unlockModalStorageKey) {
+          const alreadyShown = readStorage<boolean>(unlockModalStorageKey, false);
+          if (!alreadyShown) {
+            setShowUnlockModal(true);
+            writeStorage(unlockModalStorageKey, true);
+          }
+        }
       } catch (error) {
         toast.error(apiErrorMessage(error, "No se pudo cargar el dashboard de aprendizaje"));
       }
     };
 
     void loadData();
-  }, [user]);
+  }, [unlockModalStorageKey, user]);
 
   const activeTests = useMemo(() => tests.filter((test) => test.status !== "completed"), [tests]);
   const completedTests = useMemo(() => tests.filter((test) => test.status === "completed").length, [tests]);
@@ -166,14 +179,23 @@ export function StudentDashboard() {
                   Hola <span className="inline-block animate-wave origin-[70%_70%]">👋</span>
                 </h1>
                 <p className="mt-2 text-sm text-muted-foreground sm:text-base max-w-2xl">
-                  Para personalizar tus próximas evaluaciones, completa los 3 diagnósticos iniciales (uno por categoría).
-                </p>
-                <p className="mt-2 text-xs font-semibold uppercase tracking-[0.14em] text-primary/80">
-                  Progreso diagnóstico: {completedDiagnosticsCount}/{INITIAL_DIAGNOSTIC_CATEGORIES.length}
+                  Vamos paso a paso: completa esta primera etapa para desbloquear tus evaluaciones personalizadas.
                 </p>
               </section>
 
               <section className="overflow-hidden rounded-3xl border border-border/70 bg-card/90 shadow-sm backdrop-blur p-6 sm:p-8">
+                <div className="mb-6 space-y-3">
+                  <h2 className="text-2xl font-black tracking-tight sm:text-3xl">Evaluaciones de diagnóstico</h2>
+                  <p className="max-w-3xl text-sm text-muted-foreground sm:text-base">
+                    Para personalizar tus próximas evaluaciones, completa los 3 diagnósticos iniciales (uno por categoría).
+                  </p>
+                  <div className="inline-flex items-center gap-2 rounded-xl border border-primary/35 bg-primary/10 px-4 py-2">
+                    <span className="text-xs font-bold uppercase tracking-[0.14em] text-primary/90">Progreso diagnóstico</span>
+                    <span className="text-lg font-black text-primary">
+                      {completedDiagnosticsCount}/{INITIAL_DIAGNOSTIC_CATEGORIES.length}
+                    </span>
+                  </div>
+                </div>
                 <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
                   {diagnosticByCategory.map(({ category, status, active, completed }) => (
                     <button
@@ -327,6 +349,25 @@ export function StudentDashboard() {
 
         </main>
       </div>
+      <Dialog open={showUnlockModal} onOpenChange={setShowUnlockModal}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Bienvenido a la plataforma</DialogTitle>
+            <DialogDescription>
+              Terminaste tus diagnósticos iniciales. Se desbloqueó la creación de evaluaciones personalizadas.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rounded-2xl border border-border/70 bg-card/70 p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary/80">Nuevo desbloqueo</p>
+            <p className="mt-1 text-sm text-foreground">Ya puedes crear evaluaciones por categoría o recomendadas según tu progreso.</p>
+          </div>
+          <DialogFooter className="pt-2">
+            <Button onClick={() => setShowUnlockModal(false)} className="w-full sm:w-auto">
+              Entendido
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </ProtectedRoute>
   );
 }

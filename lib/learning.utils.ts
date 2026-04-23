@@ -1,3 +1,27 @@
+import type { PracticeTestSummaryResponse } from "@/types";
+
+export const INITIAL_DIAGNOSTIC_CATEGORIES = [
+  "Mi Primer Sueldo y Seguridad",
+  "Planificación y Presupuesto",
+  "El Mundo del Crédito",
+] as const;
+
+export function getCompletedDiagnosticCategories(tests: PracticeTestSummaryResponse[]): string[] {
+  const completed = new Set<string>();
+  for (const test of tests) {
+    if (test.status !== "completed") continue;
+    if (test.selection_mode !== "category") continue;
+    if (!test.target_category) continue;
+    if (!INITIAL_DIAGNOSTIC_CATEGORIES.some((category) => category === test.target_category)) continue;
+    completed.add(test.target_category);
+  }
+  return [...completed];
+}
+
+export function isDiagnosticPhaseFromTests(tests: PracticeTestSummaryResponse[]): boolean {
+  return getCompletedDiagnosticCategories(tests).length < INITIAL_DIAGNOSTIC_CATEGORIES.length;
+}
+
 export function formatDateTime(value: string | null | undefined): string {
   if (!value) return "Sin registros";
   const date = new Date(value);

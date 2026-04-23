@@ -25,7 +25,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { updatePassword } from "@/lib/auth.api";
 import { getLearningProfile } from "@/lib/users.api";
 import { getPracticeTests } from "@/lib/learning.api";
-import { apiErrorMessage, formatRelativeDate, formatPracticeMinutes } from "@/lib/learning.utils";
+import { apiErrorMessage, formatRelativeDate, formatPracticeMinutes, isDiagnosticPhaseFromTests } from "@/lib/learning.utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -140,6 +140,7 @@ export default function PerfilPage() {
 
   const completedTests = useMemo(() => tests.filter((item) => item.status === "completed"), [tests]);
   const pendingTests = useMemo(() => tests.filter((item) => item.status !== "completed"), [tests]);
+  const isDiagnosticPhase = useMemo(() => isDiagnosticPhaseFromTests(tests), [tests]);
 
   const strengths = useMemo(() => {
     return [...(profile?.domain_knowledge || [])]
@@ -517,9 +518,15 @@ export default function PerfilPage() {
                         )}
                       </div>
 
-                      <div className="mt-4 grid gap-2">
-                        <Button className="justify-between rounded-xl" onClick={() => router.push("/practice/new")}>Crear evaluación<ArrowRight className="h-4 w-4" /></Button>
-                      </div>
+                      {!isDiagnosticPhase ? (
+                        <div className="mt-4 grid gap-2">
+                          <Button className="justify-between rounded-xl" onClick={() => router.push("/practice/new")}>Crear evaluación<ArrowRight className="h-4 w-4" /></Button>
+                        </div>
+                      ) : (
+                        <p className="mt-4 rounded-xl border border-dashed border-border/60 bg-background/70 p-3 text-sm text-muted-foreground">
+                          Completa los diagnósticos iniciales para desbloquear la creación de evaluaciones.
+                        </p>
+                      )}
                     </div>
                   </div>
                 </>

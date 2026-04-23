@@ -1,16 +1,16 @@
 "use client";
 
 import { Badge } from "@/components/ui/badge";
-import { Flame, Gauge, Sparkles } from "lucide-react";
+import { X } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 interface TestProgressBarProps {
   answered: number;
   total: number;
-  streak?: number;
-  bestStreak?: number;
+  onExit?: () => void;
 }
 
-export function TestProgressBar({ answered, total, streak = 0, bestStreak = 0 }: TestProgressBarProps) {
+export function TestProgressBar({ answered, total, onExit }: TestProgressBarProps) {
   const safeTotal = total <= 0 ? 1 : total;
   const progress = Math.min(100, Math.round((answered / safeTotal) * 100));
 
@@ -23,10 +23,18 @@ export function TestProgressBar({ answered, total, streak = 0, bestStreak = 0 }:
             <p className="mt-1 text-lg font-black">{answered} de {total} preguntas</p>
           </div>
           <div className="flex items-center gap-2">
-            <Badge variant={streak > 0 ? "default" : "secondary"} className="gap-1 px-2.5 py-1">
-              <Flame className="h-3.5 w-3.5" />
-              Racha {streak}
-            </Badge>
+            {onExit ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={onExit}
+                className="h-8 w-8 rounded-full text-muted-foreground hover:text-foreground"
+                aria-label="Salir de la evaluación"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            ) : null}
           </div>
         </div>
       </div>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { User, LogOut, ChevronDown, ShieldCheck, Flame, House, BookOpen, PlusCircle } from 'lucide-react';
@@ -23,15 +23,41 @@ import {
 } from "@/components/ui/dialog";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { getPracticeTests } from "@/lib/learning.api";
+import { isDiagnosticPhaseFromTests } from "@/lib/learning.utils";
 
 export function DashboardNavbar() {
   const { user, logout } = useAuth();
   const router = useRouter();
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [isDiagnosticPhase, setIsDiagnosticPhase] = useState(false);
 
   const userInitials = user?.email?.substring(0, 2).toUpperCase() || 'LU';
   const currentStreak = user?.gamification.current_streak || 0;
   const streakIsActive = currentStreak > 0;
+
+  useEffect(() => {
+    if (!user) return;
+    let mounted = true;
+
+    const loadPhase = async () => {
+      try {
+        const tests = await getPracticeTests();
+        if (mounted) {
+          setIsDiagnosticPhase(isDiagnosticPhaseFromTests(tests));
+        }
+      } catch {
+        if (mounted) {
+          setIsDiagnosticPhase(false);
+        }
+      }
+    };
+
+    void loadPhase();
+    return () => {
+      mounted = false;
+    };
+  }, [user]);
 
   return (
     <>
@@ -91,10 +117,12 @@ export function DashboardNavbar() {
                   <span>Inicio</span>
                 </DropdownMenuItem>
 
-                <DropdownMenuItem onClick={() => router.push('/practice/new')} className="cursor-pointer py-2.5 my-1 bg-primary/10 text-primary focus:bg-primary/20 focus:text-primary rounded-md font-bold border border-primary/20 shadow-sm">
-                  <PlusCircle className="mr-2 h-4 w-4" />
-                  <span>Crear Evaluación</span>
-                </DropdownMenuItem>
+                {!isDiagnosticPhase ? (
+                  <DropdownMenuItem onClick={() => router.push('/practice/new')} className="cursor-pointer py-2.5 my-1 bg-primary/10 text-primary focus:bg-primary/20 focus:text-primary rounded-md font-bold border border-primary/20 shadow-sm">
+                    <PlusCircle className="mr-2 h-4 w-4" />
+                    <span>Crear Evaluación</span>
+                  </DropdownMenuItem>
+                ) : null}
 
                 <DropdownMenuItem onClick={() => router.push('/perfil')} className="cursor-pointer py-2.5">
                   <User className="mr-2 h-4 w-4" />
