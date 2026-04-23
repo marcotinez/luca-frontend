@@ -8,7 +8,7 @@ import { normalizeRuntimeTaxonomy, type RuntimeTaxonomy } from '@/lib/taxonomy.u
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { ListFilter } from 'lucide-react';
+import { CheckCircle2, ListFilter, Table2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function PreguntasPage() {
@@ -20,10 +20,7 @@ export default function PreguntasPage() {
     const loadTaxonomy = async () => {
       try {
         setLoading(true);
-        const [response, counts] = await Promise.all([
-          getGenerationConfig(),
-          getQuestionCategoryCounts(),
-        ]);
+        const [response, counts] = await Promise.all([getGenerationConfig(), getQuestionCategoryCounts()]);
         const normalized = normalizeRuntimeTaxonomy({ categories: response.categories, subtopics: response.subtopics });
         setTaxonomy(normalized);
         const mappedCounts = counts.reduce<Record<string, number>>((acc, item) => {
@@ -54,7 +51,7 @@ export default function PreguntasPage() {
       <div className="space-y-1">
         <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Gestión de Preguntas</h1>
         <p className="text-muted-foreground">
-          Selecciona una categoría para abrir su tabla de preguntas y filtrar por subtópico, estado y dificultad.
+          Selecciona una categoría y entra directo a gestión de listado o revisión rápida de preguntas en revisión.
         </p>
       </div>
 
@@ -64,7 +61,7 @@ export default function PreguntasPage() {
             <ListFilter className="h-5 w-5 text-primary" />
             Categorías disponibles
           </CardTitle>
-          <CardDescription>Listado por categoría, sin cargar todo el banco de preguntas.</CardDescription>
+          <CardDescription>Hub único para entrar a gestión y revisión por categoría.</CardDescription>
         </CardHeader>
         <CardContent>
           {loading ? (
@@ -73,25 +70,37 @@ export default function PreguntasPage() {
             <p className="text-sm text-muted-foreground">No hay categorías disponibles.</p>
           ) : (
             <div className="space-y-2">
-              {categoryCards.map((category) => (
-                <div
-                  key={category.name}
-                  className="flex flex-col gap-2 rounded-lg border border-border/70 p-4 md:flex-row md:items-center md:justify-between"
-                >
-                  <div className="space-y-1">
-                    <p className="font-medium">Preguntas de categoría {category.name}</p>
-                    <div className="flex flex-wrap gap-2">
-                      <Badge variant="outline">Subtópicos: {category.subtopicsCount}</Badge>
-                      <Badge variant="secondary">Total preguntas: {category.questionCount}</Badge>
+              {categoryCards.map((category) => {
+                const encodedCategory = encodeURIComponent(category.name);
+                return (
+                  <div
+                    key={category.name}
+                    className="flex flex-col gap-3 rounded-lg border border-border/70 p-4 lg:flex-row lg:items-center lg:justify-between"
+                  >
+                    <div className="space-y-1">
+                      <p className="font-medium">Preguntas de categoría {category.name}</p>
+                      <div className="flex flex-wrap gap-2">
+                        <Badge variant="outline">Subtópicos: {category.subtopicsCount}</Badge>
+                        <Badge variant="secondary">Total preguntas: {category.questionCount}</Badge>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button asChild variant="outline">
+                        <Link href={`/admin/preguntas/${encodedCategory}?mode=list`}>
+                          <Table2 className="mr-2 h-4 w-4" />
+                          Gestionar
+                        </Link>
+                      </Button>
+                      <Button asChild>
+                        <Link href={`/admin/preguntas/${encodedCategory}?mode=review&status=en_revision`}>
+                          <CheckCircle2 className="mr-2 h-4 w-4" />
+                          Revisión
+                        </Link>
+                      </Button>
                     </div>
                   </div>
-                  <Button asChild>
-                    <Link href={`/admin/preguntas/${encodeURIComponent(category.name)}`}>
-                      Ver preguntas de esta categoría
-                    </Link>
-                  </Button>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </CardContent>

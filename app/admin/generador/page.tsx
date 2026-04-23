@@ -360,6 +360,10 @@ export default function GeneradorPreguntasPage() {
     const done = (selectionSnapshot?.ok_units ?? localSelectionStats.ok) + (selectionSnapshot?.failed_units ?? localSelectionStats.failed);
     return Math.round((done / total) * 100);
   }, [localSelectionStats.failed, localSelectionStats.ok, localSelectionStats.total, selectionSnapshot?.failed_units, selectionSnapshot?.ok_units, selectionSnapshot?.total_units]);
+  const hasBackendInProgress = useMemo(
+    () => (selectionSnapshot?.in_progress_units ?? 0) > 0,
+    [selectionSnapshot?.in_progress_units]
+  );
 
   const loadConfig = useCallback(async () => {
     try {
@@ -558,16 +562,21 @@ export default function GeneradorPreguntasPage() {
   }, [activeSelectionId, loadSelectionProgress]);
 
   useEffect(() => {
-    if (selectionRunTokenRef.current) {
-      return;
-    }
-    if (!activeSelectionId) {
-      setIsSelectionRunning(false);
-      return;
-    }
-    const backendRunning = (selectionSnapshot?.in_progress_units ?? 0) > 0;
-    setIsSelectionRunning(backendRunning);
-  }, [activeSelectionId, selectionSnapshot?.in_progress_units]);
+    if (!activeSelectionId || !selectionSnapshot) return;
+    const filters = parseSelectionFilters(selectionSnapshot);
+    setSelectionDraft((prev) => ({
+      ...prev,
+      count: Math.max(1, selectionSnapshot.requested_count || prev.count || 1),
+      difficulties: filters.difficulties,
+      questionTypes: filters.questionTypes,
+      unitKind:
+        filters.unitKindRaw === 'entity' || filters.unitKindRaw === 'relation'
+          ? filters.unitKindRaw
+          : 'all',
+      includeFailed:
+        typeof filters.includeFailed === 'boolean' ? filters.includeFailed : prev.includeFailed,
+    }));
+  }, [activeSelectionId, selectionSnapshot]);
 
   useEffect(() => {
     if (!activeSnapshotId || !activeSelectionId) return;
@@ -1071,6 +1080,9 @@ export default function GeneradorPreguntasPage() {
             )}
             {activeSnapshotId && <Badge variant="outline">Snapshot activo: {activeSnapshotId}</Badge>}
             <Badge variant="outline">Runner selección: {isSelectionRunning ? 'Activo' : 'Detenido'}</Badge>
+            {hasBackendInProgress && !isSelectionRunning ? (
+              <Badge variant="secondary">Unidades en progreso en backend</Badge>
+            ) : null}
           </div>
         </div>
       </div>
@@ -1635,8 +1647,12 @@ export default function GeneradorPreguntasPage() {
                 <p className="text-xs text-muted-foreground">Selección activa</p>
                 <p className="text-sm font-semibold truncate">{activeSelectionId || '-'}</p>
               </div>
-              <Badge variant={isSelectionRunning ? 'secondary' : 'outline'}>
-                {isSelectionRunning ? 'Ejecución activa' : 'Ejecución detenida'}
+              <Badge variant={isSelectionRunning || hasBackendInProgress ? 'secondary' : 'outline'}>
+                {isSelectionRunning
+                  ? 'Ejecución activa'
+                  : hasBackendInProgress
+                    ? 'Unidades en progreso'
+                    : 'Ejecución detenida'}
               </Badge>
             </div>
 
