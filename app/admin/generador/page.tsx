@@ -67,6 +67,7 @@ type PersistedState = {
   includeEntities?: boolean;
   includeRelations?: boolean;
   selectionBySnapshot?: Record<string, string>;
+  selectionIdsBySnapshot?: Record<string, string[]>;
   selectionConcurrency?: number;
   selectionDraft?: Partial<SelectionDraft>;
 };
@@ -129,6 +130,12 @@ function parsePersistedState(value: unknown): PersistedState | null {
     selectionBySnapshot:
       raw.selectionBySnapshot && typeof raw.selectionBySnapshot === 'object' && !Array.isArray(raw.selectionBySnapshot)
         ? (raw.selectionBySnapshot as Record<string, string>)
+        : undefined,
+    selectionIdsBySnapshot:
+      raw.selectionIdsBySnapshot &&
+      typeof raw.selectionIdsBySnapshot === 'object' &&
+      !Array.isArray(raw.selectionIdsBySnapshot)
+        ? (raw.selectionIdsBySnapshot as Record<string, string[]>)
         : undefined,
     selectionConcurrency: typeof raw.selectionConcurrency === 'number' ? raw.selectionConcurrency : undefined,
     selectionDraft:
@@ -257,6 +264,7 @@ export default function GeneradorPreguntasPage() {
     includeFailed: true,
   });
   const [selectionBySnapshot, setSelectionBySnapshot] = useState<Record<string, string>>({});
+  const [selectionIdsBySnapshot, setSelectionIdsBySnapshot] = useState<Record<string, string[]>>({});
   const [selectionSnapshot, setSelectionSnapshot] = useState<SelectionProgressResponse | null>(null);
   const [isCreatingSelection, setIsCreatingSelection] = useState(false);
   const [isSelectionPolling, setIsSelectionPolling] = useState(false);
@@ -330,6 +338,13 @@ export default function GeneradorPreguntasPage() {
   const activeSelectionId = useMemo(() => {
     return activeSnapshotId ? (selectionBySnapshot[activeSnapshotId] || '') : '';
   }, [activeSnapshotId, selectionBySnapshot]);
+  const snapshotSelectionIds = useMemo(() => {
+    if (!activeSnapshotId) return [];
+    const current = selectionBySnapshot[activeSnapshotId];
+    const fromStorage = selectionIdsBySnapshot[activeSnapshotId] || [];
+    const merged = current ? [current, ...fromStorage] : fromStorage;
+    return Array.from(new Set(merged.filter((item) => typeof item === 'string' && item.trim().length > 0)));
+  }, [activeSnapshotId, selectionBySnapshot, selectionIdsBySnapshot]);
   const snapshotsForSelect = useMemo(() => {
     if (!activeSnapshotId) return snapshots;
     if (snapshots.some((item) => item.snapshot_id === activeSnapshotId)) return snapshots;
@@ -487,6 +502,9 @@ export default function GeneradorPreguntasPage() {
     if (parsed.selectionBySnapshot) {
       setSelectionBySnapshot(parsed.selectionBySnapshot);
     }
+    if (parsed.selectionIdsBySnapshot) {
+      setSelectionIdsBySnapshot(parsed.selectionIdsBySnapshot);
+    }
     if (typeof parsed.selectionConcurrency === 'number') {
       setSelectionConcurrency(Math.max(1, Math.min(3, Math.round(parsed.selectionConcurrency))));
     }
@@ -526,6 +544,7 @@ export default function GeneradorPreguntasPage() {
       includeEntities: draft.includeEntities,
       includeRelations: draft.includeRelations,
       selectionBySnapshot,
+      selectionIdsBySnapshot,
       selectionConcurrency,
       selectionDraft,
     });
@@ -539,6 +558,7 @@ export default function GeneradorPreguntasPage() {
     draft.includeEntities,
     draft.includeRelations,
     selectionBySnapshot,
+    selectionIdsBySnapshot,
     selectionConcurrency,
     selectionDraft,
   ]);
@@ -806,6 +826,13 @@ export default function GeneradorPreguntasPage() {
         include_failed: selectionDraft.includeFailed,
       });
       setSelectionBySnapshot((prev) => ({ ...prev, [activeSnapshotId]: selection.selection_id }));
+      setSelectionIdsBySnapshot((prev) => {
+        const existing = prev[activeSnapshotId] || [];
+        return {
+          ...prev,
+          [activeSnapshotId]: Array.from(new Set([selection.selection_id, ...existing])),
+        };
+      });
       const details = await loadSelectionProgress(selection.selection_id);
       if (details && details.claimed_count < selectionDraft.count) {
         toast.warning('No había suficientes unidades elegibles para completar el count solicitado.');
@@ -817,6 +844,20 @@ export default function GeneradorPreguntasPage() {
     } finally {
       setIsCreatingSelection(false);
     }
+  };
+
+  const handleSelectSelection = (selectionId: string) => {
+    if (!activeSnapshotId) return;
+    const normalized = (selectionId || '').trim();
+    if (!normalized) return;
+    setSelectionBySnapshot((prev) => ({ ...prev, [activeSnapshotId]: normalized }));
+    setSelectionIdsBySnapshot((prev) => {
+      const existing = prev[activeSnapshotId] || [];
+      return {
+        ...prev,
+        [activeSnapshotId]: Array.from(new Set([normalized, ...existing])),
+      };
+    });
   };
 
   const stopSelectionRunner = () => {
@@ -1045,6 +1086,7 @@ export default function GeneradorPreguntasPage() {
     setUnitKindFilter('all');
     setSelectionSnapshot(null);
     setSelectionBySnapshot({});
+    setSelectionIdsBySnapshot({});
     setSelectionLastRunInfo(null);
     selectionConsecutiveErrorsRef.current = 0;
     setSelectionConsecutiveErrors(0);
@@ -1611,6 +1653,27 @@ export default function GeneradorPreguntasPage() {
           <p className="text-xs text-muted-foreground">
             Si está activo, el lote también puede tomar unidades que fallaron en ejecuciones anteriores.
           </p>
+
+          <div className="flex flex-wrap gap-2">
+            <div className="min-w-[280px] space-y-2">
+              <Label>Selección del snapshot activo</Label>
+              <Select value={activeSelectionId || undefined} onValueChange={handleSelectSelection}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecciona una selección existente" />
+                </SelectTrigger>
+                <SelectContent>
+                  {snapshotSelectionIds.map((selectionId) => (
+                    <SelectItem key={`selection-option-${selectionId}`} value={selectionId}>
+                      {selectionId}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Solo se muestran selecciones asociadas a la snapshot activa.
+              </p>
+            </div>
+          </div>
 
           <div className="flex flex-wrap gap-2">
             <Button onClick={handleCreateSelection} disabled={!activeSnapshotId || isCreatingSelection}>
