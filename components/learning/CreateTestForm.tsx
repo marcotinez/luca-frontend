@@ -235,7 +235,6 @@ export function CreateTestForm({
                 <SelectItem value="5">5 preguntas</SelectItem>
                 <SelectItem value="10">10 preguntas</SelectItem>
                 <SelectItem value="15">15 preguntas</SelectItem>
-                <SelectItem value="20">20 preguntas</SelectItem>
               </SelectContent>
             </Select>
           </div>

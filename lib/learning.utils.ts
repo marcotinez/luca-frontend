@@ -22,6 +22,32 @@ export function isDiagnosticPhaseFromTests(tests: PracticeTestSummaryResponse[])
   return getCompletedDiagnosticCategories(tests).length < INITIAL_DIAGNOSTIC_CATEGORIES.length;
 }
 
+function extractTitleNumber(title: string, prefix: string): number | null {
+  const normalized = title.trim().toLowerCase();
+  const normalizedPrefix = prefix.trim().toLowerCase();
+  if (!normalized.startsWith(normalizedPrefix)) return null;
+  const match = title.match(/#\s*(\d+)\s*$/);
+  if (!match) return null;
+  const value = Number(match[1]);
+  return Number.isFinite(value) ? value : null;
+}
+
+export function buildNextPracticeTitle(
+  tests: PracticeTestSummaryResponse[],
+  mode: "category" | "recommended",
+): string {
+  const prefix = mode === "recommended" ? "Evaluación personalizada" : "Evaluación";
+
+  const maxNumber = tests.reduce((acc, test) => {
+    if (!test.title) return acc;
+    if (test.title.toLowerCase().startsWith("diagnóstico")) return acc;
+    const n = extractTitleNumber(test.title, prefix);
+    return n && n > acc ? n : acc;
+  }, 0);
+
+  return `${prefix} #${maxNumber + 1}`;
+}
+
 export function formatDateTime(value: string | null | undefined): string {
   if (!value) return "Sin registros";
   const date = new Date(value);

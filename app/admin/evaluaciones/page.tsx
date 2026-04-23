@@ -10,7 +10,12 @@ import {
   getPracticeTests,
 } from "@/lib/learning.api";
 import { getRegistrationTaxonomy } from "@/lib/auth.api";
-import { apiErrorMessage, formatDateTime, resolveLearningApiErrorMessage } from "@/lib/learning.utils";
+import {
+  apiErrorMessage,
+  buildNextPracticeTitle,
+  formatDateTime,
+  resolveLearningApiErrorMessage,
+} from "@/lib/learning.utils";
 import { normalizeRuntimeTaxonomy, type RuntimeTaxonomy } from "@/lib/taxonomy.utils";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -37,7 +42,7 @@ export default function AdminEvaluacionesPage() {
           getPracticeTests(),
           getRegistrationTaxonomy(),
         ]);
-        setTests(testsResponse.slice(0, 12));
+        setTests(testsResponse);
         setTaxonomy(
           normalizeRuntimeTaxonomy({
             categories: taxonomyResponse.categories,
@@ -57,7 +62,11 @@ export default function AdminEvaluacionesPage() {
   const handleCreateCategoryTest = async (payload: CreateCategoryPracticeTestRequest) => {
     try {
       setLoading(true);
-      const test = await createCategoryPracticeTest(payload);
+      const resolvedPayload: CreateCategoryPracticeTestRequest = {
+        ...payload,
+        title: payload.title?.trim() || buildNextPracticeTitle(tests, "category"),
+      };
+      const test = await createCategoryPracticeTest(resolvedPayload);
       toast.success("Test por categoría creado");
       router.push(`/practice/test/${test.id}`);
     } catch (error) {
@@ -72,7 +81,11 @@ export default function AdminEvaluacionesPage() {
   ) => {
     try {
       setLoading(true);
-      const test = await createRecommendedPracticeTest(payload);
+      const resolvedPayload: CreateRecommendedPracticeTestRequest = {
+        ...payload,
+        title: payload.title?.trim() || buildNextPracticeTitle(tests, "recommended"),
+      };
+      const test = await createRecommendedPracticeTest(resolvedPayload);
       toast.success("Test adaptativo creado");
       router.push(`/practice/test/${test.id}`);
     } catch (error) {
@@ -116,7 +129,7 @@ export default function AdminEvaluacionesPage() {
                   No hay tests aún. Crea uno para comenzar.
                 </p>
               ) : (
-                tests.map((test) => (
+                tests.slice(0, 12).map((test) => (
                   <button
                     key={test.id}
                     type="button"

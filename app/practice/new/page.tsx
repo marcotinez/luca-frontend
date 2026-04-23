@@ -12,7 +12,12 @@ import {
   getPracticeTests,
 } from "@/lib/learning.api";
 import { getRegistrationTaxonomy } from "@/lib/auth.api";
-import { apiErrorMessage, formatDateTime, resolveLearningApiErrorMessage } from "@/lib/learning.utils";
+import {
+  apiErrorMessage,
+  buildNextPracticeTitle,
+  formatDateTime,
+  resolveLearningApiErrorMessage,
+} from "@/lib/learning.utils";
 import { normalizeRuntimeTaxonomy, type RuntimeTaxonomy } from "@/lib/taxonomy.utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -40,7 +45,7 @@ export default function NewPracticeTestPage() {
           getPracticeTests(),
           getRegistrationTaxonomy(),
         ]);
-        setTests(testsResponse.slice(0, 8));
+        setTests(testsResponse);
         setTaxonomy(
           normalizeRuntimeTaxonomy({
             categories: taxonomyResponse.categories,
@@ -60,7 +65,11 @@ export default function NewPracticeTestPage() {
   const handleCreateCategoryTest = async (payload: CreateCategoryPracticeTestRequest) => {
     try {
       setLoading(true);
-      const test = await createCategoryPracticeTest(payload);
+      const resolvedPayload: CreateCategoryPracticeTestRequest = {
+        ...payload,
+        title: payload.title?.trim() || buildNextPracticeTitle(tests, "category"),
+      };
+      const test = await createCategoryPracticeTest(resolvedPayload);
       toast.success("Evaluación por categoría creada");
       router.push(`/practice/test/${test.id}`);
     } catch (error) {
@@ -75,7 +84,11 @@ export default function NewPracticeTestPage() {
   ) => {
     try {
       setLoading(true);
-      const test = await createRecommendedPracticeTest(payload);
+      const resolvedPayload: CreateRecommendedPracticeTestRequest = {
+        ...payload,
+        title: payload.title?.trim() || buildNextPracticeTitle(tests, "recommended"),
+      };
+      const test = await createRecommendedPracticeTest(resolvedPayload);
       toast.success("Evaluación recomendada creada");
       router.push(`/practice/test/${test.id}`);
     } catch (error) {
@@ -125,7 +138,7 @@ export default function NewPracticeTestPage() {
                     No tienes tests todavía. Crea uno para comenzar.
                   </p>
                 ) : (
-                  tests.map((test) => (
+                  tests.slice(0, 8).map((test) => (
                     <button
                       key={test.id}
                       type="button"
