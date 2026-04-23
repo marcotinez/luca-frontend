@@ -68,6 +68,7 @@ type PersistedState = {
   includeRelations?: boolean;
   selectionBySnapshot?: Record<string, string>;
   selectionConcurrency?: number;
+  selectionDraft?: Partial<SelectionDraft>;
 };
 
 type SnapshotDraft = {
@@ -130,6 +131,24 @@ function parsePersistedState(value: unknown): PersistedState | null {
         ? (raw.selectionBySnapshot as Record<string, string>)
         : undefined,
     selectionConcurrency: typeof raw.selectionConcurrency === 'number' ? raw.selectionConcurrency : undefined,
+    selectionDraft:
+      raw.selectionDraft && typeof raw.selectionDraft === 'object' && !Array.isArray(raw.selectionDraft)
+        ? (raw.selectionDraft as Partial<SelectionDraft>)
+        : undefined,
+  };
+}
+
+function parseSelectionFilters(selection: SelectionProgressResponse | null) {
+  const filters = selection?.filters || {};
+  const difficulties = Array.isArray(filters.difficulties) ? filters.difficulties.filter((item): item is string => typeof item === 'string' && item.trim().length > 0) : [];
+  const questionTypes = Array.isArray(filters.question_types) ? filters.question_types.filter((item): item is string => typeof item === 'string' && item.trim().length > 0) : [];
+  const unitKindRaw = typeof filters.unit_kind === 'string' ? filters.unit_kind.trim() : '';
+  const includeFailed = typeof filters.include_failed === 'boolean' ? filters.include_failed : undefined;
+  return {
+    difficulties,
+    questionTypes,
+    unitKindRaw,
+    includeFailed,
   };
 }
 
@@ -467,6 +486,29 @@ export default function GeneradorPreguntasPage() {
     if (typeof parsed.selectionConcurrency === 'number') {
       setSelectionConcurrency(Math.max(1, Math.min(3, Math.round(parsed.selectionConcurrency))));
     }
+    if (parsed.selectionDraft) {
+      setSelectionDraft((prev) => ({
+        ...prev,
+        count:
+          typeof parsed.selectionDraft?.count === 'number'
+            ? Math.max(1, Math.round(parsed.selectionDraft.count))
+            : prev.count,
+        difficulties: Array.isArray(parsed.selectionDraft?.difficulties)
+          ? parsed.selectionDraft.difficulties.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+          : prev.difficulties,
+        questionTypes: Array.isArray(parsed.selectionDraft?.questionTypes)
+          ? parsed.selectionDraft.questionTypes.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+          : prev.questionTypes,
+        unitKind:
+          parsed.selectionDraft?.unitKind === 'entity' || parsed.selectionDraft?.unitKind === 'relation' || parsed.selectionDraft?.unitKind === 'all'
+            ? parsed.selectionDraft.unitKind
+            : prev.unitKind,
+        includeFailed:
+          typeof parsed.selectionDraft?.includeFailed === 'boolean'
+            ? parsed.selectionDraft.includeFailed
+            : prev.includeFailed,
+      }));
+    }
   }, [loadConfig]);
 
   useEffect(() => {
@@ -481,6 +523,7 @@ export default function GeneradorPreguntasPage() {
       includeRelations: draft.includeRelations,
       selectionBySnapshot,
       selectionConcurrency,
+      selectionDraft,
     });
   }, [
     activeSnapshotId,
@@ -493,6 +536,7 @@ export default function GeneradorPreguntasPage() {
     draft.includeRelations,
     selectionBySnapshot,
     selectionConcurrency,
+    selectionDraft,
   ]);
 
   useEffect(() => {
@@ -505,10 +549,25 @@ export default function GeneradorPreguntasPage() {
     if (!activeSelectionId) {
       setSelectionSnapshot(null);
       setUnits([]);
+      if (!selectionRunTokenRef.current) {
+        setIsSelectionRunning(false);
+      }
       return;
     }
     void loadSelectionProgress(activeSelectionId);
   }, [activeSelectionId, loadSelectionProgress]);
+
+  useEffect(() => {
+    if (selectionRunTokenRef.current) {
+      return;
+    }
+    if (!activeSelectionId) {
+      setIsSelectionRunning(false);
+      return;
+    }
+    const backendRunning = (selectionSnapshot?.in_progress_units ?? 0) > 0;
+    setIsSelectionRunning(backendRunning);
+  }, [activeSelectionId, selectionSnapshot?.in_progress_units]);
 
   useEffect(() => {
     if (!activeSnapshotId || !activeSelectionId) return;
@@ -832,7 +891,7 @@ export default function GeneradorPreguntasPage() {
     selectionConsecutiveErrorsRef.current = 0;
     setSelectionConsecutiveErrors(0);
 
-    if (isSelectionRunning) return;
+    if (isSelectionRunning && selectionRunTokenRef.current) return;
 
     try {
       const [selection, unitsResponse] = await Promise.all([
@@ -1590,6 +1649,61 @@ export default function GeneradorPreguntasPage() {
               <Badge variant="outline">Correctas: {selectionSnapshot?.ok_units ?? localSelectionStats.ok}</Badge>
               <Badge variant="outline">Fallidas: {selectionSnapshot?.failed_units ?? localSelectionStats.failed}</Badge>
             </div>
+
+            {selectionSnapshot ? (
+              <div className="rounded-lg border bg-background p-3 space-y-3">
+                <p className="text-xs text-muted-foreground">Metadata de la selección</p>
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant="outline">Estado: {selectionSnapshot.status}</Badge>
+                  <Badge variant="outline">Solicitadas: {selectionSnapshot.requested_count}</Badge>
+                  <Badge variant="outline">Reservadas: {selectionSnapshot.claimed_count}</Badge>
+                  <Badge variant="outline">Snapshot: {selectionSnapshot.snapshot_id}</Badge>
+                </div>
+                {(() => {
+                  const filters = parseSelectionFilters(selectionSnapshot);
+                  return (
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap gap-2">
+                        <Badge variant="secondary">
+                          Tipo unidad: {filters.unitKindRaw ? formatUnitKindLabel(filters.unitKindRaw) : 'Todas'}
+                        </Badge>
+                        <Badge variant="secondary">
+                          Incluir fallidas: {typeof filters.includeFailed === 'boolean' ? (filters.includeFailed ? 'Sí' : 'No') : 'No definido'}
+                        </Badge>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground">Dificultades filtro</p>
+                        <div className="flex flex-wrap gap-2">
+                          {filters.difficulties.length > 0 ? (
+                            filters.difficulties.map((item) => (
+                              <Badge key={`selection-filter-difficulty-${item}`} variant="outline">
+                                {item}
+                              </Badge>
+                            ))
+                          ) : (
+                            <Badge variant="outline">Sin filtro</Badge>
+                          )}
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground">Tipos de pregunta filtro</p>
+                        <div className="flex flex-wrap gap-2">
+                          {filters.questionTypes.length > 0 ? (
+                            filters.questionTypes.map((item) => (
+                              <Badge key={`selection-filter-question-type-${item}`} variant="outline">
+                                {formatQuestionTypeLabel(item)}
+                              </Badge>
+                            ))
+                          ) : (
+                            <Badge variant="outline">Sin filtro</Badge>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            ) : null}
 
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
