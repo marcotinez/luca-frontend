@@ -156,8 +156,23 @@ export default function PracticeTestRunnerPage() {
 
   const displayedFeedback = useMemo(() => {
     if (!feedback) return "";
-    if (feedback.isCorrect) return feedback.feedback;
-    return feedback.feedback.replace(/^\s*Correcto[.:]?\s*/i, "").trim();
+    if (feedback.isCorrect) return feedback.feedback.replace(/^\s*Correcto[.:]?\s*/i, "").trim();
+    const match = feedback.feedback.match(/\sCorrecto[.:]?\s/i);
+    if (!match || match.index == null) return feedback.feedback.replace(/^\s*Incorrecto[.:]?\s*/i, "").trim();
+    return feedback.feedback
+      .slice(0, match.index)
+      .replace(/^\s*Incorrecto[.:]?\s*/i, "")
+      .trim();
+  }, [feedback]);
+
+  const correctAnswerFeedback = useMemo(() => {
+    if (!feedback || feedback.isCorrect) return undefined;
+    const match = feedback.feedback.match(/\sCorrecto[.:]?\s/i);
+    if (!match || match.index == null) return undefined;
+    return feedback.feedback
+      .slice(match.index)
+      .replace(/^\s*Correcto[.:]?\s*/i, "")
+      .trim();
   }, [feedback]);
 
   const handleNextQuestion = () => {
@@ -208,47 +223,37 @@ export default function PracticeTestRunnerPage() {
                 total={test.total_questions}
                 onExit={() => setShowExitModal(true)}
               />
-              <section className="animate-enter-up-delay rounded-2xl border border-border/70 bg-card/80 p-4 shadow-sm">
-                <div className="flex flex-wrap items-center gap-2 text-sm">
-                  <Badge variant={currentStreak > 0 ? "default" : "secondary"} className="gap-1.5 px-2.5 py-1">
-                    <Flame className="h-3.5 w-3.5" />
-                    Racha evaluación: {currentStreak}
-                  </Badge>
-                  <Badge variant="outline" className="px-2.5 py-1">
-                    Mejor racha: {bestStreak}
-                  </Badge>
-                </div>
-              </section>
-
               <QuestionCard question={currentQuestion} />
 
-              <AlternativesList
-                alternatives={currentQuestion.alternatives}
-                disabled={submitting || !!feedback}
-                selectedOptionId={selectedOptionId}
-                onSelect={handleSelectOption}
-              />
-
               {!feedback ? (
-                <div className="flex justify-end">
-                  <Button
-                    onClick={handleConfirmAnswer}
-                    disabled={submitting || selectedOptionId == null}
-                    className="rounded-xl px-5"
-                  >
-                    {submitting ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Confirmando...
-                      </>
-                    ) : (
-                      <>
-                        Confirmar respuesta
-                        <CheckCircle2 className="h-4 w-4" />
-                      </>
-                    )}
-                  </Button>
-                </div>
+                <>
+                  <AlternativesList
+                    alternatives={currentQuestion.alternatives}
+                    disabled={submitting || !!feedback}
+                    selectedOptionId={selectedOptionId}
+                    onSelect={handleSelectOption}
+                  />
+
+                  <div className="flex justify-end">
+                    <Button
+                      onClick={handleConfirmAnswer}
+                      disabled={submitting || selectedOptionId == null}
+                      className="rounded-xl px-5"
+                    >
+                      {submitting ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Confirmando...
+                        </>
+                      ) : (
+                        <>
+                          Confirmar respuesta
+                          <CheckCircle2 className="h-4 w-4" />
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </>
               ) : null}
 
               {feedback ? (
@@ -263,18 +268,19 @@ export default function PracticeTestRunnerPage() {
                       </p>
                     </article>
                   ) : null}
-                  <AnswerFeedbackPanel
-                    isCorrect={feedback.isCorrect}
-                    feedback={displayedFeedback}
-                    correctOptionLabel={correctOptionLabel}
-                    correctAnswerText={
+                    <AnswerFeedbackPanel
+                      isCorrect={feedback.isCorrect}
+                      feedback={displayedFeedback}
+                      correctOptionLabel={correctOptionLabel}
+                      correctAnswerText={
                       feedback.isCorrect
                         ? undefined
                         : currentQuestion.alternatives.find(
                             (option) => option.option_id === feedback.correctOptionId,
                           )?.text
-                    }
-                  />
+                      }
+                      correctAnswerFeedback={correctAnswerFeedback}
+                    />
                   <div className="flex justify-end">
                     <Button onClick={handleNextQuestion} disabled={!pendingNextTest} className="rounded-xl px-5">
                       {pendingNextTest?.status === "completed" ? "Ver resultado" : "Siguiente pregunta"}

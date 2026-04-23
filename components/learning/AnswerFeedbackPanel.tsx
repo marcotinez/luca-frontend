@@ -8,6 +8,7 @@ interface AnswerFeedbackPanelProps {
   feedback: string;
   correctOptionLabel?: string;
   correctAnswerText?: string;
+  correctAnswerFeedback?: string;
 }
 
 export function AnswerFeedbackPanel({
@@ -15,6 +16,7 @@ export function AnswerFeedbackPanel({
   feedback,
   correctOptionLabel,
   correctAnswerText,
+  correctAnswerFeedback,
 }: AnswerFeedbackPanelProps) {
   return (
     <section
@@ -51,6 +53,9 @@ export function AnswerFeedbackPanel({
             {correctOptionLabel && correctAnswerText ? ": " : ""}
             {correctAnswerText}
           </p>
+          {correctAnswerFeedback ? (
+            <p className="mt-2 text-sm leading-relaxed text-foreground">{correctAnswerFeedback}</p>
+          ) : null}
         </div>
       ) : null}
     </section>

@@ -253,7 +253,7 @@ export function StudentDashboard() {
             <>
               <section className="animate-enter-up overflow-hidden rounded-3xl border border-border/70 bg-card/90 shadow-sm backdrop-blur">
                 <div className="p-6 sm:p-8">
-                  <div className="space-y-5">
+                  <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
                     <div className="space-y-2">
                       <p className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">Panel del estudiante</p>
                       <h1 className="flex items-center gap-2 text-3xl font-black tracking-tight sm:text-4xl">
@@ -264,7 +264,7 @@ export function StudentDashboard() {
                       </p>
                     </div>
 
-                    <div className="inline-block rounded-2xl border border-border/60 bg-card/80 p-4 min-w-[200px]">
+                    <div className="inline-block rounded-2xl border border-border/60 bg-card/80 p-4 min-w-[200px] lg:mt-1 lg:shrink-0">
                       <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Racha actual</p>
                       <p className="mt-2 flex items-center gap-2 text-2xl font-black"><Flame className="h-5 w-5 text-orange-500" />{currentStreak} días</p>
                     </div>
@@ -272,7 +272,34 @@ export function StudentDashboard() {
                 </div>
               </section>
 
-              <section className="animate-enter-up mt-6">
+              <section className="animate-enter-up mt-6 grid gap-4 lg:grid-cols-2">
+                <div
+                  onClick={() => router.push("/perfil")}
+                  className="cursor-pointer group relative overflow-hidden rounded-3xl border border-amber-400/40 bg-gradient-to-br from-amber-300/18 via-amber-200/10 to-background p-8 transition-all hover:border-amber-500/60 hover:shadow-lg hover:shadow-amber-500/10"
+                >
+                  <div className="relative z-10 flex flex-col justify-between gap-6">
+                    <div>
+                      <h2 className="text-3xl font-black text-foreground">Ver mi progreso</h2>
+                      <p className="mt-2 text-lg text-muted-foreground max-w-xl">
+                        Revisa tus avances, fortalezas y áreas a mejorar para enfocar mejor tus próximas prácticas.
+                      </p>
+                    </div>
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="inline-flex items-center gap-2 rounded-full border border-amber-400/35 bg-amber-300/15 px-4 py-2 text-sm font-bold text-amber-700 dark:text-amber-300">
+                        <Flame className="h-4 w-4" />
+                        Racha: {currentStreak} día{currentStreak === 1 ? "" : "s"}
+                      </div>
+                      <Button
+                        size="lg"
+                        className="rounded-full bg-amber-500 px-8 py-6 text-lg font-bold text-white hover:bg-amber-600 group-hover:scale-105 transition-transform shadow-md"
+                      >
+                        Abrir <ArrowRight className="ml-2 h-5 w-5" />
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="absolute -right-12 -top-12 h-64 w-64 rounded-full bg-amber-300/15 blur-3xl group-hover:bg-amber-300/25 transition-colors" />
+                </div>
+
                 <div 
                   onClick={() => router.push("/practice/new")}
                   className="cursor-pointer group relative overflow-hidden rounded-3xl border border-primary/30 bg-gradient-to-br from-primary/10 via-primary/5 to-background p-8 transition-all hover:border-primary/60 hover:shadow-lg hover:shadow-primary/10"
