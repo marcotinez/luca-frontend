@@ -1657,7 +1657,7 @@ export default function GeneradorPreguntasPage() {
           <div className="flex flex-wrap gap-2">
             <div className="min-w-[280px] space-y-2">
               <Label>Selección del snapshot activo</Label>
-              <Select value={activeSelectionId || undefined} onValueChange={handleSelectSelection}>
+              <Select value={activeSelectionId} onValueChange={handleSelectSelection}>
                 <SelectTrigger>
                   <SelectValue placeholder="Selecciona una selección existente" />
                 </SelectTrigger>
