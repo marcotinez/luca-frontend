@@ -10,9 +10,7 @@ import { Button } from "@/components/ui/button";
 export const passwordValidation = z.string()
   .min(8, { message: "La contraseña debe tener al menos 8 caracteres" })
   .regex(/[A-Z]/, { message: "Debe contener al menos una letra mayúscula" })
-  .regex(/[a-z]/, { message: "Debe contener al menos una letra minúscula" })
-  .regex(/[0-9]/, { message: "Debe contener al menos un número" })
-  .regex(/[!@#$%^&*(),.?":{}|<>_\-+=\[\]\/~`]/, { message: "Debe contener al menos un carácter especial" });
+  .regex(/[0-9]/, { message: "Debe contener al menos un número" });
 
 interface PasswordRequirementsProps {
   password: string;
@@ -22,9 +20,7 @@ export const PasswordRequirements = ({ password }: PasswordRequirementsProps) =>
   const requirements = [
     { label: "Mínimo 8 caracteres", test: (pwd: string) => pwd.length >= 8 },
     { label: "Al menos una letra mayúscula (A-Z)", test: (pwd: string) => /[A-Z]/.test(pwd) },
-    { label: "Al menos una letra minúscula (a-z)", test: (pwd: string) => /[a-z]/.test(pwd) },
     { label: "Al menos un número (0-9)", test: (pwd: string) => /[0-9]/.test(pwd) },
-    { label: "Al menos un carácter especial (!@#$%^&*(),.?\":{}|<>_-+=[]/~`)", test: (pwd: string) => /[!@#$%^&*(),.?":{}|<>_\-+=\[\]\/~`]/.test(pwd) },
   ];
 
   return (
@@ -100,8 +96,8 @@ export function PasswordField({
             </Button>
           </div>
           <FormMessage />
-          {/* validación en tiempo real */}
-          {showRequirements && <PasswordRequirements password={field.value || ""} />}
+          {/* Validación en tiempo real solo cuando el usuario ya comenzó a escribir */}
+          {showRequirements && Boolean(field.value) && <PasswordRequirements password={field.value || ""} />}
         </FormItem>
       )}
     />

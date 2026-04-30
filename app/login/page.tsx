@@ -4,6 +4,7 @@ import { Navbar } from "@/components/Navbar";
 import { PublicRoute } from '@/components/PublicRoute';
 import { useAuth } from '@/hooks/useAuth';
 import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, SubmitHandler } from "react-hook-form";
 import * as z from "zod";
@@ -28,7 +29,7 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { LogIn, ArrowLeft } from 'lucide-react';
+import { LogIn, ArrowLeft, CheckCircle2 } from 'lucide-react';
 import Link from 'next/link';
 
 const loginSchema = z.object({
@@ -41,6 +42,7 @@ type LoginFormValues = z.infer<typeof loginSchema>;
 export default function LoginPage() {
   const { login } = useAuth();
   const router = useRouter();
+  const [successMessage, setSuccessMessage] = useState("");
 
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
@@ -49,6 +51,19 @@ export default function LoginPage() {
       password: "",
     },
   });
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const registeredEmail = params.get('registeredEmail');
+      if (registeredEmail) {
+        form.setValue('email', registeredEmail);
+        setSuccessMessage("¡Registro exitoso! Por favor, inicia sesión.");
+        // Limpiamos la URL para evitar que el toast vuelva a salir al recargar
+        window.history.replaceState(null, '', '/login');
+      }
+    }
+  }, [form]);
 
   const onSubmit: SubmitHandler<LoginFormValues> = async (values) => {
     try {
@@ -73,15 +88,29 @@ export default function LoginPage() {
               </Link>
             </Button>
           </div>
-          <Card className="w-full max-w-md shadow-lg border-border bg-card">
-          <CardHeader className="space-y-1 flex flex-col items-center">
-            <div className="w-12 h-12 bg-primary rounded-full flex items-center justify-center mb-4">
-              <LogIn className="text-primary-foreground w-6 h-6" />
+
+          {successMessage && (
+            <div className="w-full max-w-md mb-6 animate-in fade-in slide-in-from-top-2 duration-500">
+              <div className="flex items-center gap-3 bg-green-500/10 border border-green-500/20 text-green-600 dark:text-green-400 p-4 rounded-xl shadow-sm">
+                <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
+                <p className="text-sm font-medium">{successMessage}</p>
+              </div>
             </div>
-            <CardTitle className="text-2xl font-bold tracking-tight">Iniciar Sesión</CardTitle>
-            <CardDescription className="text-muted-foreground">
-              Ingresa tus credenciales para acceder a Luca
-            </CardDescription>
+          )}
+
+          <Card className="w-full max-w-md shadow-lg border-border bg-card">
+          <CardHeader className="space-y-0">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary">
+                <LogIn className="h-5 w-5 text-primary-foreground" />
+              </div>
+              <div className="min-w-0">
+                <CardTitle className="text-xl font-bold tracking-tight">Iniciar Sesión</CardTitle>
+                <CardDescription className="text-sm text-muted-foreground">
+                  Ingresa tus credenciales para acceder a Luca
+                </CardDescription>
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
             <Form {...form}>

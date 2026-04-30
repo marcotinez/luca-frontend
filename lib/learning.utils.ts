@@ -1,3 +1,53 @@
+import type { PracticeTestSummaryResponse } from "@/types";
+
+export const INITIAL_DIAGNOSTIC_CATEGORIES = [
+  "Mi Primer Sueldo y Seguridad",
+  "Planificación y Presupuesto",
+  "El Mundo del Crédito",
+] as const;
+
+export function getCompletedDiagnosticCategories(tests: PracticeTestSummaryResponse[]): string[] {
+  const completed = new Set<string>();
+  for (const test of tests) {
+    if (test.status !== "completed") continue;
+    if (test.selection_mode !== "category") continue;
+    if (!test.target_category) continue;
+    if (!INITIAL_DIAGNOSTIC_CATEGORIES.some((category) => category === test.target_category)) continue;
+    completed.add(test.target_category);
+  }
+  return [...completed];
+}
+
+export function isDiagnosticPhaseFromTests(tests: PracticeTestSummaryResponse[]): boolean {
+  return getCompletedDiagnosticCategories(tests).length < INITIAL_DIAGNOSTIC_CATEGORIES.length;
+}
+
+function extractTitleNumber(title: string, prefix: string): number | null {
+  const normalized = title.trim().toLowerCase();
+  const normalizedPrefix = prefix.trim().toLowerCase();
+  if (!normalized.startsWith(normalizedPrefix)) return null;
+  const match = title.match(/#\s*(\d+)\s*$/);
+  if (!match) return null;
+  const value = Number(match[1]);
+  return Number.isFinite(value) ? value : null;
+}
+
+export function buildNextPracticeTitle(
+  tests: PracticeTestSummaryResponse[],
+  mode: "category" | "recommended",
+): string {
+  const prefix = mode === "recommended" ? "Evaluación personalizada" : "Evaluación";
+
+  const maxNumber = tests.reduce((acc, test) => {
+    if (!test.title) return acc;
+    if (test.title.toLowerCase().startsWith("diagnóstico")) return acc;
+    const n = extractTitleNumber(test.title, prefix);
+    return n && n > acc ? n : acc;
+  }, 0);
+
+  return `${prefix} #${maxNumber + 1}`;
+}
+
 export function formatDateTime(value: string | null | undefined): string {
   if (!value) return "Sin registros";
   const date = new Date(value);
@@ -7,6 +57,22 @@ export function formatDateTime(value: string | null | undefined): string {
     timeStyle: "short",
   }).format(date);
 }
+
+export function formatRelativeDate(value: string | null | undefined): string {
+  if (!value) return "Sin sesiones previas";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Sin sesiones previas";
+  
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  
+  if (diffDays === 0) return `Hoy, ${date.toLocaleDateString("es-CL", { day: 'numeric', month: 'short' })}`;
+  if (diffDays === 1) return `Ayer, ${date.toLocaleDateString("es-CL", { day: 'numeric', month: 'short' })}`;
+  
+  return date.toLocaleDateString("es-CL", { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
 
 export function formatPracticeMinutes(totalMinutes: number): string {
   if (totalMinutes <= 0) return "0 min";
@@ -55,4 +121,72 @@ export function apiErrorMessage(error: unknown, fallback: string): string {
       .join(", ");
   }
   return fallback;
+}
+
+export interface LearningApiErrorSuggestion {
+  category: string;
+  subtopic?: string | null;
+  available?: number;
+}
+
+export interface LearningApiErrorDetail {
+  code?: string;
+  message: string;
+  suggestions: LearningApiErrorSuggestion[];
+}
+
+export function getLearningApiErrorDetail(error: unknown): LearningApiErrorDetail | null {
+  if (typeof error !== "object" || error === null) return null;
+  const maybeAxios = error as {
+    response?: {
+      data?: { detail?: unknown };
+    };
+  };
+  const detail = maybeAxios.response?.data?.detail;
+  if (typeof detail !== "object" || detail === null) return null;
+
+  const detailObj = detail as {
+    code?: unknown;
+    message?: unknown;
+    suggestions?: unknown;
+  };
+
+  if (typeof detailObj.message !== "string") return null;
+
+  const suggestions = Array.isArray(detailObj.suggestions)
+    ? detailObj.suggestions
+      .filter((item): item is LearningApiErrorSuggestion => typeof item === "object" && item !== null)
+      .map((item) => {
+        const source = item as { category?: unknown; subtopic?: unknown; available?: unknown };
+        return {
+          category: typeof source.category === "string" ? source.category : "Sin categoría",
+          subtopic: typeof source.subtopic === "string" ? source.subtopic : null,
+          available: typeof source.available === "number" ? source.available : undefined,
+        };
+      })
+    : [];
+
+  return {
+    code: typeof detailObj.code === "string" ? detailObj.code : undefined,
+    message: detailObj.message,
+    suggestions,
+  };
+}
+
+export function formatLearningSuggestions(suggestions: LearningApiErrorSuggestion[], max = 3): string {
+  if (suggestions.length === 0) return "";
+  return suggestions
+    .slice(0, max)
+    .map((item) => `${item.category}${item.subtopic ? ` / ${item.subtopic}` : ""}${typeof item.available === "number" ? ` (${item.available})` : ""}`)
+    .join(" • ");
+}
+
+export function resolveLearningApiErrorMessage(error: unknown, fallback: string): string {
+  const detail = getLearningApiErrorDetail(error);
+  if (!detail) {
+    return apiErrorMessage(error, fallback);
+  }
+
+  const formattedSuggestions = formatLearningSuggestions(detail.suggestions);
+  return formattedSuggestions ? `${detail.message} ${formattedSuggestions}` : detail.message;
 }

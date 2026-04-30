@@ -1,12 +1,22 @@
 import axios from 'axios';
+import { getApiBaseUrl } from '@/lib/api-base';
+import { getStoredToken } from '@/lib/auth-session.storage';
 import type {
   IngestionJob,
   IngestionRun,
   StartIngestionResponse,
 } from '@/types/ingestion.types';
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const BASE_URL = getApiBaseUrl();
 const API_URL = `${BASE_URL}/api/v1/ingestion`;
+
+export type RetryIngestionRunResponse = {
+  message: string;
+  retry_of_run_id: string;
+  run_id: string;
+  retry_chunk_ids: number[];
+  status: 'QUEUED' | 'RUNNING' | 'PARTIAL' | 'FAILED' | 'FINISHED';
+};
 
 function getErrorMessage(error: unknown, fallback: string): string {
   if (axios.isAxiosError(error)) {
@@ -40,11 +50,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
 }
 
 function getAuthHeaders() {
-  if (typeof window === 'undefined') {
-    return {};
-  }
-
-  const token = localStorage.getItem('token');
+  const token = getStoredToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
@@ -86,6 +92,22 @@ export async function getIngestionRun(runId: string): Promise<IngestionRun> {
     return response.data;
   } catch (error) {
     throw new Error(getErrorMessage(error, 'No se pudo obtener el estado de la ingesta.'));
+  }
+}
+
+export async function retryIngestionRun(runId: string): Promise<RetryIngestionRunResponse> {
+  try {
+    const response = await axios.post<RetryIngestionRunResponse>(
+      `${API_URL}/runs/${encodeURIComponent(runId)}/retry`,
+      {},
+      {
+        headers: getAuthHeaders(),
+        withCredentials: true,
+      },
+    );
+    return response.data;
+  } catch (error) {
+    throw new Error(getErrorMessage(error, 'No se pudo reintentar la ingesta.'));
   }
 }
 

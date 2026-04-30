@@ -19,6 +19,9 @@ export interface IngestionRun {
   run_id: string;
   file_name: string;
   file_size?: string | null;
+  source_file_path?: string | null;
+  requested_chunks?: number | null;
+  retry_of_run_id?: string | null;
   status: IngestionStatus;
   total_chunks: number;
   processed_chunks: number;

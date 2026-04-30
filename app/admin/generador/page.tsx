@@ -4,373 +4,1097 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Difficulty } from '@/types';
 import {
-  getGenerationConfig,
-  getGenerationJob,
+  backfillGenerationOrigins,
+  buildSnapshotViewModel,
+  cancelGenerationSelection,
+  createGenerationSelection,
+  createSnapshot,
+  deleteSnapshot,
+  executeUnit,
+  getGenerationSelection,
   GenerationConfigResponse,
-  GenerationJobState,
-  GenerationQuestionRequest,
-  GenerationQuestionResponse,
-  startGenerationJob,
+  GenerationUnitResponse,
+  getGenerationConfig,
+  getSnapshotProgress,
+  listUnits,
+  listSnapshots,
+  SelectionProgressResponse,
+  refreshSnapshot,
+  retryUnit,
+  SnapshotProgressResponse,
+  SnapshotResponse,
+  SnapshotViewModel,
 } from '@/lib/prompt-generation.api';
 import { addOpenAILog } from '@/lib/openai-logs.storage';
+import { readStorage, removeStorage, writeStorage } from '@/lib/client-storage';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import { Loader2, Settings2, Sparkles, RotateCcw, BrainCircuit, FileText, WandSparkles } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { cn } from '@/lib/utils';
+import {
+  Loader2,
+  Play,
+  RotateCcw,
+  Settings2,
+  Sparkles,
+  StopCircle,
+  RefreshCw,
+  Trash2,
+  WandSparkles,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import axios from 'axios';
-import { cn } from '@/lib/utils';
 
-const QUESTION_COUNT_OPTIONS = ['1', '5', '10', '15', '20'];
-const SEMANTIC_LIMIT_OPTIONS = ['5', '10', '15', '20'];
-const GENERATOR_STATE_STORAGE_KEY = 'admin_generador_state_v1';
-const MODEL_OPTIONS = ['gpt-5.4-nano', 'gpt-5-nano', 'gpt-5-mini', 'o4-mini'] as const;
-const JOB_POLL_INTERVAL_MS = 800;
-const STAGE_LABELS: Record<string, string> = {
-  queued: 'En cola',
-  starting: 'Iniciando',
-  semantic_search: 'Buscando contexto semántico',
-  semantic_search_done: 'Contexto listo',
-  prompt_ready: 'Preparando instrucciones',
-  llm_attempt_1: 'Generando preguntas (intento 1)',
-  llm_attempt_2: 'Reintentando por calidad (intento 2)',
-  llm_attempt_3: 'Último intento de generación',
-  validation_passed: 'Validación superada',
-  saving_questions: 'Guardando preguntas',
-  completed: 'Completado',
-  failed: 'Error',
+const STATE_STORAGE_KEY = 'admin:generator-v2-state';
+const ENABLE_LEGACY_AUTORUN = false;
+
+const DIFFICULTY_OPTIONS: Difficulty[] = [Difficulty.FACIL, Difficulty.MEDIO, Difficulty.DIFICIL];
+type StatusFilter = 'all' | 'pending' | 'in_progress' | 'ok' | 'failed';
+
+type PersistedState = {
+  snapshotId?: string;
+  snapshots?: SnapshotResponse[];
+  statusFilter?: StatusFilter;
+  difficultyFilter?: string;
+  questionTypeFilter?: string;
+  unitKindFilter?: string;
+  includeEntities?: boolean;
+  includeRelations?: boolean;
+  selectionBySnapshot?: Record<string, string>;
+  selectionIdsBySnapshot?: Record<string, string[]>;
+  selectionConcurrency?: number;
+  selectionDraft?: Partial<SelectionDraft>;
 };
-const FIXED_OUTPUT_SCHEMA: Record<string, unknown> = {
-  type: 'object',
-  additionalProperties: false,
-  properties: {
-    questions: {
-      type: 'array',
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          question: { type: 'string' },
-          alternatives: {
-            type: 'array',
-            minItems: 4,
-            maxItems: 4,
-            items: {
-              type: 'object',
-              additionalProperties: false,
-              properties: {
-                text: { type: 'string' },
-                is_correct: { type: 'boolean' },
-                feedback: { type: 'string' },
-              },
-              required: ['text', 'is_correct', 'feedback'],
-            },
-          },
-          pedagogic_metadata: {
-            type: 'object',
-            additionalProperties: false,
-            properties: {
-              rag_reference: { type: 'string' },
-              complete_explanation: { type: 'string' },
-            },
-            required: ['rag_reference', 'complete_explanation'],
-          },
-        },
-        required: ['question', 'alternatives', 'pedagogic_metadata'],
-      },
-    },
-  },
-  required: ['questions'],
+
+type SnapshotDraft = {
+  category: string;
+  subtopic: string;
+  targetDifficulties: Difficulty[];
+  questionTypes: string[];
+  includeEntities: boolean;
+  includeRelations: boolean;
 };
+
+type SelectionDraft = {
+  count: number;
+  difficulties: string[];
+  questionTypes: string[];
+  unitKind: 'all' | 'entity' | 'relation';
+  includeFailed: boolean;
+};
+
+type LocalSelectionStats = {
+  total: number;
+  ok: number;
+  failed: number;
+  pending: number;
+  inProgress: number;
+};
+
+const EMPTY_PROGRESS: SnapshotProgressResponse = {
+  snapshot_id: '',
+  ok_units: 0,
+  failed_units: 0,
+  pending_units: 0,
+  in_progress_units: 0,
+  total_units: 0,
+};
+
+function parsePersistedState(value: unknown): PersistedState | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+
+  const raw = value as Record<string, unknown>;
+  const snapshots = Array.isArray(raw.snapshots)
+    ? raw.snapshots
+        .filter((entry) => entry && typeof entry === 'object' && !Array.isArray(entry))
+        .map((entry) => entry as SnapshotResponse)
+    : [];
+
+  return {
+    snapshotId: typeof raw.snapshotId === 'string' ? raw.snapshotId : undefined,
+    snapshots,
+    statusFilter: typeof raw.statusFilter === 'string' ? (raw.statusFilter as StatusFilter) : undefined,
+    difficultyFilter: typeof raw.difficultyFilter === 'string' ? raw.difficultyFilter : undefined,
+    questionTypeFilter: typeof raw.questionTypeFilter === 'string' ? raw.questionTypeFilter : undefined,
+    unitKindFilter: typeof raw.unitKindFilter === 'string' ? raw.unitKindFilter : undefined,
+    includeEntities: typeof raw.includeEntities === 'boolean' ? raw.includeEntities : undefined,
+    includeRelations: typeof raw.includeRelations === 'boolean' ? raw.includeRelations : undefined,
+    selectionBySnapshot:
+      raw.selectionBySnapshot && typeof raw.selectionBySnapshot === 'object' && !Array.isArray(raw.selectionBySnapshot)
+        ? (raw.selectionBySnapshot as Record<string, string>)
+        : undefined,
+    selectionIdsBySnapshot:
+      raw.selectionIdsBySnapshot &&
+      typeof raw.selectionIdsBySnapshot === 'object' &&
+      !Array.isArray(raw.selectionIdsBySnapshot)
+        ? (raw.selectionIdsBySnapshot as Record<string, string[]>)
+        : undefined,
+    selectionConcurrency: typeof raw.selectionConcurrency === 'number' ? raw.selectionConcurrency : undefined,
+    selectionDraft:
+      raw.selectionDraft && typeof raw.selectionDraft === 'object' && !Array.isArray(raw.selectionDraft)
+        ? (raw.selectionDraft as Partial<SelectionDraft>)
+        : undefined,
+  };
+}
+
+function parseSelectionFilters(selection: SelectionProgressResponse | null) {
+  const filters = selection?.filters || {};
+  const difficulties = Array.isArray(filters.difficulties) ? filters.difficulties.filter((item): item is string => typeof item === 'string' && item.trim().length > 0) : [];
+  const questionTypes = Array.isArray(filters.question_types) ? filters.question_types.filter((item): item is string => typeof item === 'string' && item.trim().length > 0) : [];
+  const unitKindRaw = typeof filters.unit_kind === 'string' ? filters.unit_kind.trim() : '';
+  const includeFailed = typeof filters.include_failed === 'boolean' ? filters.include_failed : undefined;
+  return {
+    difficulties,
+    questionTypes,
+    unitKindRaw,
+    includeFailed,
+  };
+}
 
 function getErrorMessage(error: unknown) {
   if (axios.isAxiosError(error)) {
-    const statusCode = error.response?.status;
     const backendMessage = error.response?.data?.detail || error.response?.data?.message;
-
-    if (statusCode === 400 && backendMessage) {
-      return backendMessage;
-    }
-
-    if (statusCode === 500) {
-      return backendMessage || 'Error interno del flujo de generación. Verifica configuración de OpenAI y contacta soporte interno.';
-    }
-
-    return backendMessage || 'No se pudo generar la pregunta';
+    return backendMessage || 'No se pudo completar la operación de generación';
   }
 
-  return 'No se pudo generar la pregunta';
+  return 'No se pudo completar la operación de generación';
 }
 
-function getStageLabel(stage: string | undefined) {
-  if (!stage) return '';
-  return STAGE_LABELS[stage] || stage;
+function getUnitsPerMinute(startedAtMs: number | null, processedUnits: number): number {
+  if (!startedAtMs || processedUnits <= 0) {
+    return 0;
+  }
+
+  const elapsedMinutes = (Date.now() - startedAtMs) / 60000;
+  if (elapsedMinutes <= 0) {
+    return 0;
+  }
+
+  return Number((processedUnits / elapsedMinutes).toFixed(2));
 }
 
-function getDifficultyTone(difficulty: Difficulty) {
-  if (difficulty === Difficulty.FACIL) {
-    return 'border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700';
-  }
-  if (difficulty === Difficulty.MEDIO) {
-    return 'border-amber-500 bg-amber-500 text-white hover:bg-amber-600';
-  }
-  return 'border-rose-600 bg-rose-600 text-white hover:bg-rose-700';
+const QUESTION_TYPE_LABELS: Record<string, string> = {
+  single_choice: 'Opción única',
+  multiple_choice: 'Opción múltiple',
+  true_false: 'Verdadero/Falso',
+  fill_blank: 'Completar espacios',
+  ordering: 'Ordenamiento',
+  matching: 'Relación de pares',
+  open_ended: 'Respuesta abierta',
+  scenario: 'Caso aplicado',
+  entity_relation: 'Entidades y relaciones',
+};
+
+const UNIT_KIND_LABELS: Record<string, string> = {
+  question_type: 'Tipo de pregunta',
+  entity: 'Entidad',
+  relation: 'Relación',
+  taxonomy: 'Taxonomía',
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  pending: 'Pendiente',
+  in_progress: 'En progreso',
+  ok: 'Correcta',
+  failed: 'Con error',
+};
+
+function formatDisplayLabel(value: string, labels: Record<string, string>) {
+  const candidate = value.trim();
+  if (!candidate) return '-';
+
+  const normalized = candidate.toLowerCase();
+  if (labels[candidate]) return labels[candidate];
+  if (labels[normalized]) return labels[normalized];
+
+  return candidate
+    .replace(/[_-]+/g, ' ')
+    .split(' ')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toLocaleUpperCase('es-CL') + part.slice(1).toLocaleLowerCase('es-CL'))
+    .join(' ');
+}
+
+function formatQuestionTypeLabel(item: string) {
+  return formatDisplayLabel(item, QUESTION_TYPE_LABELS);
+}
+
+function formatUnitKindLabel(value: string) {
+  return formatDisplayLabel(value, UNIT_KIND_LABELS);
+}
+
+function formatStatusLabel(value: string) {
+  return formatDisplayLabel(value, STATUS_LABELS);
 }
 
 export default function GeneradorPreguntasPage() {
-  const [difficulty, setDifficulty] = useState<Difficulty>(Difficulty.FACIL);
-  const [userInput, setUserInput] = useState('');
-  const [category, setCategory] = useState('');
-  const [subtopic, setSubtopic] = useState('');
-  const [questionCount, setQuestionCount] = useState(5);
-
-  const [semanticLimit, setSemanticLimit] = useState(5);
-  const [semanticDepth, setSemanticDepth] = useState<1 | 2>(1);
-  const [model, setModel] = useState<string>('gpt-5.4-nano');
-
-  const [job, setJob] = useState<GenerationJobState | null>(null);
-  const [lastRequestPayload, setLastRequestPayload] = useState<GenerationQuestionRequest | null>(null);
-  const [result, setResult] = useState<GenerationQuestionResponse | null>(null);
-  const [hasHydratedState, setHasHydratedState] = useState(false);
   const [config, setConfig] = useState<GenerationConfigResponse | null>(null);
-  const pollTimerRef = useRef<number | null>(null);
+  const [isLoadingConfig, setIsLoadingConfig] = useState(true);
+
+  const [draft, setDraft] = useState<SnapshotDraft>({
+    category: '',
+    subtopic: '__ALL__',
+    targetDifficulties: [Difficulty.FACIL, Difficulty.MEDIO],
+    questionTypes: [],
+    includeEntities: true,
+    includeRelations: true,
+  });
+  const [hardDifficultyPendingConfirm, setHardDifficultyPendingConfirm] = useState(false);
+
+  const [isCreatingSnapshot, setIsCreatingSnapshot] = useState(false);
+  const [isRefreshingSnapshot, setIsRefreshingSnapshot] = useState(false);
+  const [isDeletingSnapshot, setIsDeletingSnapshot] = useState(false);
+  const [deletingSnapshotId, setDeletingSnapshotId] = useState('');
+  const [snapshotToDelete, setSnapshotToDelete] = useState<SnapshotResponse | null>(null);
+  const [isBackfillingOrigins, setIsBackfillingOrigins] = useState(false);
+  const [backfillForce, setBackfillForce] = useState(false);
+  const [selectionDraft, setSelectionDraft] = useState<SelectionDraft>({
+    count: 500,
+    difficulties: [Difficulty.FACIL, Difficulty.MEDIO],
+    questionTypes: [],
+    unitKind: 'all',
+    includeFailed: true,
+  });
+  const [selectionBySnapshot, setSelectionBySnapshot] = useState<Record<string, string>>({});
+  const [selectionIdsBySnapshot, setSelectionIdsBySnapshot] = useState<Record<string, string[]>>({});
+  const [selectionSnapshot, setSelectionSnapshot] = useState<SelectionProgressResponse | null>(null);
+  const [isCreatingSelection, setIsCreatingSelection] = useState(false);
+  const [isSelectionPolling, setIsSelectionPolling] = useState(false);
+  const [isSelectionRunning, setIsSelectionRunning] = useState(false);
+  const [selectionConcurrency, setSelectionConcurrency] = useState(1);
+  const [selectionRunStartedAt, setSelectionRunStartedAt] = useState<number | null>(null);
+  const [selectionRunProcessedUnits, setSelectionRunProcessedUnits] = useState(0);
+  const [selectionConsecutiveErrors, setSelectionConsecutiveErrors] = useState(0);
+  const [isRetryingFailedUnits, setIsRetryingFailedUnits] = useState(false);
+  const [selectionLastRunInfo, setSelectionLastRunInfo] = useState<{ unitId: string; status: string; at: string } | null>(null);
+  const [localSelectionStats, setLocalSelectionStats] = useState<LocalSelectionStats>({
+    total: 0,
+    ok: 0,
+    failed: 0,
+    pending: 0,
+    inProgress: 0,
+  });
+  const [localUnitStatuses, setLocalUnitStatuses] = useState<Record<string, string>>({});
+  const selectionRunTokenRef = useRef<string | null>(null);
+  const selectionConsecutiveErrorsRef = useRef(0);
+
+  const [activeSnapshotId, setActiveSnapshotId] = useState('');
+  const [snapshots, setSnapshots] = useState<SnapshotResponse[]>([]);
+  const [progress, setProgress] = useState<SnapshotProgressResponse>(EMPTY_PROGRESS);
+  const [units, setUnits] = useState<GenerationUnitResponse[]>([]);
+
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [difficultyFilter, setDifficultyFilter] = useState('all');
+  const [questionTypeFilter, setQuestionTypeFilter] = useState('all');
+  const [unitKindFilter, setUnitKindFilter] = useState('all');
+
+  const [isPolling, setIsPolling] = useState(false);
 
   const availableCategories = useMemo(() => config?.categories || [], [config]);
-  const availableSubtopics = useMemo(() => {
-    return category ? config?.subtopics?.[category] || [] : [];
-  }, [category, config]);
+  const availableSubtopics = useMemo(
+    () => (draft.category ? config?.subtopics[draft.category] || [] : []),
+    [config, draft.category]
+  );
+  const availableQuestionTypes = useMemo(() => config?.question_type_catalog || [], [config]);
 
-  const canGenerate = useMemo(() => {
-    if (!category || !subtopic) return false;
-    if (!availableSubtopics.includes(subtopic)) return false;
-    return userInput.trim().length > 0 && !!difficulty;
-  }, [userInput, difficulty, category, subtopic, availableSubtopics]);
+  const canCreateSnapshot = useMemo(() => {
+    return Boolean(draft.category) && draft.targetDifficulties.length > 0;
+  }, [draft.category, draft.targetDifficulties.length]);
 
-  const displayedGeneratedCount = result ? result.questions.length : 0;
-  const isGenerating = job?.status === 'queued' || job?.status === 'running';
-  const stopPolling = () => {
-    if (pollTimerRef.current) {
-      window.clearInterval(pollTimerRef.current);
-      pollTimerRef.current = null;
-    }
-  };
+  const filteredUnits = useMemo(() => {
+    return units.filter((unit) => {
+      if (statusFilter !== 'all' && unit.status !== statusFilter) return false;
+      if (difficultyFilter !== 'all' && unit.difficulty !== difficultyFilter) return false;
+      if (questionTypeFilter !== 'all' && unit.question_type !== questionTypeFilter) return false;
+      if (unitKindFilter !== 'all' && unit.unit_kind !== unitKindFilter) return false;
+      return true;
+    });
+  }, [units, statusFilter, difficultyFilter, questionTypeFilter, unitKindFilter]);
 
-  const loadGenerationConfig = useCallback(async () => {
+  const uniqueDifficulties = useMemo(
+    () => Array.from(new Set(units.map((unit) => unit.difficulty).filter(Boolean))) as string[],
+    [units]
+  );
+
+  const uniqueQuestionTypes = useMemo(
+    () => Array.from(new Set(units.map((unit) => unit.question_type).filter(Boolean))) as string[],
+    [units]
+  );
+
+  const uniqueUnitKinds = useMemo(
+    () => Array.from(new Set(units.map((unit) => unit.unit_kind).filter(Boolean))) as string[],
+    [units]
+  );
+
+  const unitsPerMinute = getUnitsPerMinute(selectionRunStartedAt, selectionRunProcessedUnits);
+  const activeSelectionId = useMemo(() => {
+    return activeSnapshotId ? (selectionBySnapshot[activeSnapshotId] || '') : '';
+  }, [activeSnapshotId, selectionBySnapshot]);
+  const snapshotSelectionIds = useMemo(() => {
+    if (!activeSnapshotId) return [];
+    const current = selectionBySnapshot[activeSnapshotId];
+    const fromStorage = selectionIdsBySnapshot[activeSnapshotId] || [];
+    const merged = current ? [current, ...fromStorage] : fromStorage;
+    return Array.from(new Set(merged.filter((item) => typeof item === 'string' && item.trim().length > 0)));
+  }, [activeSnapshotId, selectionBySnapshot, selectionIdsBySnapshot]);
+  const snapshotsForSelect = useMemo(() => {
+    if (!activeSnapshotId) return snapshots;
+    if (snapshots.some((item) => item.snapshot_id === activeSnapshotId)) return snapshots;
+    return [
+      {
+        snapshot_id: activeSnapshotId,
+        entity_count: 0,
+        relation_count: 0,
+        unit_count: 0,
+        refresh_count: 0,
+      },
+      ...snapshots,
+    ];
+  }, [activeSnapshotId, snapshots]);
+
+  const activeSnapshotMetadata = useMemo(
+    () => snapshotsForSelect.find((item) => item.snapshot_id === activeSnapshotId) || null,
+    [snapshotsForSelect, activeSnapshotId]
+  );
+
+  const activeSnapshotViewModel: SnapshotViewModel | null = useMemo(() => {
+    if (!activeSnapshotMetadata) return null;
+    return buildSnapshotViewModel(activeSnapshotMetadata, progress);
+  }, [activeSnapshotMetadata, progress]);
+  const selectionCompletion = useMemo(() => {
+    const total = selectionSnapshot?.total_units ?? localSelectionStats.total;
+    if (!total || total <= 0) return 0;
+    const done = (selectionSnapshot?.ok_units ?? localSelectionStats.ok) + (selectionSnapshot?.failed_units ?? localSelectionStats.failed);
+    return Math.round((done / total) * 100);
+  }, [localSelectionStats.failed, localSelectionStats.ok, localSelectionStats.total, selectionSnapshot?.failed_units, selectionSnapshot?.ok_units, selectionSnapshot?.total_units]);
+  const hasBackendInProgress = useMemo(
+    () => (selectionSnapshot?.in_progress_units ?? 0) > 0,
+    [selectionSnapshot?.in_progress_units]
+  );
+
+  const loadConfig = useCallback(async () => {
     try {
-      const response = await getGenerationConfig();
-      setConfig(response);
+      setIsLoadingConfig(true);
+      const [configResponse, snapshotsResponse] = await Promise.all([
+        getGenerationConfig(),
+        listSnapshots(100, 0),
+      ]);
+      setConfig(configResponse);
+      setSnapshots(snapshotsResponse.items);
+      setDraft((prev) => {
+        const nextCategory = configResponse.categories.includes(prev.category) ? prev.category : configResponse.categories[0] || '';
+        const nextSubtopics = nextCategory ? configResponse.subtopics[nextCategory] || [] : [];
+        const nextSubtopic = nextSubtopics.includes(prev.subtopic) || prev.subtopic === '__ALL__' ? prev.subtopic : '__ALL__';
+        const nextQuestionTypes = prev.questionTypes.filter((item) => configResponse.question_type_catalog.includes(item));
+
+        return {
+          ...prev,
+          category: nextCategory,
+          subtopic: nextSubtopic,
+          questionTypes: nextQuestionTypes,
+        };
+      });
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    } finally {
+      setIsLoadingConfig(false);
+    }
+  }, []);
+
+  const loadSnapshotProgress = useCallback(async (snapshotId: string) => {
+    if (!snapshotId) return;
+
+    try {
+      const snapshotProgress = await getSnapshotProgress(snapshotId);
+      setProgress(snapshotProgress);
     } catch (error) {
       toast.error(getErrorMessage(error));
     }
   }, []);
 
-  const applyCompletedResult = (
-    currentJob: GenerationJobState,
-    requestPayload: GenerationQuestionRequest | null
-  ) => {
-    const completedResult = currentJob.result;
-    if (completedResult?.questions) {
-      setResult(completedResult);
-      toast.success(`${completedResult.questions.length} pregunta(s) generada(s) y guardada(s) en revisión`);
-      if (requestPayload) {
-        addOpenAILog({ request: requestPayload, response: completedResult });
+  const loadUnitsList = useCallback(async (snapshotId: string, selectionId?: string) => {
+    if (!snapshotId) return;
+    if (!selectionId) {
+      setUnits([]);
+      return;
+    }
+
+    setIsPolling(true);
+    try {
+      const selection = await getGenerationSelection(selectionId);
+      const selectedUnitIds = new Set(selection.unit_ids);
+      const primary = await listUnits(snapshotId, { limit: 500, skip: 0 });
+      let items = primary.items.filter((item) => selectedUnitIds.has(item.unit_id));
+
+      if (items.length === 0 && selection.total_units > 0) {
+        const statuses = ['pending', 'in_progress', 'ok', 'failed'] as const;
+        const chunks = await Promise.all(statuses.map((status) => listUnits(snapshotId, { status, limit: 500, skip: 0 })));
+        const merged = chunks.flatMap((chunk) => chunk.items).filter((item) => selectedUnitIds.has(item.unit_id));
+        const uniqueById = new Map<string, GenerationUnitResponse>();
+        for (const item of merged) {
+          const key = (item.unit_id || '').trim();
+          if (!key) continue;
+          uniqueById.set(key, item);
+        }
+        items = Array.from(uniqueById.values());
       }
-    } else {
-      toast.error('El job finalizó sin resultado de preguntas');
+
+      setUnits(items);
+
+      if (items.length === 0 && selection.total_units > 0) {
+        toast.warning('No se pudieron cargar las unidades del lote activo.');
+      }
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    } finally {
+      setIsPolling(false);
+    }
+  }, []);
+
+  const loadSelectionProgress = useCallback(async (selectionId: string) => {
+    if (!selectionId) return null;
+    setIsSelectionPolling(true);
+    try {
+      const selection = await getGenerationSelection(selectionId);
+      setSelectionSnapshot(selection);
+      setLocalSelectionStats({
+        total: selection.total_units || selection.claimed_count || selection.unit_ids.length,
+        ok: selection.ok_units,
+        failed: selection.failed_units,
+        pending: selection.pending_units,
+        inProgress: selection.in_progress_units,
+      });
+      return selection;
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+      return null;
+    } finally {
+      setIsSelectionPolling(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadConfig();
+
+    const parsed = readStorage<PersistedState | null>(STATE_STORAGE_KEY, null, parsePersistedState);
+    if (!parsed) return;
+
+    if (parsed.snapshotId) setActiveSnapshotId(parsed.snapshotId);
+    if (parsed.snapshots && parsed.snapshots.length > 0) setSnapshots(parsed.snapshots);
+    if (parsed.statusFilter) setStatusFilter(parsed.statusFilter);
+    if (typeof parsed.difficultyFilter === 'string') setDifficultyFilter(parsed.difficultyFilter);
+    if (typeof parsed.questionTypeFilter === 'string') setQuestionTypeFilter(parsed.questionTypeFilter);
+    if (typeof parsed.unitKindFilter === 'string') setUnitKindFilter(parsed.unitKindFilter);
+    if (typeof parsed.includeEntities === 'boolean') {
+      setDraft((prev) => ({ ...prev, includeEntities: parsed.includeEntities as boolean }));
+    }
+    if (typeof parsed.includeRelations === 'boolean') {
+      setDraft((prev) => ({ ...prev, includeRelations: parsed.includeRelations as boolean }));
+    }
+    if (parsed.selectionBySnapshot) {
+      setSelectionBySnapshot(parsed.selectionBySnapshot);
+    }
+    if (parsed.selectionIdsBySnapshot) {
+      setSelectionIdsBySnapshot(parsed.selectionIdsBySnapshot);
+    }
+    if (typeof parsed.selectionConcurrency === 'number') {
+      setSelectionConcurrency(Math.max(1, Math.min(3, Math.round(parsed.selectionConcurrency))));
+    }
+    if (parsed.selectionDraft) {
+      setSelectionDraft((prev) => ({
+        ...prev,
+        count:
+          typeof parsed.selectionDraft?.count === 'number'
+            ? Math.max(1, Math.round(parsed.selectionDraft.count))
+            : prev.count,
+        difficulties: Array.isArray(parsed.selectionDraft?.difficulties)
+          ? parsed.selectionDraft.difficulties.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+          : prev.difficulties,
+        questionTypes: Array.isArray(parsed.selectionDraft?.questionTypes)
+          ? parsed.selectionDraft.questionTypes.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+          : prev.questionTypes,
+        unitKind:
+          parsed.selectionDraft?.unitKind === 'entity' || parsed.selectionDraft?.unitKind === 'relation' || parsed.selectionDraft?.unitKind === 'all'
+            ? parsed.selectionDraft.unitKind
+            : prev.unitKind,
+        includeFailed:
+          typeof parsed.selectionDraft?.includeFailed === 'boolean'
+            ? parsed.selectionDraft.includeFailed
+            : prev.includeFailed,
+      }));
+    }
+  }, [loadConfig]);
+
+  useEffect(() => {
+    writeStorage<PersistedState>(STATE_STORAGE_KEY, {
+      snapshotId: activeSnapshotId,
+      snapshots: snapshots.slice(0, 50),
+      statusFilter,
+      difficultyFilter,
+      questionTypeFilter,
+      unitKindFilter,
+      includeEntities: draft.includeEntities,
+      includeRelations: draft.includeRelations,
+      selectionBySnapshot,
+      selectionIdsBySnapshot,
+      selectionConcurrency,
+      selectionDraft,
+    });
+  }, [
+    activeSnapshotId,
+    statusFilter,
+    snapshots,
+    difficultyFilter,
+    questionTypeFilter,
+    unitKindFilter,
+    draft.includeEntities,
+    draft.includeRelations,
+    selectionBySnapshot,
+    selectionIdsBySnapshot,
+    selectionConcurrency,
+    selectionDraft,
+  ]);
+
+  useEffect(() => {
+    if (!activeSnapshotId) return;
+    setUnits([]);
+    void loadSnapshotProgress(activeSnapshotId);
+  }, [activeSnapshotId, loadSnapshotProgress]);
+
+  useEffect(() => {
+    if (!activeSelectionId) {
+      setSelectionSnapshot(null);
+      setUnits([]);
+      if (!selectionRunTokenRef.current) {
+        setIsSelectionRunning(false);
+      }
+      return;
+    }
+    void loadSelectionProgress(activeSelectionId);
+  }, [activeSelectionId, loadSelectionProgress]);
+
+  useEffect(() => {
+    if (!activeSelectionId || !selectionSnapshot) return;
+    const filters = parseSelectionFilters(selectionSnapshot);
+    setSelectionDraft((prev) => ({
+      ...prev,
+      count: Math.max(1, selectionSnapshot.requested_count || prev.count || 1),
+      difficulties: filters.difficulties,
+      questionTypes: filters.questionTypes,
+      unitKind:
+        filters.unitKindRaw === 'entity' || filters.unitKindRaw === 'relation'
+          ? filters.unitKindRaw
+          : 'all',
+      includeFailed:
+        typeof filters.includeFailed === 'boolean' ? filters.includeFailed : prev.includeFailed,
+    }));
+  }, [activeSelectionId, selectionSnapshot]);
+
+  useEffect(() => {
+    if (!activeSnapshotId || !activeSelectionId) return;
+    void loadUnitsList(activeSnapshotId, activeSelectionId);
+  }, [activeSnapshotId, activeSelectionId, loadUnitsList]);
+
+  useEffect(() => {
+    const statuses = Object.values(localUnitStatuses);
+    if (statuses.length === 0) {
+      return;
+    }
+    const ok = statuses.filter((status) => status === 'ok').length;
+    const failed = statuses.filter((status) => status === 'failed').length;
+    const inProgress = statuses.filter((status) => status === 'in_progress').length;
+    const total = selectionSnapshot?.total_units || statuses.length;
+    setLocalSelectionStats({
+      total,
+      ok,
+      failed,
+      inProgress,
+      pending: Math.max(0, total - ok - failed - inProgress),
+    });
+  }, [localUnitStatuses, selectionSnapshot?.total_units]);
+
+  useEffect(() => {
+    if (!isSelectionRunning || !activeSelectionId) return;
+    const timer = window.setInterval(() => {
+      void loadSelectionProgress(activeSelectionId);
+      if (activeSnapshotId) {
+        void loadSnapshotProgress(activeSnapshotId);
+      }
+    }, 4000);
+    return () => window.clearInterval(timer);
+  }, [isSelectionRunning, activeSelectionId, activeSnapshotId, loadSelectionProgress, loadSnapshotProgress]);
+
+  const handleCreateSnapshot = async () => {
+    if (!canCreateSnapshot) {
+      toast.error('Completa categoría y al menos una dificultad.');
+      return;
+    }
+
+    try {
+      setIsCreatingSnapshot(true);
+      const created = await createSnapshot({
+        category: draft.category,
+        subtopic: draft.subtopic === '__ALL__' ? null : draft.subtopic,
+        target_difficulties: draft.targetDifficulties,
+        question_types: draft.questionTypes.length > 0 ? draft.questionTypes : undefined,
+        include_entities: draft.includeEntities,
+        include_relations: draft.includeRelations,
+      });
+
+      setSnapshots((previous) => [created, ...previous.filter((item) => item.snapshot_id !== created.snapshot_id)]);
+      setActiveSnapshotId(created.snapshot_id);
+      setSelectionConsecutiveErrors(0);
+      setSelectionRunProcessedUnits(0);
+      setSelectionRunStartedAt(null);
+      setSelectionLastRunInfo(null);
+      setHardDifficultyPendingConfirm(false);
+      toast.success(`Snapshot ${created.snapshot_id} creado.`);
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    } finally {
+      setIsCreatingSnapshot(false);
     }
   };
 
-  const pollJob = async (jobId: string, requestPayload: GenerationQuestionRequest | null) => {
-    try {
-      const state = await getGenerationJob(jobId);
-      setJob(state);
+  const handleRefreshSnapshot = async () => {
+    if (!activeSnapshotId) return;
 
-      if (state.status === 'completed') {
-        stopPolling();
-        applyCompletedResult(state, requestPayload);
-      } else if (state.status === 'failed') {
-        stopPolling();
-        toast.error(state.error || state.message || 'La generación falló');
-      }
-    } catch {
-      stopPolling();
-      toast.error('No se pudo consultar el progreso del job');
+    try {
+      setIsRefreshingSnapshot(true);
+      const refreshed = await refreshSnapshot(activeSnapshotId);
+      setSnapshots((previous) => {
+        const existing = previous.find((item) => item.snapshot_id === refreshed.snapshot_id);
+        const merged: SnapshotResponse = {
+          snapshot_id: refreshed.snapshot_id,
+          category: existing?.category || draft.category || undefined,
+          subtopic:
+            existing?.subtopic !== undefined
+              ? existing.subtopic
+              : draft.subtopic === '__ALL__'
+              ? null
+              : draft.subtopic || undefined,
+          target_difficulties: existing?.target_difficulties || [],
+          include_entities: existing?.include_entities ?? true,
+          include_relations: existing?.include_relations ?? true,
+          question_types: existing?.question_types || [],
+          entity_count: refreshed.entity_count,
+          relation_count: refreshed.relation_count,
+          unit_count: Math.max(existing?.unit_count || 0, (existing?.unit_count || 0) + (refreshed.added_units || 0)),
+          refresh_count: refreshed.refresh_count,
+          created_at: existing?.created_at,
+          updated_at: refreshed.updated_at || existing?.updated_at,
+        };
+        return [merged, ...previous.filter((item) => item.snapshot_id !== refreshed.snapshot_id)].slice(0, 20);
+      });
+      await loadSnapshotProgress(activeSnapshotId);
+      toast.success('Snapshot refrescado.');
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    } finally {
+      setIsRefreshingSnapshot(false);
     }
   };
 
-  const startPolling = (jobId: string, requestPayload: GenerationQuestionRequest | null) => {
-    stopPolling();
-    pollTimerRef.current = window.setInterval(() => {
-      void pollJob(jobId, requestPayload);
-    }, JOB_POLL_INTERVAL_MS);
+  const handleDeleteSnapshot = async () => {
+    if (!snapshotToDelete?.snapshot_id || isDeletingSnapshot) return;
+
+    const targetId = snapshotToDelete.snapshot_id;
+    try {
+      setIsDeletingSnapshot(true);
+      setDeletingSnapshotId(targetId);
+      const deleted = await deleteSnapshot(targetId);
+      setSnapshots((previous) => previous.filter((item) => item.snapshot_id !== targetId));
+      if (activeSnapshotId === targetId) {
+        setActiveSnapshotId('');
+        setProgress(EMPTY_PROGRESS);
+        setUnits([]);
+      }
+      toast.success(
+        `Snapshot eliminado. snapshots:${deleted.deleted_snapshots} units:${deleted.deleted_units} runs:${deleted.deleted_runs} selections:${deleted.deleted_selections}`
+      );
+      setSnapshotToDelete(null);
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 409) {
+        toast.warning('No se puede borrar: existen unidades en progreso.');
+      } else if (axios.isAxiosError(error) && error.response?.status === 404) {
+        toast.error('Snapshot no encontrado.');
+      } else {
+        toast.error(getErrorMessage(error));
+      }
+    } finally {
+      setIsDeletingSnapshot(false);
+      setDeletingSnapshotId('');
+    }
   };
 
-  useEffect(() => {
-    void loadGenerationConfig();
-  }, [loadGenerationConfig]);
+  const handleBackfillOrigins = async () => {
+    try {
+      setIsBackfillingOrigins(true);
+      const result = await backfillGenerationOrigins(backfillForce);
+      toast.success(
+        `Backfill OK. scanned:${result.scanned_units} updated:${result.updated_questions} sin_question:${result.skipped_without_question} sin_snapshot:${result.skipped_missing_snapshot} ya_origen:${result.skipped_already_present}`
+      );
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    } finally {
+      setIsBackfillingOrigins(false);
+    }
+  };
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
+  const handleExecuteUnit = async (unitId: string) => {
+    if (!activeSnapshotId) return;
+    if (!unitId.trim()) {
+      toast.error('La unit no trae unit_id válido, no se puede ejecutar.');
+      return;
+    }
 
     try {
-      const rawState = window.localStorage.getItem(GENERATOR_STATE_STORAGE_KEY);
-      if (!rawState) {
-        setHasHydratedState(true);
+      const result = await executeUnit(unitId);
+      toast.success(`Unit ${unitId} ejecutada: ${result.status}.`);
+      addOpenAILog({
+        request: {
+          endpoint: `/generation/units/${unitId}/execute`,
+          snapshot_id: activeSnapshotId,
+          selection_id: activeSelectionId || null,
+          unit_id: unitId,
+          category: draft.category,
+          subtopic: draft.subtopic === '__ALL__' ? null : draft.subtopic,
+          mode: 'v2_unit_execute_manual',
+        },
+        response: {
+          status: result.status === 'ok' ? 'completed' : 'failed',
+          generated_count: result.status === 'ok' ? 1 : 0,
+          semantic_total: 0,
+          used_model: config?.llm_default_model || '',
+          raw_output: JSON.stringify(result, null, 2),
+          error: result.error || null,
+          message: result.message || null,
+          meta: {
+            snapshot_id: activeSnapshotId,
+            unit_id: unitId,
+            unit_status: result.status,
+          },
+        },
+      });
+      await loadSnapshotProgress(activeSnapshotId);
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    }
+  };
+
+  const handleRetryUnit = async (unitId: string) => {
+    if (!activeSnapshotId) return;
+    if (!unitId.trim()) {
+      toast.error('La unit no trae unit_id válido, no se puede reintentar.');
+      return;
+    }
+
+    try {
+      const result = await retryUnit(unitId);
+      toast.success(`Retry unit ${unitId}: ${result.status}.`);
+      await loadSnapshotProgress(activeSnapshotId);
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    }
+  };
+
+  const handleCreateSelection = async () => {
+    if (!activeSnapshotId) {
+      toast.error('Selecciona un snapshot activo.');
+      return;
+    }
+    if (selectionDraft.count <= 0) {
+      toast.error('El count debe ser mayor que 0.');
+      return;
+    }
+    try {
+      setIsCreatingSelection(true);
+      const selection = await createGenerationSelection({
+        snapshot_id: activeSnapshotId,
+        count: selectionDraft.count,
+        difficulties: selectionDraft.difficulties.length > 0 ? selectionDraft.difficulties : undefined,
+        question_types: selectionDraft.questionTypes.length > 0 ? selectionDraft.questionTypes : undefined,
+        unit_kind: selectionDraft.unitKind === 'all' ? undefined : selectionDraft.unitKind,
+        include_failed: selectionDraft.includeFailed,
+      });
+      setSelectionBySnapshot((prev) => ({ ...prev, [activeSnapshotId]: selection.selection_id }));
+      setSelectionIdsBySnapshot((prev) => {
+        const existing = prev[activeSnapshotId] || [];
+        return {
+          ...prev,
+          [activeSnapshotId]: Array.from(new Set([selection.selection_id, ...existing])),
+        };
+      });
+      const details = await loadSelectionProgress(selection.selection_id);
+      if (details && details.claimed_count < selectionDraft.count) {
+        toast.warning('No había suficientes unidades elegibles para completar el count solicitado.');
+      } else {
+        toast.success(`Selección creada: ${selection.selection_id}`);
+      }
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    } finally {
+      setIsCreatingSelection(false);
+    }
+  };
+
+  const handleSelectSelection = (selectionId: string) => {
+    if (!activeSnapshotId) return;
+    const normalized = (selectionId || '').trim();
+    if (!normalized) return;
+    setSelectionBySnapshot((prev) => ({ ...prev, [activeSnapshotId]: normalized }));
+    setSelectionIdsBySnapshot((prev) => {
+      const existing = prev[activeSnapshotId] || [];
+      return {
+        ...prev,
+        [activeSnapshotId]: Array.from(new Set([normalized, ...existing])),
+      };
+    });
+  };
+
+  const stopSelectionRunner = () => {
+    selectionRunTokenRef.current = null;
+    selectionConsecutiveErrorsRef.current = 0;
+    setSelectionConsecutiveErrors(0);
+    setIsSelectionRunning(false);
+  };
+
+  const handleRetryFailedUnitsAndRun = async () => {
+    if (!activeSnapshotId || !activeSelectionId) {
+      toast.error('Selecciona un snapshot y un lote activo.');
+      return;
+    }
+    if (isSelectionRunning) {
+      toast.warning('Detén la ejecución actual antes de reintentar fallidas.');
+      return;
+    }
+    const failedUnitIds = units
+      .filter((unit) => unit.status === 'failed' && !!unit.unit_id)
+      .map((unit) => unit.unit_id);
+    if (failedUnitIds.length === 0) {
+      toast.info('No hay unidades fallidas para reintentar.');
+      return;
+    }
+
+    try {
+      setIsRetryingFailedUnits(true);
+      let retried = 0;
+      let retryErrors = 0;
+      const retriedUnitIds: string[] = [];
+      for (const unitId of failedUnitIds) {
+        try {
+          await retryUnit(unitId);
+          retried += 1;
+          retriedUnitIds.push(unitId);
+        } catch {
+          retryErrors += 1;
+        }
+      }
+
+      if (retried > 0) {
+        setLocalUnitStatuses((prev) => {
+          const next = { ...prev };
+          for (const unitId of retriedUnitIds) next[unitId] = 'pending';
+          return next;
+        });
+      }
+
+      await Promise.all([
+        loadSelectionProgress(activeSelectionId),
+        loadSnapshotProgress(activeSnapshotId),
+        loadUnitsList(activeSnapshotId, activeSelectionId),
+      ]);
+
+      if (retried === 0) {
+        toast.error('No se pudo reintentar ninguna unidad fallida.');
         return;
       }
 
-      const parsedState = JSON.parse(rawState) as {
-        difficulty?: Difficulty;
-        userInput?: string;
-        category?: string;
-        subtopic?: string;
-        questionCount?: number;
-        semanticLimit?: number;
-        semanticDepth?: 1 | 2;
-        model?: string;
-        job?: GenerationJobState | null;
-        lastRequestPayload?: GenerationQuestionRequest | null;
-        result?: GenerationQuestionResponse | null;
-      };
-
-      if (parsedState.difficulty) setDifficulty(parsedState.difficulty);
-      if (typeof parsedState.userInput === 'string') setUserInput(parsedState.userInput);
-      if (typeof parsedState.category === 'string') setCategory(parsedState.category);
-      if (typeof parsedState.subtopic === 'string') setSubtopic(parsedState.subtopic);
-      if (typeof parsedState.questionCount === 'number') setQuestionCount(parsedState.questionCount);
-      if (typeof parsedState.semanticLimit === 'number') setSemanticLimit(parsedState.semanticLimit);
-      if (parsedState.semanticDepth === 1 || parsedState.semanticDepth === 2) setSemanticDepth(parsedState.semanticDepth);
-      if (typeof parsedState.model === 'string' && MODEL_OPTIONS.includes(parsedState.model as (typeof MODEL_OPTIONS)[number])) {
-        setModel(parsedState.model);
+      if (retryErrors > 0) {
+        toast.warning(`Reintentos aplicados: ${retried}. Fallaron: ${retryErrors}.`);
+      } else {
+        toast.success(`Reintentos aplicados: ${retried}. Iniciando ejecución del lote...`);
       }
-      if (parsedState.job) setJob(parsedState.job);
-      if (parsedState.lastRequestPayload) setLastRequestPayload(parsedState.lastRequestPayload);
-      if (parsedState.result) {
-        setResult(parsedState.result);
-      }
-    } catch {
-      window.localStorage.removeItem(GENERATOR_STATE_STORAGE_KEY);
+      await handleRunSelection();
+    } catch (error) {
+      toast.error(getErrorMessage(error));
     } finally {
-      setHasHydratedState(true);
+      setIsRetryingFailedUnits(false);
     }
-  }, []);
+  };
 
-  useEffect(() => {
-    if (!hasHydratedState || !job) return;
-    if (job.status === 'queued' || job.status === 'running') {
-      startPolling(job.job_id, lastRequestPayload);
-    }
-  }, [hasHydratedState, job?.job_id, job?.status]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (!hasHydratedState || typeof window === 'undefined') return;
-
-    const persistedState = {
-      difficulty,
-      userInput,
-      category,
-      subtopic,
-      questionCount,
-      semanticLimit,
-      semanticDepth,
-      model,
-      job,
-      lastRequestPayload,
-      result,
-    };
-
-    window.localStorage.setItem(GENERATOR_STATE_STORAGE_KEY, JSON.stringify(persistedState));
-  }, [hasHydratedState, difficulty, userInput, category, subtopic, questionCount, semanticLimit, semanticDepth, model, job, lastRequestPayload, result]);
-
-  useEffect(() => {
-    if (availableCategories.length === 0) {
-      if (category) setCategory('');
-      if (subtopic) setSubtopic('');
+  const handleRunSelection = async () => {
+    if (!activeSnapshotId || !activeSelectionId) {
+      toast.error('Crea o selecciona un lote antes de ejecutar.');
       return;
     }
 
-    if (!category || !availableCategories.includes(category)) {
-      const firstCategory = availableCategories[0];
-      setCategory(firstCategory);
-      const firstSubtopic = (config?.subtopics?.[firstCategory] || [])[0] || '';
-      setSubtopic(firstSubtopic);
-      return;
-    }
+    // Siempre reinicia el contador al iniciar una nueva corrida manual.
+    selectionConsecutiveErrorsRef.current = 0;
+    setSelectionConsecutiveErrors(0);
 
-    const subtopicsForCategory = config?.subtopics?.[category] || [];
-    if (!subtopic || !subtopicsForCategory.includes(subtopic)) {
-      setSubtopic(subtopicsForCategory[0] || '');
-    }
-  }, [availableCategories, config, category, subtopic]);
-
-  useEffect(() => {
-    return () => {
-      stopPolling();
-    };
-  }, []);
-
-  const handleGenerate = async () => {
-    if (!canGenerate) {
-      toast.error('Completa los campos antes de generar');
-      return;
-    }
+    if (isSelectionRunning && selectionRunTokenRef.current) return;
 
     try {
-      stopPolling();
-      const requestPayload: GenerationQuestionRequest = {
-        user_input: userInput.trim(),
-        category,
-        subtopic,
-        difficulty,
-        question_count: questionCount,
-        semantic_limit: semanticLimit,
-        semantic_depth: semanticDepth,
-        model,
-        output_schema: FIXED_OUTPUT_SCHEMA,
+      const [selection, unitsResponse] = await Promise.all([
+        getGenerationSelection(activeSelectionId),
+        listUnits(activeSnapshotId, { limit: 500, skip: 0 }),
+      ]);
+      setSelectionSnapshot(selection);
+
+      const statusById: Record<string, string> = {};
+      for (const unit of unitsResponse.items) {
+        if (unit.unit_id) {
+          statusById[unit.unit_id] = unit.status;
+        }
+      }
+
+      setLocalUnitStatuses(statusById);
+      const unitIds = selection.unit_ids || [];
+      const selectedIdSet = new Set(unitIds);
+      setUnits(unitsResponse.items.filter((unit) => selectedIdSet.has(unit.unit_id)));
+      const queue = unitIds.filter((unitId) => {
+        const status = statusById[unitId];
+        return status !== 'ok' && status !== 'failed';
+      });
+
+      if (queue.length === 0) {
+        toast.success('La selección no tiene unidades pendientes para ejecutar.');
+        return;
+      }
+
+      const runToken = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      selectionRunTokenRef.current = runToken;
+      setIsSelectionRunning(true);
+      setSelectionRunStartedAt(Date.now());
+      setSelectionRunProcessedUnits(0);
+      selectionConsecutiveErrorsRef.current = 0;
+      setSelectionConsecutiveErrors(0);
+
+      let cursor = 0;
+      const worker = async () => {
+        while (selectionRunTokenRef.current === runToken) {
+          const index = cursor++;
+          if (index >= queue.length) {
+            return;
+          }
+          const unitId = queue[index];
+          setLocalUnitStatuses((prev) => ({ ...prev, [unitId]: 'in_progress' }));
+          try {
+            const result = await executeUnit(unitId);
+            if (selectionRunTokenRef.current !== runToken) {
+              return;
+            }
+            const status = result.status || 'failed';
+            setSelectionLastRunInfo({
+              unitId,
+              status,
+              at: new Date().toISOString(),
+            });
+            setSelectionRunProcessedUnits((prev) => prev + 1);
+            if (status === 'ok') {
+              selectionConsecutiveErrorsRef.current = 0;
+              setSelectionConsecutiveErrors(0);
+            } else {
+              selectionConsecutiveErrorsRef.current += 1;
+              setSelectionConsecutiveErrors(selectionConsecutiveErrorsRef.current);
+            }
+            setLocalUnitStatuses((prev) => ({ ...prev, [unitId]: status }));
+            addOpenAILog({
+              request: {
+                endpoint: `/generation/units/${unitId}/execute`,
+                snapshot_id: activeSnapshotId,
+                selection_id: activeSelectionId,
+                unit_id: unitId,
+                category: draft.category,
+                subtopic: draft.subtopic === '__ALL__' ? null : draft.subtopic,
+                mode: 'v2_selection_execute',
+              },
+              response: {
+                status: status === 'ok' ? 'completed' : 'failed',
+                generated_count: status === 'ok' ? 1 : 0,
+                semantic_total: 0,
+                used_model: config?.llm_default_model || '',
+                raw_output: JSON.stringify(result, null, 2),
+                error: result.error || null,
+                message: result.message || null,
+                meta: {
+                  snapshot_id: activeSnapshotId,
+                  selection_id: activeSelectionId,
+                  unit_id: unitId,
+                  unit_status: status,
+                },
+              },
+            });
+          } catch {
+            if (selectionRunTokenRef.current !== runToken) {
+              return;
+            }
+            setSelectionRunProcessedUnits((prev) => prev + 1);
+            selectionConsecutiveErrorsRef.current += 1;
+            setSelectionConsecutiveErrors(selectionConsecutiveErrorsRef.current);
+            setLocalUnitStatuses((prev) => ({ ...prev, [unitId]: 'failed' }));
+          }
+        }
       };
 
-      setLastRequestPayload(requestPayload);
-      const createdJob = await startGenerationJob(requestPayload);
-      setJob(createdJob);
-      setResult(null);
-      toast.success('Generación iniciada');
+      await Promise.all(Array.from({ length: Math.max(1, Math.min(3, selectionConcurrency)) }, () => worker()));
 
-      if (createdJob.status === 'completed') {
-        applyCompletedResult(createdJob, requestPayload);
-      } else if (createdJob.status === 'failed') {
-        toast.error(createdJob.error || createdJob.message || 'La generación falló al iniciar');
-      } else {
-        startPolling(createdJob.job_id, requestPayload);
+      if (selectionRunTokenRef.current === runToken) {
+        selectionRunTokenRef.current = null;
+        setIsSelectionRunning(false);
+        void loadSelectionProgress(activeSelectionId);
+        void loadSnapshotProgress(activeSnapshotId);
+        toast.success('Ejecución de selección finalizada.');
       }
+    } catch (error) {
+      setIsSelectionRunning(false);
+      selectionRunTokenRef.current = null;
+      toast.error(getErrorMessage(error));
+    }
+  };
+
+  const handleCancelSelection = async () => {
+    if (!activeSelectionId) return;
+    stopSelectionRunner();
+    try {
+      await cancelGenerationSelection(activeSelectionId);
+      await Promise.all([loadSelectionProgress(activeSelectionId), loadSnapshotProgress(activeSnapshotId)]);
+      toast.success('Selección cancelada.');
     } catch (error) {
       toast.error(getErrorMessage(error));
     }
   };
 
-  const handleClearGeneratorState = () => {
-    stopPolling();
-    setDifficulty(Difficulty.FACIL);
-    setUserInput('');
-    setCategory('');
-    setSubtopic('');
-    setQuestionCount(5);
-    setSemanticLimit(5);
-    setSemanticDepth(1);
-    setModel('gpt-5.4-nano');
-    setJob(null);
-    setLastRequestPayload(null);
-    setResult(null);
-
-    if (typeof window !== 'undefined') {
-      window.localStorage.removeItem(GENERATOR_STATE_STORAGE_KEY);
-    }
-
-    toast.success('Estado de generación limpiado');
+  const handleClearState = () => {
+    stopSelectionRunner();
+    setActiveSnapshotId('');
+    setSnapshots([]);
+    setProgress(EMPTY_PROGRESS);
+    setUnits([]);
+    setStatusFilter('all');
+    setDifficultyFilter('all');
+    setQuestionTypeFilter('all');
+    setUnitKindFilter('all');
+    setSelectionSnapshot(null);
+    setSelectionBySnapshot({});
+    setSelectionIdsBySnapshot({});
+    setSelectionLastRunInfo(null);
+    selectionConsecutiveErrorsRef.current = 0;
+    setSelectionConsecutiveErrors(0);
+    setSelectionRunProcessedUnits(0);
+    setSelectionRunStartedAt(null);
+    setLocalUnitStatuses({});
+    removeStorage(STATE_STORAGE_KEY);
+    toast.success('Estado operativo limpiado.');
   };
 
   return (
@@ -379,10 +1103,10 @@ export default function GeneradorPreguntasPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight sm:text-3xl flex items-center gap-3">
             <WandSparkles className="w-6 h-6 sm:w-8 sm:h-8 text-primary" />
-            Generador de Preguntas
+            Operación de Generación V2
           </h1>
           <p className="text-muted-foreground mt-1">
-            Redacta el contexto, ajusta la recuperación semántica y genera lotes para revisión admin.
+            Gestiona snapshots y ejecución por lote (selecciones) con progreso y reanudación.
           </p>
         </div>
         <div className="ml-auto flex w-full flex-col items-start gap-3 sm:w-auto sm:items-end">
@@ -394,388 +1118,892 @@ export default function GeneradorPreguntasPage() {
           </Button>
           <div className="flex items-center gap-2 flex-wrap sm:justify-end">
             {config?.updated_at && (
-              <Badge variant="outline">
-                Config actualizada: {new Date(config.updated_at).toLocaleString('es-CL')}
-              </Badge>
+              <Badge variant="outline">Config actualizada: {new Date(config.updated_at).toLocaleString('es-CL')}</Badge>
             )}
-            {config?.taxonomy_version && (
-              <Badge variant="outline">Taxonomía: {config.taxonomy_version}</Badge>
-            )}
-            {config && (
-              <Badge variant="outline">
-                Catálogo: {config.categories.length} categorías
-              </Badge>
-            )}
+            {activeSnapshotId && <Badge variant="outline">Snapshot activo: {activeSnapshotId}</Badge>}
+            <Badge variant="outline">Runner selección: {isSelectionRunning ? 'Activo' : 'Detenido'}</Badge>
+            {hasBackendInProgress && !isSelectionRunning ? (
+              <Badge variant="secondary">Unidades en progreso en backend</Badge>
+            ) : null}
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-        <Card>
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.25fr_0.75fr]">
+        <Card className="overflow-hidden border-2 shadow-sm">
           <CardHeader>
             <CardTitle className="text-xl flex items-center gap-2">
-              <FileText className="w-5 h-5 text-primary" />
-              Contexto de generación
+              <Sparkles className="w-5 h-5 text-primary" />
+              Crear Snapshot
             </CardTitle>
             <CardDescription>
-              Define tema, catálogo y nivel pedagógico desde una misma superficie.
+              Define el alcance operativo con bloques separados y legibles. Algunas unidades pueden quedar en ok
+              automáticamente por reutilización de preguntas existentes.
             </CardDescription>
           </CardHeader>
-
           <CardContent className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Categoría</Label>
-                <Select value={category} onValueChange={setCategory}>
-                  <SelectTrigger className="h-12 border-2">
-                    <SelectValue placeholder="Selecciona categoría" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availableCategories.map((categoryOption) => (
-                      <SelectItem key={categoryOption} value={categoryOption}>
-                        {categoryOption}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+            {isLoadingConfig ? (
+              <div className="rounded-md border border-dashed p-5 text-sm text-muted-foreground">Cargando configuración...</div>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 gap-4 rounded-2xl border bg-muted/20 p-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Categoría</Label>
+                    <Select
+                      value={draft.category}
+                      onValueChange={(value) =>
+                        setDraft((prev) => ({
+                          ...prev,
+                          category: value,
+                          subtopic: '__ALL__',
+                        }))
+                      }
+                    >
+                      <SelectTrigger className="h-12 border-2 bg-background">
+                        <SelectValue placeholder="Selecciona categoría" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableCategories.map((category) => (
+                          <SelectItem key={category} value={category}>
+                            {category}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Subtópico</Label>
+                    <Select
+                      value={draft.subtopic}
+                      onValueChange={(value) => setDraft((prev) => ({ ...prev, subtopic: value }))}
+                      disabled={!draft.category}
+                    >
+                      <SelectTrigger className="h-12 border-2 bg-background">
+                        <SelectValue placeholder="Selecciona subtópico" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__ALL__">Toda la categoría</SelectItem>
+                        {availableSubtopics.map((subtopic) => (
+                          <SelectItem key={subtopic} value={subtopic}>
+                            {subtopic}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
 
-              <div className="space-y-2">
-                <Label>Subtópico</Label>
-                <Select
-                  value={subtopic}
-                  onValueChange={setSubtopic}
-                  disabled={!category || availableSubtopics.length === 0}
-                >
-                  <SelectTrigger className="h-12 border-2">
-                    <SelectValue placeholder="Selecciona subtópico" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availableSubtopics.map((subtopicOption) => (
-                      <SelectItem key={subtopicOption} value={subtopicOption}>
-                        {subtopicOption}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
+                <div className="rounded-2xl border bg-card p-4 shadow-sm">
+                  <div className="mb-4 flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-semibold">Dificultades objetivo</h3>
+                      <p className="text-xs text-muted-foreground">Selecciona el rango de complejidad para el snapshot.</p>
+                    </div>
+                    <Badge variant="outline">{draft.targetDifficulties.length} seleccionadas</Badge>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+                    {DIFFICULTY_OPTIONS.map((difficulty) => {
+                      const checked = draft.targetDifficulties.includes(difficulty);
+                      return (
+                        <label
+                          key={difficulty}
+                          className={cn(
+                            'flex cursor-pointer items-center gap-3 rounded-xl border p-3 text-sm transition-colors',
+                            checked ? 'border-primary bg-primary/5 shadow-sm' : 'hover:bg-muted/40'
+                          )}
+                        >
+                          <Checkbox
+                            checked={checked}
+                            onCheckedChange={(nextValue) => {
+                              const shouldInclude = Boolean(nextValue);
+                              if (difficulty === Difficulty.DIFICIL && shouldInclude && !checked) {
+                                if (!hardDifficultyPendingConfirm) {
+                                  setHardDifficultyPendingConfirm(true);
+                                  toast.info('Haz click nuevamente en "Difícil" para confirmar su inclusión.');
+                                  return;
+                                }
+                                setHardDifficultyPendingConfirm(false);
+                              }
+                              if (difficulty !== Difficulty.DIFICIL || !shouldInclude) {
+                                setHardDifficultyPendingConfirm(false);
+                              }
+                              setDraft((prev) => {
+                                const next = shouldInclude
+                                  ? [...prev.targetDifficulties, difficulty]
+                                  : prev.targetDifficulties.filter((item) => item !== difficulty);
+                                return { ...prev, targetDifficulties: Array.from(new Set(next)) };
+                              });
+                            }}
+                          />
+                          <div className="flex flex-1 items-center justify-between gap-2">
+                            <span className="font-medium">{difficulty}</span>
+                            {checked ? <Badge variant="secondary">Activo</Badge> : null}
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
 
-            <div className="space-y-3">
-              <Label>Tema o contexto de la pregunta</Label>
-              <Textarea
-                value={userInput}
-                onChange={(event) => setUserInput(event.target.value)}
-                rows={9}
-                placeholder="Ej: Quiero preguntas sobre presupuesto para estudiantes universitarios, enfocadas en decisiones cotidianas, errores frecuentes y análisis de alternativas."
-                className="min-h-[240px] resize-y text-base leading-7"
-              />
-            </div>
+                <div className="rounded-2xl border bg-card p-4 shadow-sm">
+                  <div className="mb-4 flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-semibold">Tipos de pregunta</h3>
+                      <p className="text-xs text-muted-foreground">
+                        Define qué variantes admite el snapshot. Es opcional; si no eliges ninguna, el backend usa su valor por defecto.
+                      </p>
+                    </div>
+                    <Badge variant="outline">{availableQuestionTypes.length} disponibles</Badge>
+                  </div>
 
-            <div className="space-y-3">
-              <Label>Dificultad</Label>
-              <div className="flex flex-wrap gap-2">
-                {[Difficulty.FACIL, Difficulty.MEDIO, Difficulty.DIFICIL].map((level) => (
-                  <button
-                    key={level}
-                    type="button"
-                    onClick={() => setDifficulty(level)}
-                    className={cn(
-                      'rounded-full border px-4 py-2 text-sm font-medium transition-colors',
-                      difficulty === level
-                        ? getDifficultyTone(level)
-                        : 'border-border bg-background text-foreground hover:bg-muted'
+                  {availableQuestionTypes.length === 0 ? (
+                    <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
+                      No hay catálogo cargado. El backend usará su configuración por defecto.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                      {availableQuestionTypes.map((questionType) => {
+                        const checked = draft.questionTypes.includes(questionType);
+                        const displayLabel = formatQuestionTypeLabel(questionType);
+                        return (
+                          <label
+                            key={questionType}
+                            className={cn(
+                              'flex cursor-pointer items-start gap-3 rounded-xl border p-3 text-sm transition-colors',
+                              checked ? 'border-primary bg-primary/5 shadow-sm' : 'hover:bg-muted/40'
+                            )}
+                            title={questionType}
+                          >
+                            <Checkbox
+                              className="mt-0.5"
+                              checked={checked}
+                              onCheckedChange={(nextValue) => {
+                                const shouldInclude = Boolean(nextValue);
+                                setDraft((prev) => ({
+                                  ...prev,
+                                  questionTypes: shouldInclude
+                                    ? [...prev.questionTypes, questionType]
+                                    : prev.questionTypes.filter((item) => item !== questionType),
+                                }));
+                              }}
+                            />
+                            <div className="min-w-0 flex-1 space-y-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="font-medium">{displayLabel}</span>
+                                {checked ? <Badge variant="secondary">Incluido</Badge> : null}
+                              </div>
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-2xl border bg-card p-4 shadow-sm">
+                  <div className="mb-4">
+                    <h3 className="text-sm font-semibold">Entidades y relaciones</h3>
+                    <p className="text-xs text-muted-foreground">
+                      Ajusta si el snapshot debe considerar ambos componentes del grafo. Son opciones independientes de los tipos de pregunta.
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                    <label
+                      className={cn(
+                        'flex cursor-pointer items-center gap-3 rounded-xl border p-3 text-sm transition-colors',
+                        draft.includeEntities ? 'border-primary bg-primary/5 shadow-sm' : 'hover:bg-muted/40'
+                      )}
+                    >
+                      <Checkbox
+                        checked={draft.includeEntities}
+                        onCheckedChange={(value) => setDraft((prev) => ({ ...prev, includeEntities: Boolean(value) }))}
+                      />
+                      <span className="font-medium">Incluir entidades</span>
+                    </label>
+                    <label
+                      className={cn(
+                        'flex cursor-pointer items-center gap-3 rounded-xl border p-3 text-sm transition-colors',
+                        draft.includeRelations ? 'border-primary bg-primary/5 shadow-sm' : 'hover:bg-muted/40'
+                      )}
+                    >
+                      <Checkbox
+                        checked={draft.includeRelations}
+                        onCheckedChange={(value) => setDraft((prev) => ({ ...prev, includeRelations: Boolean(value) }))}
+                      />
+                      <span className="font-medium">Incluir relaciones</span>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2 justify-between">
+                  <Button variant="outline" onClick={handleClearState}>
+                    <RotateCcw className="w-4 h-4 mr-2" />
+                    Limpiar estado
+                  </Button>
+                  <Button onClick={handleCreateSnapshot} disabled={!canCreateSnapshot || isCreatingSnapshot}>
+                    {isCreatingSnapshot ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Sparkles className="w-4 h-4 mr-2" />
                     )}
-                  >
-                    {level}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {category && availableSubtopics.length === 0 && (
-              <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-300">
-                La categoría seleccionada no tiene subtópicos. Agrega al menos uno en la configuración.
-              </p>
+                    Crear snapshot
+                  </Button>
+                </div>
+              </>
             )}
-
           </CardContent>
         </Card>
 
-        <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-xl flex items-center gap-2">
-                <BrainCircuit className="w-5 h-5 text-primary" />
-                Parámetros y ejecución
-              </CardTitle>
-              <CardDescription>
-                Ajusta volumen, modelo y profundidad antes de generar.
-              </CardDescription>
-            </CardHeader>
-
-            <CardContent className="space-y-5">
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label>Cantidad de preguntas</Label>
-                  <Select
-                    value={String(questionCount)}
-                    onValueChange={(value) => setQuestionCount(Number(value))}
-                  >
-                    <SelectTrigger className="h-12 border-2">
-                      <SelectValue placeholder="Selecciona cantidad" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {QUESTION_COUNT_OPTIONS.map((option) => (
-                        <SelectItem key={option} value={option}>
-                          {option}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Modelo de generación</Label>
-                  <Select value={model} onValueChange={setModel}>
-                    <SelectTrigger className="h-12 border-2">
-                      <SelectValue placeholder="Selecciona modelo" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {MODEL_OPTIONS.map((modelOption) => (
-                        <SelectItem key={modelOption} value={modelOption}>
-                          {modelOption}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <div className="rounded-xl border bg-muted/20 p-4 space-y-4">
-                <div>
-                  <p className="text-sm font-medium">Resultados semánticos</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Número de coincidencias usadas para construir contexto.
-                  </p>
-                </div>
-                <Select
-                  value={String(semanticLimit)}
-                  onValueChange={(value) => setSemanticLimit(Number(value))}
-                >
-                  <SelectTrigger className="h-12 border-2 bg-background">
-                    <SelectValue placeholder="Límite" />
+        <Card className="border-2 shadow-sm">
+          <CardHeader>
+            <CardTitle className="text-xl">Snapshots activos</CardTitle>
+            <CardDescription>Selecciona el snapshot operativo actual.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_auto] lg:items-end">
+              <div className="space-y-2">
+                <Label>Snapshot</Label>
+                <Select value={activeSnapshotId} onValueChange={setActiveSnapshotId}>
+                  <SelectTrigger className="h-11 border-2">
+                    <SelectValue placeholder="Selecciona snapshot" />
                   </SelectTrigger>
                   <SelectContent>
-                    {SEMANTIC_LIMIT_OPTIONS.map((option) => (
-                      <SelectItem key={option} value={option}>
-                        {option}
+                    {snapshotsForSelect.map((snapshot) => (
+                      <SelectItem key={snapshot.snapshot_id} value={snapshot.snapshot_id}>
+                        {snapshot.category ? `${snapshot.category}` : 'Sin categoría'} ·{' '}
+                        {snapshot.subtopic ? snapshot.subtopic : 'General'} · u:{snapshot.unit_count} · e:
+                        {snapshot.entity_count} · r:{snapshot.relation_count}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
 
-                <div className="rounded-xl border bg-muted/20 p-4 space-y-3">
-                <div>
-                  <p className="text-sm font-medium">Profundidad semántica</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {semanticDepth === 1
-                      ? 'Recupera sólo el vecindario inmediato del concepto.'
-                      : 'Extiende la búsqueda hacia un segundo anillo de conexiones.'}
-                  </p>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {[1, 2].map((depthOption) => (
-                    <button
-                      key={depthOption}
-                      onClick={() => setSemanticDepth(depthOption as 1 | 2)}
-                      type="button"
-                      className={cn(
-                        'rounded-lg border px-4 py-3 text-sm font-medium transition-colors',
-                        semanticDepth === depthOption
-                          ? 'border-primary bg-primary text-primary-foreground'
-                          : 'border-border bg-background hover:bg-muted'
-                      )}
-                    >
-                      <div className="space-y-1 text-left">
-                        <p>{depthOption === 1 ? 'Directo' : 'Expandido'}</p>
-                        <p className="text-xs font-normal leading-5 opacity-80">
-                          {depthOption === 1
-                            ? 'Contexto inmediato'
-                            : 'Contexto ampliado'}
-                        </p>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-                <div className="rounded-lg border bg-background/70 p-3 text-xs leading-6 text-muted-foreground">
-                  {semanticDepth === 1 ? (
-                    <p>
-                      <span className="font-medium text-foreground">Directo:</span> toma el concepto encontrado y
-                      usa sólo sus conexiones inmediatas. Sirve cuando quieres un contexto más acotado, centrado en
-                      la entidad principal y en las relaciones que salen o llegan directamente a ella.
-                    </p>
-                  ) : (
-                    <p>
-                      <span className="font-medium text-foreground">Expandido:</span> parte del mismo contexto
-                      inmediato, pero además sigue las conexiones de las entidades vecinas para incorporar un segundo
-                      nivel de relación. Eso entrega una red semántica más amplia y útil cuando el tema necesita más
-                      contexto alrededor.
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              {job && (
-                <div className="space-y-3 border rounded-xl p-4 bg-muted/20">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline">
-                        {job.status === 'queued'
-                          ? 'En cola'
-                          : job.status === 'running'
-                            ? 'En progreso'
-                            : job.status === 'completed'
-                              ? 'Completado'
-                              : 'Error'}
-                      </Badge>
-                      <Badge variant="outline">{job.progress}%</Badge>
-                    </div>
-                    <span className="text-xs text-muted-foreground">job_id: {job.job_id}</span>
-                  </div>
-                  <Progress value={Math.max(0, Math.min(100, job.progress || 0))} />
-                  <p className="text-sm text-muted-foreground">
-                    {job.message || getStageLabel(job.stage)}
-                  </p>
-                  {job.status === 'failed' && job.error && (
-                    <p className="text-sm text-destructive">{job.error}</p>
-                  )}
-                </div>
-              )}
-
-              <div className="flex flex-wrap gap-2 justify-between">
-                <Button variant="outline" onClick={handleClearGeneratorState} disabled={isGenerating}>
-                  <RotateCcw className="w-4 h-4 mr-2" />
-                  Limpiar
-                </Button>
-                <Button onClick={handleGenerate} disabled={!canGenerate || isGenerating}>
-                  {isGenerating ? (
+              <div className="flex flex-wrap gap-2 lg:justify-end">
+                <Button
+                  variant="outline"
+                  onClick={handleRefreshSnapshot}
+                  disabled={!activeSnapshotId || isRefreshingSnapshot}
+                >
+                  {isRefreshingSnapshot ? (
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                   ) : (
-                    <Sparkles className="w-4 h-4 mr-2" />
+                    <RefreshCw className="w-4 h-4 mr-2" />
                   )}
-                  Generar preguntas
+                  Actualizar
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => setSnapshotToDelete(activeSnapshotMetadata)}
+                  disabled={!activeSnapshotId || deletingSnapshotId === activeSnapshotId || isDeletingSnapshot}
+                >
+                  {deletingSnapshotId === activeSnapshotId ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-4 h-4 mr-2" />
+                  )}
+                  Eliminar
+                </Button>
+                {ENABLE_LEGACY_AUTORUN ? (
+                  <Badge variant="outline">Modo legacy habilitado</Badge>
+                ) : null}
+              </div>
+            </div>
+            <div className="rounded-lg border p-3 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm font-medium">Mantenimiento</p>
+                <Button variant="outline" onClick={handleBackfillOrigins} disabled={isBackfillingOrigins}>
+                  {isBackfillingOrigins ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                  Backfill Orígenes
                 </Button>
               </div>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-
-      {result && (
-        <Card>
-          <CardHeader className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-            <div className="space-y-1">
-              <CardTitle className="text-xl flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-primary" />
-                Resultado de generación
-              </CardTitle>
-              <CardDescription>Preguntas creadas y guardadas con estado en revisión.</CardDescription>
+              <label className="flex items-center gap-2 text-sm">
+                <Checkbox checked={backfillForce} onCheckedChange={(v) => setBackfillForce(Boolean(v))} />
+                Forzar sobrescritura (force=true)
+              </label>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <Badge variant="outline">Preguntas: {displayedGeneratedCount}</Badge>
-              <Badge variant="outline">Semantic total: {result.semantic_total}</Badge>
-              <Badge variant="outline">{result.used_model}</Badge>
-            </div>
-          </CardHeader>
 
-          <CardContent className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div className="rounded-xl border bg-muted/20 p-4">
-                <p className="text-xs text-muted-foreground">Generadas</p>
-                <p className="mt-2 text-2xl font-semibold">{displayedGeneratedCount}</p>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+              <div className="rounded-lg border px-3 py-2 text-sm">
+                <p className="text-xs text-muted-foreground">Velocidad</p>
+                <p className="font-semibold">{unitsPerMinute} unidades/min</p>
               </div>
-              <div className="rounded-xl border bg-muted/20 p-4">
-                <p className="text-xs text-muted-foreground">Modelo usado</p>
-                <p className="mt-2 text-base font-semibold">{result.used_model}</p>
+              <div className="rounded-lg border px-3 py-2 text-sm">
+                <p className="text-xs text-muted-foreground">Errores consecutivos</p>
+                <p className="font-semibold">
+                  {selectionConsecutiveErrors}
+                </p>
               </div>
-              <div className="rounded-xl border bg-muted/20 p-4">
-                <p className="text-xs text-muted-foreground">Primera creación</p>
-                <p className="mt-2 text-sm font-semibold">
-                  {result.questions[0] ? new Date(result.questions[0].created_at).toLocaleString('es-CL') : '-'}
+              <div className="rounded-lg border px-3 py-2 text-sm">
+                <p className="text-xs text-muted-foreground">Última ejecución</p>
+                <p className="font-semibold truncate">
+                  {selectionLastRunInfo
+                    ? `${selectionLastRunInfo.unitId} · ${selectionLastRunInfo.status} · ${new Date(selectionLastRunInfo.at).toLocaleTimeString('es-CL')}`
+                    : 'Sin ejecuciones'}
                 </p>
               </div>
             </div>
 
-            <Accordion type="multiple" className="w-full rounded-md border px-4">
-              {result.questions.map((question, questionIndex) => (
-                <AccordionItem key={question.id} value={`question-${question.id}`}>
-                  <AccordionTrigger className="hover:no-underline">
-                    <div className="flex flex-wrap items-center gap-2 pr-3 text-left">
-                      <Badge variant="outline">#{questionIndex + 1}</Badge>
-                      <span className={cn('rounded-full border px-3 py-1 text-xs font-medium', getDifficultyTone(question.difficulty as Difficulty))}>
-                        {question.difficulty}
-                      </span>
-                      <span className="text-sm text-muted-foreground line-clamp-1">
-                        {question.question}
-                      </span>
-                    </div>
-                  </AccordionTrigger>
-                  <AccordionContent className="space-y-4">
-                    <div>
-                      <h3 className="font-semibold mb-2">Pregunta</h3>
-                      <p className="text-muted-foreground leading-7">{question.question}</p>
-                    </div>
+            {activeSnapshotViewModel ? (
+              <div className="rounded-lg border bg-muted/10 p-3 space-y-3">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <div className="rounded-md border bg-background px-3 py-2">
+                    <p className="text-xs text-muted-foreground">Categoría</p>
+                    <p className="text-sm font-semibold">{activeSnapshotViewModel.category || 'N/A'}</p>
+                  </div>
+                  <div className="rounded-md border bg-background px-3 py-2">
+                    <p className="text-xs text-muted-foreground">Subtópico</p>
+                    <p className="text-sm font-semibold">{activeSnapshotViewModel.subtopic || 'General'}</p>
+                  </div>
+                </div>
 
-                    <div>
-                      <h3 className="font-semibold mb-2">Alternativas</h3>
-                      <div className="grid gap-3 xl:grid-cols-2">
-                        {question.alternatives.map((alternative, alternativeIndex) => (
-                          <div key={`${question.id}-${alternativeIndex}`} className="border border-border rounded-xl p-4 bg-muted/20">
-                            <div className="flex items-center gap-2 mb-2">
-                              <Badge variant={alternative.is_correct ? 'default' : 'secondary'}>
-                                {alternative.is_correct ? 'Correcta' : 'Incorrecta'}
-                              </Badge>
-                            </div>
-                            <p className="font-medium leading-6">{alternative.text}</p>
-                            <p className="text-sm text-muted-foreground mt-2 leading-6">{alternative.feedback}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  <div className="rounded-md border bg-background px-3 py-2">
+                    <p className="text-xs text-muted-foreground">Entidades</p>
+                    <p className="text-sm font-semibold">{activeSnapshotViewModel.entity_count}</p>
+                  </div>
+                  <div className="rounded-md border bg-background px-3 py-2">
+                    <p className="text-xs text-muted-foreground">Relaciones</p>
+                    <p className="text-sm font-semibold">{activeSnapshotViewModel.relation_count}</p>
+                  </div>
+                  <div className="rounded-md border bg-background px-3 py-2">
+                    <p className="text-xs text-muted-foreground">Units</p>
+                    <p className="text-sm font-semibold">{activeSnapshotViewModel.unit_count}</p>
+                  </div>
+                  <div className="rounded-md border bg-background px-3 py-2">
+                    <p className="text-xs text-muted-foreground">Refresh</p>
+                    <p className="text-sm font-semibold">{activeSnapshotViewModel.refresh_count}</p>
+                  </div>
+                </div>
 
-                    <div className="rounded-xl border bg-muted/20 p-4 space-y-2">
-                      <h3 className="font-semibold">Metadata pedagógica</h3>
-                      <p className="text-sm text-muted-foreground">
-                        <span className="font-medium text-foreground">rag_reference:</span>{' '}
-                        {question.pedagogic_metadata.rag_reference}
-                      </p>
-                      <p className="text-sm text-muted-foreground whitespace-pre-wrap leading-6">
-                        <span className="font-medium text-foreground">complete_explanation:</span>{' '}
-                        {question.pedagogic_metadata.complete_explanation}
-                      </p>
-                    </div>
-                  </AccordionContent>
-                </AccordionItem>
-              ))}
-            </Accordion>
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant={activeSnapshotViewModel.include_entities ? 'secondary' : 'outline'}>
+                    Entidades: {activeSnapshotViewModel.include_entities ? 'Incluidas' : 'No incluidas'}
+                  </Badge>
+                  <Badge variant={activeSnapshotViewModel.include_relations ? 'secondary' : 'outline'}>
+                    Relaciones: {activeSnapshotViewModel.include_relations ? 'Incluidas' : 'No incluidas'}
+                  </Badge>
+                </div>
 
-            <Accordion type="single" collapsible className="w-full rounded-md border px-4">
-              <AccordionItem value="raw-output">
-                <AccordionTrigger className="hover:no-underline">
-                  <span className="font-semibold">Raw Output</span>
-                </AccordionTrigger>
-                <AccordionContent>
-                  <pre className="text-xs bg-muted/50 border border-border rounded-md p-3 overflow-x-auto">
-                    {result.raw_output}
-                  </pre>
-                </AccordionContent>
-              </AccordionItem>
-            </Accordion>
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground">Dificultades objetivo</p>
+                  <div className="flex flex-wrap gap-2">
+                    {activeSnapshotViewModel.target_difficulties.length > 0 ? (
+                      activeSnapshotViewModel.target_difficulties.map((item) => (
+                        <Badge key={`difficulty-${item}`} variant="outline">
+                          {item}
+                        </Badge>
+                      ))
+                    ) : (
+                      <Badge variant="outline">Sin definir</Badge>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground">Tipos de pregunta</p>
+                  <div className="flex flex-wrap gap-2">
+                    {activeSnapshotViewModel.question_types.length > 0 ? (
+                      activeSnapshotViewModel.question_types.map((item) => (
+                        <Badge key={`qtype-${item}`} variant="outline">
+                          {item}
+                        </Badge>
+                      ))
+                    ) : (
+                      <Badge variant="outline">Sin definir</Badge>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </CardContent>
         </Card>
-      )}
+      </div>
+
+      <Card className="border-2 shadow-sm">
+        <CardHeader>
+          <CardTitle>Generación por Lote (Selección)</CardTitle>
+          <CardDescription>
+            Crea un lote de unidades del snapshot activo y ejecútalo una por una con control local de concurrencia.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <div className="space-y-2">
+              <Label>Cantidad de unidades</Label>
+              <Input
+                type="number"
+                min={1}
+                value={selectionDraft.count}
+                onChange={(e) =>
+                  setSelectionDraft((prev) => ({ ...prev, count: Math.max(1, Number(e.target.value) || 1) }))
+                }
+              />
+              <p className="text-xs text-muted-foreground">
+                Define cuántas unidades se intentarán reservar para este lote.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label>Tipo de unidad</Label>
+              <Select
+                value={selectionDraft.unitKind}
+                onValueChange={(value) =>
+                  setSelectionDraft((prev) => ({ ...prev, unitKind: value as 'all' | 'entity' | 'relation' }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas</SelectItem>
+                  <SelectItem value="entity">Entidad</SelectItem>
+                  <SelectItem value="relation">Relación</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Elige si el lote incluirá entidades, relaciones o ambos tipos.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label>Concurrencia de ejecución</Label>
+              <Select
+                value={String(selectionConcurrency)}
+                onValueChange={(value) => setSelectionConcurrency(Math.max(1, Math.min(3, Number(value) || 1)))}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">1</SelectItem>
+                  <SelectItem value="2">2</SelectItem>
+                  <SelectItem value="3">3</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Controla cuántas unidades se ejecutan al mismo tiempo (recomendado: 1 para mayor estabilidad).
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border bg-card p-4 shadow-sm">
+            <p className="text-sm font-semibold mb-2">Dificultades del lote</p>
+            <p className="mb-3 text-xs text-muted-foreground">
+              Filtra las unidades por nivel de dificultad para enfocar la generación.
+            </p>
+            <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+              {DIFFICULTY_OPTIONS.map((difficulty) => {
+                const checked = selectionDraft.difficulties.includes(difficulty);
+                return (
+                  <label key={`selection-difficulty-${difficulty}`} className="flex items-center gap-2 rounded-lg border p-2">
+                    <Checkbox
+                      checked={checked}
+                      onCheckedChange={(next) => {
+                        const shouldInclude = Boolean(next);
+                        setSelectionDraft((prev) => ({
+                          ...prev,
+                          difficulties: shouldInclude
+                            ? Array.from(new Set([...prev.difficulties, difficulty]))
+                            : prev.difficulties.filter((item) => item !== difficulty),
+                        }));
+                      }}
+                    />
+                    <span>{difficulty}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border bg-card p-4 shadow-sm">
+            <p className="text-sm font-semibold mb-2">Tipos de pregunta del lote</p>
+            <p className="mb-3 text-xs text-muted-foreground">
+              Limita el lote a tipos específicos de pregunta según el objetivo pedagógico.
+            </p>
+            <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+              {availableQuestionTypes.map((questionType) => {
+                const checked = selectionDraft.questionTypes.includes(questionType);
+                return (
+                  <label key={`selection-qtype-${questionType}`} className="flex items-center gap-2 rounded-lg border p-2">
+                    <Checkbox
+                      checked={checked}
+                      onCheckedChange={(next) => {
+                        const shouldInclude = Boolean(next);
+                        setSelectionDraft((prev) => ({
+                          ...prev,
+                          questionTypes: shouldInclude
+                            ? Array.from(new Set([...prev.questionTypes, questionType]))
+                            : prev.questionTypes.filter((item) => item !== questionType),
+                        }));
+                      }}
+                    />
+                    <span>{formatQuestionTypeLabel(questionType)}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox
+              checked={selectionDraft.includeFailed}
+              onCheckedChange={(next) => setSelectionDraft((prev) => ({ ...prev, includeFailed: Boolean(next) }))}
+            />
+            Incluir unidades previamente fallidas
+          </label>
+          <p className="text-xs text-muted-foreground">
+            Si está activo, el lote también puede tomar unidades que fallaron en ejecuciones anteriores.
+          </p>
+
+          <div className="flex flex-wrap gap-2">
+            <div className="min-w-[280px] space-y-2">
+              <Label>Selección del snapshot activo</Label>
+              <Select value={activeSelectionId} onValueChange={handleSelectSelection}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecciona una selección existente" />
+                </SelectTrigger>
+                <SelectContent>
+                  {snapshotSelectionIds.map((selectionId) => (
+                    <SelectItem key={`selection-option-${selectionId}`} value={selectionId}>
+                      {selectionId}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Solo se muestran selecciones asociadas a la snapshot activa.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={handleCreateSelection} disabled={!activeSnapshotId || isCreatingSelection}>
+              {isCreatingSelection ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
+              Crear selección
+            </Button>
+            {!isSelectionRunning ? (
+              <Button variant="secondary" onClick={handleRunSelection} disabled={!activeSelectionId}>
+                <Play className="h-4 w-4 mr-2" />
+                Ejecutar selección
+              </Button>
+            ) : (
+              <Button variant="destructive" onClick={stopSelectionRunner}>
+                <StopCircle className="h-4 w-4 mr-2" />
+                Detener ejecución
+              </Button>
+            )}
+            <Button variant="outline" onClick={handleCancelSelection} disabled={!activeSelectionId}>
+              Cancelar selección
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => (activeSelectionId ? void loadSelectionProgress(activeSelectionId) : undefined)}
+              disabled={!activeSelectionId || isSelectionPolling}
+            >
+              {isSelectionPolling ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+              Refrescar selección
+            </Button>
+          </div>
+
+          <div className="rounded-xl border bg-muted/10 p-4 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-xs text-muted-foreground">Selección activa</p>
+                <p className="text-sm font-semibold truncate">{activeSelectionId || '-'}</p>
+              </div>
+              <Badge variant={isSelectionRunning || hasBackendInProgress ? 'secondary' : 'outline'}>
+                {isSelectionRunning
+                  ? 'Ejecución activa'
+                  : hasBackendInProgress
+                    ? 'Unidades en progreso'
+                    : 'Ejecución detenida'}
+              </Badge>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Badge variant="outline">Total: {selectionSnapshot?.total_units ?? localSelectionStats.total}</Badge>
+              <Badge variant="outline">Pendientes: {selectionSnapshot?.pending_units ?? localSelectionStats.pending}</Badge>
+              <Badge variant="outline">
+                En progreso: {selectionSnapshot?.in_progress_units ?? localSelectionStats.inProgress}
+              </Badge>
+              <Badge variant="outline">Correctas: {selectionSnapshot?.ok_units ?? localSelectionStats.ok}</Badge>
+              <Badge variant="outline">Fallidas: {selectionSnapshot?.failed_units ?? localSelectionStats.failed}</Badge>
+            </div>
+
+            {selectionSnapshot ? (
+              <div className="rounded-lg border bg-background p-3 space-y-3">
+                <p className="text-xs text-muted-foreground">Metadata de la selección</p>
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant="outline">Estado: {selectionSnapshot.status}</Badge>
+                  <Badge variant="outline">Solicitadas: {selectionSnapshot.requested_count}</Badge>
+                  <Badge variant="outline">Reservadas: {selectionSnapshot.claimed_count}</Badge>
+                  <Badge variant="outline">Snapshot: {selectionSnapshot.snapshot_id}</Badge>
+                </div>
+                {(() => {
+                  const filters = parseSelectionFilters(selectionSnapshot);
+                  return (
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap gap-2">
+                        <Badge variant="secondary">
+                          Tipo unidad: {filters.unitKindRaw ? formatUnitKindLabel(filters.unitKindRaw) : 'Todas'}
+                        </Badge>
+                        <Badge variant="secondary">
+                          Incluir fallidas: {typeof filters.includeFailed === 'boolean' ? (filters.includeFailed ? 'Sí' : 'No') : 'No definido'}
+                        </Badge>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground">Dificultades filtro</p>
+                        <div className="flex flex-wrap gap-2">
+                          {filters.difficulties.length > 0 ? (
+                            filters.difficulties.map((item) => (
+                              <Badge key={`selection-filter-difficulty-${item}`} variant="outline">
+                                {item}
+                              </Badge>
+                            ))
+                          ) : (
+                            <Badge variant="outline">Sin filtro</Badge>
+                          )}
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground">Tipos de pregunta filtro</p>
+                        <div className="flex flex-wrap gap-2">
+                          {filters.questionTypes.length > 0 ? (
+                            filters.questionTypes.map((item) => (
+                              <Badge key={`selection-filter-question-type-${item}`} variant="outline">
+                                {formatQuestionTypeLabel(item)}
+                              </Badge>
+                            ))
+                          ) : (
+                            <Badge variant="outline">Sin filtro</Badge>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            ) : null}
+
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Completitud del lote</span>
+                <span className="font-medium">{selectionCompletion}%</span>
+              </div>
+              <Progress value={selectionCompletion} />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-2 shadow-sm">
+        <CardHeader>
+          <CardTitle>Unidades del lote activo</CardTitle>
+          <CardDescription>
+            Listado filtrable de unidades pertenecientes a la selección activa del snapshot.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex justify-end">
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button
+                variant="secondary"
+                onClick={handleRetryFailedUnitsAndRun}
+                disabled={!activeSnapshotId || !activeSelectionId || isPolling || isSelectionRunning || isRetryingFailedUnits}
+              >
+                {isRetryingFailedUnits ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />}
+                Reintentar fallidas y ejecutar
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => void loadUnitsList(activeSnapshotId, activeSelectionId)}
+                disabled={!activeSnapshotId || !activeSelectionId || isPolling}
+              >
+                {isPolling ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Cargar/actualizar unidades del lote
+              </Button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+            <div className="space-y-2">
+              <Label>Estado</Label>
+              <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as StatusFilter)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  <SelectItem value="pending">Pendiente</SelectItem>
+                  <SelectItem value="in_progress">En progreso</SelectItem>
+                  <SelectItem value="ok">Correcta</SelectItem>
+                  <SelectItem value="failed">Con error</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Dificultad</Label>
+              <Select value={difficultyFilter} onValueChange={setDifficultyFilter}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas</SelectItem>
+                  {uniqueDifficulties.map((difficulty) => (
+                    <SelectItem key={difficulty} value={difficulty}>
+                      {difficulty}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Tipo de pregunta</Label>
+              <Select value={questionTypeFilter} onValueChange={setQuestionTypeFilter}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  {uniqueQuestionTypes.map((questionType) => (
+                    <SelectItem key={questionType} value={questionType}>
+                      {formatDisplayLabel(questionType, QUESTION_TYPE_LABELS)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Tipo de unidad</Label>
+              <Select value={unitKindFilter} onValueChange={setUnitKindFilter}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  {uniqueUnitKinds.map((unitKind) => (
+                    <SelectItem key={unitKind} value={unitKind}>
+                      {formatUnitKindLabel(unitKind)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {isPolling ? (
+            <div className="rounded-md border border-dashed p-5 text-sm text-muted-foreground">Actualizando unidades del lote...</div>
+          ) : !activeSelectionId ? (
+            <div className="rounded-md border border-dashed p-5 text-sm text-muted-foreground">
+              No hay lote activo. Crea una selección para ver sus unidades.
+            </div>
+          ) : filteredUnits.length === 0 ? (
+            <div className="rounded-md border border-dashed p-5 text-sm text-muted-foreground">
+              No hay unidades para el lote/filtros seleccionados.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {filteredUnits.map((unit, index) => (
+                <div
+                  key={`${unit.unit_id || 'unit'}-${unit.snapshot_id || 'snapshot'}-${unit.question_type || unit.unit_kind || 'kind'}-${index}`}
+                  className="grid gap-3 rounded-lg border p-3 md:grid-cols-[1.4fr_0.9fr_0.9fr_0.9fr_auto] md:items-center"
+                >
+                  <div className="space-y-1">
+                    <p className="font-medium text-sm">{unit.unit_id}</p>
+                    <p className="text-xs text-muted-foreground">
+                      intentos: {unit.attempts ?? 0}/{unit.max_attempts ?? 0}
+                    </p>
+                    {unit.last_error ? <p className="text-xs text-destructive">{unit.last_error}</p> : null}
+                  </div>
+                  <Badge variant="outline">{formatStatusLabel(unit.status)}</Badge>
+                  <Badge variant="outline">{unit.difficulty || '-'}</Badge>
+                  <Badge variant="outline">
+                    {unit.question_type
+                      ? formatDisplayLabel(unit.question_type, QUESTION_TYPE_LABELS)
+                      : unit.unit_kind
+                        ? formatUnitKindLabel(unit.unit_kind)
+                        : '-'}
+                  </Badge>
+                  <div className="flex gap-2 justify-end">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleExecuteUnit(unit.unit_id)}
+                      disabled={!activeSnapshotId || !unit.unit_id}
+                    >
+                      Ejecutar
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleRetryUnit(unit.unit_id)}
+                      disabled={!activeSnapshotId || !unit.unit_id}
+                    >
+                      Reintentar
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Atajo de operación</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Button asChild variant="outline">
+            <Link href="/admin/openai-logs">Ver trazas OpenAI</Link>
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Dialog
+        open={Boolean(snapshotToDelete)}
+        onOpenChange={(open) => {
+          if (!open && !isDeletingSnapshot) {
+            setSnapshotToDelete(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>¿Eliminar snapshot?</DialogTitle>
+            <DialogDescription>
+              Esta acción eliminará unidades/runs/selections del snapshot, pero no eliminará preguntas del banco.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rounded-md border p-3 text-sm space-y-1">
+            <p>
+              <span className="font-medium">Snapshot:</span> {snapshotToDelete?.snapshot_id || '-'}
+            </p>
+            <p>
+              <span className="font-medium">Categoría:</span> {snapshotToDelete?.category || 'N/A'}
+            </p>
+            <p>
+              <span className="font-medium">Subtópico:</span> {snapshotToDelete?.subtopic || 'General'}
+            </p>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setSnapshotToDelete(null)}
+              disabled={isDeletingSnapshot}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteSnapshot}
+              disabled={isDeletingSnapshot}
+            >
+              {isDeletingSnapshot ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Trash2 className="w-4 h-4 mr-2" />}
+              Confirmar eliminación
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

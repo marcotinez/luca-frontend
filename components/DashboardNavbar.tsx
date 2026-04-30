@@ -1,10 +1,9 @@
 'use client';
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
-import { useTheme } from "next-themes";
-import { User, LogOut, Sun, Moon, ChevronDown, ShieldCheck, BarChart3 } from 'lucide-react';
+import { User, LogOut, ChevronDown, ShieldCheck, Flame, House, BookOpen, PlusCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -23,30 +22,74 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { ThemeToggle } from "@/components/ThemeToggle";
+import { getPracticeTests } from "@/lib/learning.api";
+import { isDiagnosticPhaseFromTests } from "@/lib/learning.utils";
 
 export function DashboardNavbar() {
   const { user, logout } = useAuth();
   const router = useRouter();
-  const { theme, setTheme } = useTheme();
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [isDiagnosticPhase, setIsDiagnosticPhase] = useState(false);
 
   const userInitials = user?.email?.substring(0, 2).toUpperCase() || 'LU';
+  const currentStreak = user?.gamification.current_streak || 0;
+  const streakIsActive = currentStreak > 0;
+
+  useEffect(() => {
+    if (!user) return;
+    let mounted = true;
+
+    const loadPhase = async () => {
+      try {
+        const tests = await getPracticeTests();
+        if (mounted) {
+          setIsDiagnosticPhase(isDiagnosticPhaseFromTests(tests));
+        }
+      } catch {
+        if (mounted) {
+          setIsDiagnosticPhase(false);
+        }
+      }
+    };
+
+    void loadPhase();
+    return () => {
+      mounted = false;
+    };
+  }, [user]);
 
   return (
     <>
       <header className="bg-card border-b border-border sticky top-0 z-40 transition-colors">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div
-            className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
-            onClick={() => router.push('/dashboard')}
-          >
-            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-              <span className="text-primary-foreground font-bold italic">L</span>
+          <div className="flex items-center gap-4">
+            <div
+              className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
+              onClick={() => router.push('/dashboard')}
+            >
+              <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
+                <span className="text-primary-foreground font-bold italic">L</span>
+              </div>
+              <span className="text-xl font-bold tracking-tight">Luca</span>
             </div>
-            <span className="text-xl font-bold tracking-tight">Luca</span>
+
+            {/* Racha al lado del logo */}
+            <div
+              className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-sm font-bold transition-colors ${
+                streakIsActive
+                  ? "border-orange-200 bg-orange-50 text-orange-600 dark:border-orange-500/25 dark:bg-orange-500/10 dark:text-orange-400"
+                  : "border-border bg-muted/30 text-muted-foreground"
+              }`}
+            >
+              <Flame className={`h-4 w-4 ${streakIsActive ? "text-orange-500" : "text-muted-foreground"}`} />
+              <span>{currentStreak}</span>
+            </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <ThemeToggle compact />
+
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="relative h-10 w-auto gap-2 px-2 rounded-full hover:bg-accent transition-colors">
@@ -68,15 +111,27 @@ export function DashboardNavbar() {
                   </div>
                 </DropdownMenuLabel>
 
-                {/* 1. Perfil */}
-                <DropdownMenuItem onClick={() => router.push('/perfil')} className="cursor-pointer py-2.5">
-                  <User className="mr-2 h-4 w-4" />
-                  <span>Perfil</span>
+                {/* Menú principal */}
+                <DropdownMenuItem onClick={() => router.push('/dashboard')} className="cursor-pointer py-2.5">
+                  <House className="mr-2 h-4 w-4" />
+                  <span>Inicio</span>
                 </DropdownMenuItem>
 
-                <DropdownMenuItem onClick={() => router.push('/profile/progress')} className="cursor-pointer py-2.5">
-                  <BarChart3 className="mr-2 h-4 w-4" />
-                  <span>Progreso</span>
+                {!isDiagnosticPhase ? (
+                  <DropdownMenuItem onClick={() => router.push('/practice/new')} className="cursor-pointer py-2.5 my-1 bg-primary/10 text-primary focus:bg-primary/20 focus:text-primary rounded-md font-bold border border-primary/20 shadow-sm">
+                    <PlusCircle className="mr-2 h-4 w-4" />
+                    <span>Crear Evaluación</span>
+                  </DropdownMenuItem>
+                ) : null}
+
+                <DropdownMenuItem onClick={() => router.push('/perfil')} className="cursor-pointer py-2.5">
+                  <User className="mr-2 h-4 w-4" />
+                  <span>Progreso y Perfil</span>
+                </DropdownMenuItem>
+
+                <DropdownMenuItem onClick={() => router.push('/temario')} className="cursor-pointer py-2.5">
+                  <BookOpen className="mr-2 h-4 w-4" />
+                  <span>¿Qué aprenderás?</span>
                 </DropdownMenuItem>
 
                 {/* 1.5 Modo Administrador (Solo si es superuser) */}
@@ -89,24 +144,6 @@ export function DashboardNavbar() {
                     <span>Modo Administrador</span>
                   </DropdownMenuItem>
                 )}
-
-                {/* 2. Dark Mode */}
-                <DropdownMenuItem
-                  onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-                  className="cursor-pointer py-2.5"
-                >
-                  {theme === "dark" ? (
-                    <>
-                      <Sun className="mr-2 h-4 w-4 text-amber-500" />
-                      <span>Modo Claro</span>
-                    </>
-                  ) : (
-                    <>
-                      <Moon className="mr-2 h-4 w-4 text-slate-600" />
-                      <span>Modo Oscuro</span>
-                    </>
-                  )}
-                </DropdownMenuItem>
 
                 <DropdownMenuSeparator />
 

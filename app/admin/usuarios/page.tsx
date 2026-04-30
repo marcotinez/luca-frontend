@@ -4,8 +4,10 @@ import * as z from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { useState, useEffect } from "react";
-import { getUsers, deleteUser, toggleUserStatus, createUser, updateUser } from "@/lib/users.api";
-import { UserResponse, EducationLevel, FinancialTopic, RegisterRequest } from "@/types";
+import { getUsers, deleteUser, hardDeleteUser, toggleUserStatus, createUser, updateUser } from "@/lib/users.api";
+import { getRegistrationTaxonomy } from "@/lib/auth.api";
+import { normalizeRuntimeTaxonomy, type RuntimeTaxonomy } from "@/lib/taxonomy.utils";
+import { UserResponse, EducationLevel, RegisterRequest } from "@/types";
 
 // Design Components
 import { Trash2, UserX, UserCheck, Mail, Calendar, Shield,
@@ -28,6 +30,8 @@ export default function UsuariosPage() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [hardDeleteId, setHardDeleteId] = useState<string | null>(null);
+  const [taxonomy, setTaxonomy] = useState<RuntimeTaxonomy>({ categories: [], subtopicsByCategory: {} });
 
   // Estados para Creación/Edición
   const [isUserDialogOpen, setIsUserDialogOpen] = useState(false);
@@ -38,7 +42,7 @@ export default function UsuariosPage() {
     password: z.string().min(6, "Mínimo 6 caracteres").optional().or(z.literal("")),
     age: z.number().min(18).max(120),
     education_level: z.enum(EducationLevel),
-    interests: z.array(z.enum(FinancialTopic)).min(1, "Selecciona al menos uno"),
+    interests: z.array(z.string()).min(1, "Selecciona al menos uno"),
   });
 
   type UserFormValues = z.infer<typeof userSchema>;
@@ -59,7 +63,7 @@ export default function UsuariosPage() {
       setLoading(true);
       const data = await getUsers();
       setUsuarios(data);
-    } catch (error) {
+    } catch {
       toast.error("Error al cargar los usuarios");
     } finally {
       setLoading(false);
@@ -70,12 +74,30 @@ export default function UsuariosPage() {
     fetchUsuarios();
   }, []);
 
+  useEffect(() => {
+    const loadTaxonomy = async () => {
+      try {
+        const response = await getRegistrationTaxonomy();
+        setTaxonomy(
+          normalizeRuntimeTaxonomy({
+            categories: response.categories,
+            subtopics: response.subtopics,
+          }),
+        );
+      } catch {
+        toast.error("No se pudieron cargar las categorías de usuario");
+      }
+    };
+
+    loadTaxonomy();
+  }, []);
+
   const handleToggleStatus = async (usuario: UserResponse) => {
     try {
       await toggleUserStatus(usuario.id);
       toast.success(`Estado de ${usuario.email} actualizado`);
       fetchUsuarios();
-    } catch (error) {
+    } catch {
       toast.error("Error al actualizar el estado");
     }
   };
@@ -84,12 +106,25 @@ export default function UsuariosPage() {
     if (!deleteId) return;
     try {
       await deleteUser(deleteId);
-      toast.success("Usuario eliminado");
+      toast.success("Usuario desactivado");
       fetchUsuarios();
-    } catch (error) {
-      toast.error("Error al eliminar el usuario");
+    } catch {
+      toast.error("Error al desactivar el usuario");
     } finally {
       setDeleteId(null);
+    }
+  };
+
+  const handleHardDelete = async () => {
+    if (!hardDeleteId) return;
+    try {
+      await hardDeleteUser(hardDeleteId);
+      toast.success("Usuario eliminado permanentemente");
+      fetchUsuarios();
+    } catch {
+      toast.error("Error al eliminar permanentemente el usuario");
+    } finally {
+      setHardDeleteId(null);
     }
   };
   const handleSaveUser = async (values: UserFormValues) => {
@@ -111,7 +146,7 @@ export default function UsuariosPage() {
       }
       setIsUserDialogOpen(false);
       fetchUsuarios();
-    } catch (error) {
+    } catch {
       toast.error("Error al guardar usuario");
     }
   };
@@ -259,11 +294,18 @@ export default function UsuariosPage() {
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
-                              className="text-destructive focus:text-destructive focus:bg-destructive/5"
+                              className="text-amber-600 focus:text-amber-700 focus:bg-amber-500/10"
                               onClick={() => setDeleteId(u.id)}
                             >
+                              <UserX className="w-4 h-4 mr-2" />
+                              Eliminar (desactivar)
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive focus:bg-destructive/5"
+                              onClick={() => setHardDeleteId(u.id)}
+                            >
                               <Trash2 className="w-4 h-4 mr-2" />
-                              Eliminar
+                              Eliminar permanentemente
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
@@ -280,15 +322,31 @@ export default function UsuariosPage() {
       <Dialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>¿Eliminar usuario?</DialogTitle>
+            <DialogTitle>¿Desactivar usuario?</DialogTitle>
             <DialogDescription>
-              Esta acción no se puede deshacer. Se eliminarán permanentemente los datos
-              del usuario y su progreso en el sistema.
+              El usuario quedará inactivo (soft delete) y no podrá iniciar sesión.
+              Sus datos se conservan.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2 sm:gap-0">
             <Button variant="outline" onClick={() => setDeleteId(null)}>Cancelar</Button>
-            <Button variant="destructive" onClick={handleDelete}>Confirmar Eliminación</Button>
+            <Button onClick={handleDelete}>Confirmar Desactivación</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!hardDeleteId} onOpenChange={(open) => !open && setHardDeleteId(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>¿Eliminar usuario permanentemente?</DialogTitle>
+            <DialogDescription>
+              Esta acción es irreversible. Se borrarán la cuenta, historial y progreso
+              del usuario de forma definitiva.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setHardDeleteId(null)}>Cancelar</Button>
+            <Button variant="destructive" onClick={handleHardDelete}>Eliminar Permanentemente</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -380,7 +438,7 @@ export default function UsuariosPage() {
                       <FormLabel>Temas de Interés</FormLabel>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 border border-border rounded-lg bg-muted/30">
-                    {Object.values(FinancialTopic).map((topic) => (
+                    {taxonomy.categories.map((topic) => (
                       <FormField
                         key={topic}
                         control={form.control}

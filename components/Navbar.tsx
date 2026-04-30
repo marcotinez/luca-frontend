@@ -3,13 +3,12 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Moon, Sun, MoveRight, Menu, X } from "lucide-react";
-import { useTheme } from "next-themes";
+import { MoveRight, Menu, X } from "lucide-react";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 export function Navbar() {
-  const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const pathname = usePathname();
@@ -39,20 +38,7 @@ export function Navbar() {
 
         {/* Desktop and Mobile Actions */}
         <div className="flex items-center gap-2 sm:gap-4">
-          {mounted && (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-              className="rounded-full"
-            >
-              {theme === "dark" ? (
-                <Sun className="w-5 h-5 text-amber-400" />
-              ) : (
-                <Moon className="w-5 h-5 text-muted-foreground" />
-              )}
-            </Button>
-          )}
+          {mounted ? <ThemeToggle compact /> : null}
 
           {/* Desktop Links */}
           <div className="hidden sm:flex items-center gap-2">

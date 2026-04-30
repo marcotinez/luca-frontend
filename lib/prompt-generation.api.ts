@@ -1,7 +1,9 @@
 import axios from 'axios';
+import { getApiBaseUrl } from '@/lib/api-base';
 import { Difficulty } from '@/types';
+import { getStoredToken } from '@/lib/auth-session.storage';
 
-const DEFAULT_BASE_URL = 'http://localhost:8000';
+const DEFAULT_BASE_URL = getApiBaseUrl();
 
 function resolveApiBase(baseUrl?: string) {
   const rawBaseUrl = baseUrl || process.env.NEXT_PUBLIC_API_URL || DEFAULT_BASE_URL;
@@ -11,61 +13,6 @@ function resolveApiBase(baseUrl?: string) {
 }
 
 const API_BASE = resolveApiBase();
-
-export interface GenerationQuestionRequest {
-  user_input: string;
-  category?: string;
-  subtopic?: string;
-  difficulty: Difficulty;
-  question_count?: number;
-  semantic_limit?: number;
-  semantic_depth?: 1 | 2;
-  model?: string;
-  output_schema?: Record<string, unknown>;
-  output_contract?: Record<string, unknown>;
-}
-
-export interface GeneratedAlternative {
-  text: string;
-  is_correct: boolean;
-  feedback: string;
-}
-
-export interface GeneratedQuestion {
-  id: string;
-  status: string;
-  category: string;
-  subtopic: string;
-  difficulty: Difficulty;
-  question: string;
-  alternatives: GeneratedAlternative[];
-  pedagogic_metadata: {
-    rag_reference: string;
-    complete_explanation: string;
-  };
-  created_at: string;
-}
-
-export interface GenerationQuestionResponse {
-  questions: GeneratedQuestion[];
-  generated_count: number;
-  semantic_total: number;
-  used_model: string;
-  final_prompt?: string;
-  raw_output: string;
-}
-
-export type GenerationJobStatus = 'queued' | 'running' | 'completed' | 'failed';
-
-export interface GenerationJobState {
-  job_id: string;
-  status: GenerationJobStatus;
-  progress: number;
-  stage: string;
-  message?: string | null;
-  error?: string | null;
-  result?: GenerationQuestionResponse | null;
-}
 
 export const GENERATION_DIFFICULTY_KEYS = ['Fácil', 'Medio', 'Difícil'] as const;
 export type GenerationDifficultyKey = (typeof GENERATION_DIFFICULTY_KEYS)[number];
@@ -84,14 +31,40 @@ export type TaxonomyCategoryRule = {
   subcategories: TaxonomySubcategoryRule[];
 };
 
+export type RubricConfig = {
+  weights: Record<string, number>;
+  pass_threshold: number;
+};
+
+export interface ModelCatalogItem {
+  type: 'llm' | 'embedding' | string;
+  key: string;
+  display_name: string;
+  publisher?: string | null;
+  architecture?: string | null;
+  capabilities?: Record<string, unknown> | null;
+  max_context_length?: number | null;
+}
+
+export interface ModelCatalogResponse {
+  models: ModelCatalogItem[];
+}
+
 export interface GenerationConfigResponse {
-  general_prompt: string;
-  facil_prompt: string;
-  medio_prompt: string;
-  dificil_prompt: string;
-  generation_user_prompt_template: string;
-  generation_difficulty_semantic_instructions: Record<string, string>;
-  generation_output_rules_template: string[];
+  generation_stem_system_prompt: string;
+  generation_stem_user_prompt_template: string;
+  generation_distractor_system_prompt: string;
+  generation_distractor_user_prompt_template: string;
+  generation_judge_system_prompt: string;
+  generation_judge_user_prompt_template: string;
+  llm_default_model: string;
+  llm_models: Record<string, string>;
+  llm_model_sections: string[];
+  embedding_default_model: string;
+  embedding_models: Record<string, string>;
+  embedding_model_sections: string[];
+  question_type_catalog: string[];
+  rubric_config: RubricConfig;
   ingestion_extraction_system_prompt: string;
   ingestion_extraction_user_prompt_template: string;
   ingestion_refinement_system_prompt: string;
@@ -108,13 +81,20 @@ export interface GenerationConfigResponse {
 }
 
 export type GenerationConfigPatchRequest = Partial<{
-  general_prompt: string;
-  facil_prompt: string;
-  medio_prompt: string;
-  dificil_prompt: string;
-  generation_user_prompt_template: string;
-  generation_difficulty_semantic_instructions: Record<string, string>;
-  generation_output_rules_template: string[];
+  generation_stem_system_prompt: string;
+  generation_stem_user_prompt_template: string;
+  generation_distractor_system_prompt: string;
+  generation_distractor_user_prompt_template: string;
+  generation_judge_system_prompt: string;
+  generation_judge_user_prompt_template: string;
+  llm_default_model: string;
+  llm_models: Record<string, string>;
+  llm_model_sections: string[];
+  embedding_default_model: string;
+  embedding_models: Record<string, string>;
+  embedding_model_sections: string[];
+  question_type_catalog: string[];
+  rubric_config: RubricConfig;
   ingestion_extraction_system_prompt: string;
   ingestion_extraction_user_prompt_template: string;
   ingestion_refinement_system_prompt: string;
@@ -129,14 +109,197 @@ export type GenerationConfigPatchRequest = Partial<{
   subtopics: Record<string, string[]>;
 }>;
 
-function getAuthHeaders() {
-  if (typeof window === 'undefined') {
-    return {
-      'Content-Type': 'application/json',
-    };
-  }
+export type CreateSnapshotRequest = {
+  category: string;
+  subtopic?: string | null;
+  target_difficulties: Difficulty[];
+  question_types?: string[];
+  include_entities: boolean;
+  include_relations: boolean;
+};
 
-  const token = localStorage.getItem('token');
+export type SnapshotResponse = {
+  snapshot_id: string;
+  category?: string;
+  subtopic?: string | null;
+  target_difficulties?: string[];
+  include_entities?: boolean;
+  include_relations?: boolean;
+  question_types?: string[];
+  entity_count: number;
+  relation_count: number;
+  unit_count: number;
+  refresh_count: number;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type RefreshSnapshotResponse = {
+  snapshot_id: string;
+  refresh_count: number;
+  added_units: number;
+  entity_count: number;
+  relation_count: number;
+  updated_at?: string;
+};
+
+export type DeleteSnapshotResponse = {
+  snapshot_id: string;
+  deleted_snapshots: number;
+  deleted_units: number;
+  deleted_runs: number;
+  deleted_selections: number;
+};
+
+export type SnapshotProgressResponse = {
+  snapshot_id: string;
+  ok_units: number;
+  failed_units: number;
+  pending_units: number;
+  in_progress_units: number;
+  total_units: number;
+  updated_at?: string;
+};
+
+export type SnapshotViewModel = {
+  snapshot_id: string;
+  category?: string;
+  subtopic?: string | null;
+  target_difficulties: string[];
+  include_entities: boolean;
+  include_relations: boolean;
+  question_types: string[];
+  entity_count: number;
+  relation_count: number;
+  unit_count: number;
+  refresh_count: number;
+  created_at?: string;
+  updated_at?: string;
+  progress: SnapshotProgressResponse;
+};
+
+export type GenerationUnitStatus = 'pending' | 'in_progress' | 'ok' | 'failed' | string;
+
+export type GenerationUnitResponse = {
+  unit_id: string;
+  snapshot_id: string;
+  status: GenerationUnitStatus;
+  difficulty?: Difficulty | string;
+  question_type?: string;
+  unit_kind?: string;
+  attempts?: number;
+  max_attempts?: number;
+  question_id?: string | null;
+  last_error?: string | null;
+  updated_at?: string;
+  created_at?: string;
+};
+
+export type UnitExecuteRequest = {
+  force?: boolean;
+};
+
+export type ExecuteUnitResponse = {
+  unit_id: string;
+  status: GenerationUnitStatus;
+  message?: string;
+  error?: string | null;
+  rubric_scores?: Record<string, number> | null;
+  trace?: Record<string, unknown> | null;
+};
+
+export type ListUnitsResponse = {
+  items: GenerationUnitResponse[];
+  total: number;
+};
+
+export type ListSnapshotsResponse = {
+  items: SnapshotResponse[];
+  total: number;
+};
+
+export type ListUnitsRequest = {
+  status?: string;
+  limit?: number;
+  skip?: number;
+};
+
+export type SelectionStatus = 'active' | 'cancelled' | 'completed';
+
+export interface CreateSelectionRequest {
+  snapshot_id: string;
+  count: number;
+  difficulties?: string[];
+  question_types?: string[];
+  unit_kind?: 'entity' | 'relation';
+  search_text?: string;
+  include_failed?: boolean;
+}
+
+export interface SelectionResponse {
+  selection_id: string;
+  snapshot_id: string;
+  status: SelectionStatus;
+  requested_count: number;
+  claimed_count: number;
+  filters: Record<string, unknown>;
+  unit_ids: string[];
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface SelectionProgressResponse extends SelectionResponse {
+  total_units: number;
+  ok_units: number;
+  failed_units: number;
+  in_progress_units: number;
+  pending_units: number;
+}
+
+export interface GlobalProgressBucket {
+  key: string;
+  total_units: number;
+  pending_units: number;
+  in_progress_units: number;
+  ok_units: number;
+  failed_units: number;
+  completion_ratio: number;
+}
+
+export interface GlobalProgressCategoryDifficultyBucket {
+  category: string;
+  difficulty: string;
+  total_units: number;
+  pending_units: number;
+  in_progress_units: number;
+  ok_units: number;
+  failed_units: number;
+  completion_ratio: number;
+}
+
+export interface GlobalProgressResponse {
+  snapshot_count: number;
+  total_units: number;
+  pending_units: number;
+  in_progress_units: number;
+  ok_units: number;
+  failed_units: number;
+  completion_ratio: number;
+  by_category: GlobalProgressBucket[];
+  by_difficulty: GlobalProgressBucket[];
+  by_category_difficulty: GlobalProgressCategoryDifficultyBucket[];
+}
+
+export type BackfillGenerationOriginsResponse = {
+  scanned_units: number;
+  updated_questions: number;
+  skipped_without_question: number;
+  skipped_missing_snapshot: number;
+  skipped_already_present: number;
+};
+
+function getAuthHeaders() {
+  const token = getStoredToken();
 
   return {
     'Content-Type': 'application/json',
@@ -222,6 +385,65 @@ function ensureDifficultyStringMap(
   return GENERATION_DIFFICULTY_KEYS.reduce<Record<string, string>>((acc, key) => {
     const value = input[key];
     acc[key] = typeof value === 'string' ? value : defaultValue;
+    return acc;
+  }, {});
+}
+
+function normalizeNumber(value: unknown, fallback = 0): number {
+  const candidate = Number(value);
+  if (!Number.isFinite(candidate)) {
+    return fallback;
+  }
+  return candidate;
+}
+
+function normalizeNumberMap(value: unknown): Record<string, number> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+
+  const output: Record<string, number> = {};
+
+  for (const [rawKey, rawValue] of Object.entries(value)) {
+    const key = normalizeString(rawKey).trim();
+    if (!key) {
+      continue;
+    }
+    const parsed = Number(rawValue);
+    if (!Number.isFinite(parsed)) {
+      continue;
+    }
+    output[key] = parsed;
+  }
+
+  return output;
+}
+
+function normalizeNestedNumberMap(value: unknown): Record<string, Record<string, number>> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+
+  const output: Record<string, Record<string, number>> = {};
+
+  for (const [rawKey, rawValue] of Object.entries(value)) {
+    const key = normalizeString(rawKey).trim();
+    if (!key) {
+      continue;
+    }
+    output[key] = normalizeNumberMap(rawValue);
+  }
+
+  return output;
+}
+
+function ensureDifficultyNumberMap(
+  input: Record<string, number>,
+  defaultValue = 0
+): Record<string, number> {
+  return GENERATION_DIFFICULTY_KEYS.reduce<Record<string, number>>((acc, key) => {
+    const value = input[key];
+    acc[key] = Number.isFinite(value) ? value : defaultValue;
     return acc;
   }, {});
 }
@@ -324,6 +546,78 @@ export function deriveCatalogFromTaxonomy(taxonomyCategories: TaxonomyCategoryRu
   };
 }
 
+function normalizeQuestionTypeCatalog(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const output: string[] = [];
+  const seen = new Set<string>();
+  for (const entry of value) {
+    if (typeof entry !== 'string') {
+      continue;
+    }
+    const key = entry.trim();
+    if (!key) continue;
+    const normalized = key.toLocaleLowerCase();
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    output.push(key);
+  }
+
+  return output;
+}
+
+function normalizeRubricConfig(value: unknown): RubricConfig {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return { weights: {}, pass_threshold: 0 };
+  }
+
+  const raw = value as Record<string, unknown>;
+  return {
+    weights: normalizeNumberMap(raw.weights),
+    pass_threshold: normalizeNumber(raw.pass_threshold, 0),
+  };
+}
+
+function normalizeModelCatalogItem(value: unknown): ModelCatalogItem | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+
+  const raw = value as Record<string, unknown>;
+  const key = normalizeString(raw.key).trim();
+  if (!key) {
+    return null;
+  }
+
+  return {
+    type: normalizeString(raw.type).trim() || 'llm',
+    key,
+    display_name: normalizeString(raw.display_name).trim() || key,
+    publisher: normalizeString(raw.publisher).trim() || null,
+    architecture: normalizeString(raw.architecture).trim() || null,
+    capabilities:
+      raw.capabilities && typeof raw.capabilities === 'object' && !Array.isArray(raw.capabilities)
+        ? (raw.capabilities as Record<string, unknown>)
+        : null,
+    max_context_length: Number.isFinite(Number(raw.max_context_length)) ? Number(raw.max_context_length) : null,
+  };
+}
+
+function normalizeModelCatalogResponse(data: unknown): ModelCatalogResponse {
+  const raw =
+    data && typeof data === 'object' && !Array.isArray(data)
+      ? (data as Record<string, unknown>)
+      : {};
+  const models = Array.isArray(raw.models)
+    ? raw.models
+        .map((entry) => normalizeModelCatalogItem(entry))
+        .filter((entry): entry is ModelCatalogItem => entry !== null)
+    : [];
+  return { models };
+}
+
 function normalizeGenerationConfig(data: unknown): GenerationConfigResponse {
   const raw =
     data && typeof data === 'object' && !Array.isArray(data)
@@ -333,13 +627,7 @@ function normalizeGenerationConfig(data: unknown): GenerationConfigResponse {
   const legacyCategories = normalizeStringArray(raw.categories);
   const legacySubtopics = normalizeSubtopicsRecord(raw.subtopics);
 
-  const incomingTaxonomyCategories = normalizeTaxonomyCategories(
-    raw.taxonomy_categories
-  );
-  const normalizedDifficultyInstructions = ensureDifficultyStringMap(
-    normalizeStringMap(raw.generation_difficulty_semantic_instructions)
-  );
-
+  const incomingTaxonomyCategories = normalizeTaxonomyCategories(raw.taxonomy_categories);
   const taxonomyCategories =
     incomingTaxonomyCategories.length > 0
       ? incomingTaxonomyCategories
@@ -354,21 +642,24 @@ function normalizeGenerationConfig(data: unknown): GenerationConfigResponse {
       : 2;
 
   return {
-    general_prompt: normalizeString(raw.general_prompt),
-    facil_prompt: normalizeString(raw.facil_prompt),
-    medio_prompt: normalizeString(raw.medio_prompt),
-    dificil_prompt: normalizeString(raw.dificil_prompt),
-    generation_user_prompt_template: normalizeString(raw.generation_user_prompt_template),
-    generation_difficulty_semantic_instructions: normalizedDifficultyInstructions,
-    generation_output_rules_template: normalizeStringArray(raw.generation_output_rules_template),
+    generation_stem_system_prompt: normalizeString(raw.generation_stem_system_prompt),
+    generation_stem_user_prompt_template: normalizeString(raw.generation_stem_user_prompt_template),
+    generation_distractor_system_prompt: normalizeString(raw.generation_distractor_system_prompt),
+    generation_distractor_user_prompt_template: normalizeString(raw.generation_distractor_user_prompt_template),
+    generation_judge_system_prompt: normalizeString(raw.generation_judge_system_prompt),
+    generation_judge_user_prompt_template: normalizeString(raw.generation_judge_user_prompt_template),
+    llm_default_model: normalizeString(raw.llm_default_model),
+    llm_models: normalizeStringMap(raw.llm_models),
+    llm_model_sections: normalizeStringArray(raw.llm_model_sections),
+    embedding_default_model: normalizeString(raw.embedding_default_model),
+    embedding_models: normalizeStringMap(raw.embedding_models),
+    embedding_model_sections: normalizeStringArray(raw.embedding_model_sections),
+    question_type_catalog: normalizeQuestionTypeCatalog(raw.question_type_catalog),
+    rubric_config: normalizeRubricConfig(raw.rubric_config),
     ingestion_extraction_system_prompt: normalizeString(raw.ingestion_extraction_system_prompt),
-    ingestion_extraction_user_prompt_template: normalizeString(
-      raw.ingestion_extraction_user_prompt_template
-    ),
+    ingestion_extraction_user_prompt_template: normalizeString(raw.ingestion_extraction_user_prompt_template),
     ingestion_refinement_system_prompt: normalizeString(raw.ingestion_refinement_system_prompt),
-    ingestion_refinement_user_prompt_template: normalizeString(
-      raw.ingestion_refinement_user_prompt_template
-    ),
+    ingestion_refinement_user_prompt_template: normalizeString(raw.ingestion_refinement_user_prompt_template),
     ingestion_taxonomy_classification_system_prompt: normalizeString(
       raw.ingestion_taxonomy_classification_system_prompt
     ),
@@ -378,65 +669,520 @@ function normalizeGenerationConfig(data: unknown): GenerationConfigResponse {
     taxonomy_version: normalizeString(raw.taxonomy_version) || 'v1',
     taxonomy_max_labels_per_item: taxonomyMaxLabelsPerItem,
     taxonomy_allow_fallback_other:
-      typeof raw.taxonomy_allow_fallback_other === 'boolean'
-        ? raw.taxonomy_allow_fallback_other
-        : true,
+      typeof raw.taxonomy_allow_fallback_other === 'boolean' ? raw.taxonomy_allow_fallback_other : true,
     taxonomy_categories: taxonomyCategories,
-    categories:
-      derivedCatalog.categories.length > 0
-        ? derivedCatalog.categories
-        : legacyCategories,
-    subtopics:
-      Object.keys(derivedCatalog.subtopics).length > 0
-        ? derivedCatalog.subtopics
-        : legacySubtopics,
+    categories: derivedCatalog.categories.length > 0 ? derivedCatalog.categories : legacyCategories,
+    subtopics: Object.keys(derivedCatalog.subtopics).length > 0 ? derivedCatalog.subtopics : legacySubtopics,
     updated_at: normalizeString(raw.updated_at),
   };
 }
 
-export async function generateQuestion(
-  data: GenerationQuestionRequest
-): Promise<GenerationQuestionResponse> {
-  const response = await axios.post(`${API_BASE}/generation/questions`, data, {
-    headers: getAuthHeaders(),
-    withCredentials: true,
-  });
-  return response.data;
-}
-
-function normalizeGenerationJobState(
-  data: Partial<GenerationJobState> & { job_id: string }
-): GenerationJobState {
+function normalizeSnapshotResponse(data: unknown): SnapshotResponse {
+  const raw = data && typeof data === 'object' && !Array.isArray(data) ? (data as Record<string, unknown>) : {};
   return {
-    job_id: data.job_id,
-    status: (data.status || 'queued') as GenerationJobStatus,
-    progress: typeof data.progress === 'number' ? data.progress : 0,
-    stage: data.stage || 'queued',
-    message: data.message ?? null,
-    error: data.error ?? null,
-    result: data.result ?? null,
+    snapshot_id: normalizeString(raw.snapshot_id),
+    category: normalizeString(raw.category) || undefined,
+    subtopic: raw.subtopic === null ? null : normalizeString(raw.subtopic) || undefined,
+    target_difficulties: normalizeStringArray(raw.target_difficulties),
+    include_entities: typeof raw.include_entities === 'boolean' ? raw.include_entities : undefined,
+    include_relations: typeof raw.include_relations === 'boolean' ? raw.include_relations : undefined,
+    question_types: normalizeStringArray(raw.question_types),
+    entity_count: normalizeNumber(raw.entity_count, 0),
+    relation_count: normalizeNumber(raw.relation_count, 0),
+    unit_count: normalizeNumber(raw.unit_count, 0),
+    refresh_count: normalizeNumber(raw.refresh_count, 0),
+    created_at: normalizeString(raw.created_at) || undefined,
+    updated_at: normalizeString(raw.updated_at) || undefined,
   };
 }
 
-export async function startGenerationJob(
-  data: GenerationQuestionRequest
-): Promise<GenerationJobState> {
-  const response = await axios.post(`${API_BASE}/generation/questions/jobs`, data, {
-    headers: getAuthHeaders(),
-    withCredentials: true,
-  });
+function normalizeSnapshotProgressResponse(data: unknown): SnapshotProgressResponse {
+  const raw = data && typeof data === 'object' && !Array.isArray(data) ? (data as Record<string, unknown>) : {};
+  const okUnits = normalizeNumber(raw.ok_units, 0);
+  const failedUnits = normalizeNumber(raw.failed_units, 0);
+  const pendingUnits = normalizeNumber(raw.pending_units, 0);
+  const inProgressUnits = normalizeNumber(raw.in_progress_units, 0);
+  const total = normalizeNumber(raw.total_units, okUnits + failedUnits + pendingUnits + inProgressUnits);
 
-  const body = response.data as Partial<GenerationJobState> & { job_id: string };
-  return normalizeGenerationJobState(body);
+  return {
+    snapshot_id: normalizeString(raw.snapshot_id),
+    ok_units: okUnits,
+    failed_units: failedUnits,
+    pending_units: pendingUnits,
+    in_progress_units: inProgressUnits,
+    total_units: total,
+    updated_at: normalizeString(raw.updated_at) || undefined,
+  };
 }
 
-export async function getGenerationJob(jobId: string): Promise<GenerationJobState> {
-  const response = await axios.get(`${API_BASE}/generation/questions/jobs/${jobId}`, {
+function normalizeRefreshSnapshotResponse(data: unknown): RefreshSnapshotResponse {
+  const raw = data && typeof data === 'object' && !Array.isArray(data) ? (data as Record<string, unknown>) : {};
+  return {
+    snapshot_id: normalizeString(raw.snapshot_id),
+    refresh_count: normalizeNumber(raw.refresh_count, 0),
+    added_units: normalizeNumber(raw.added_units, 0),
+    entity_count: normalizeNumber(raw.entity_count, 0),
+    relation_count: normalizeNumber(raw.relation_count, 0),
+    updated_at: normalizeString(raw.updated_at) || undefined,
+  };
+}
+
+function normalizeDeleteSnapshotResponse(data: unknown): DeleteSnapshotResponse {
+  const raw = data && typeof data === 'object' && !Array.isArray(data) ? (data as Record<string, unknown>) : {};
+  return {
+    snapshot_id: normalizeString(raw.snapshot_id),
+    deleted_snapshots: normalizeNumber(raw.deleted_snapshots, 0),
+    deleted_units: normalizeNumber(raw.deleted_units, 0),
+    deleted_runs: normalizeNumber(raw.deleted_runs, 0),
+    deleted_selections: normalizeNumber(raw.deleted_selections, 0),
+  };
+}
+
+function normalizeBackfillGenerationOriginsResponse(data: unknown): BackfillGenerationOriginsResponse {
+  const raw = data && typeof data === 'object' && !Array.isArray(data) ? (data as Record<string, unknown>) : {};
+  return {
+    scanned_units: normalizeNumber(raw.scanned_units, 0),
+    updated_questions: normalizeNumber(raw.updated_questions, 0),
+    skipped_without_question: normalizeNumber(raw.skipped_without_question, 0),
+    skipped_missing_snapshot: normalizeNumber(raw.skipped_missing_snapshot, 0),
+    skipped_already_present: normalizeNumber(raw.skipped_already_present, 0),
+  };
+}
+
+export function buildSnapshotViewModel(
+  snapshot: SnapshotResponse,
+  progress?: SnapshotProgressResponse
+): SnapshotViewModel {
+  const snapshotId = snapshot.snapshot_id;
+  const fallbackProgress: SnapshotProgressResponse = {
+    snapshot_id: snapshotId,
+    ok_units: 0,
+    failed_units: 0,
+    pending_units: 0,
+    in_progress_units: 0,
+    total_units: snapshot.unit_count || 0,
+    updated_at: snapshot.updated_at,
+  };
+
+  const resolvedProgress =
+    progress && progress.snapshot_id === snapshotId
+      ? progress
+      : fallbackProgress;
+
+  return {
+    snapshot_id: snapshotId,
+    category: snapshot.category,
+    subtopic: snapshot.subtopic,
+    target_difficulties: snapshot.target_difficulties || [],
+    include_entities: typeof snapshot.include_entities === 'boolean' ? snapshot.include_entities : true,
+    include_relations: typeof snapshot.include_relations === 'boolean' ? snapshot.include_relations : true,
+    question_types: snapshot.question_types || [],
+    entity_count: snapshot.entity_count,
+    relation_count: snapshot.relation_count,
+    unit_count: snapshot.unit_count,
+    refresh_count: snapshot.refresh_count,
+    created_at: snapshot.created_at,
+    updated_at: snapshot.updated_at,
+    progress: resolvedProgress,
+  };
+}
+
+function normalizeGenerationUnitResponse(data: unknown): GenerationUnitResponse {
+  const raw = data && typeof data === 'object' && !Array.isArray(data) ? (data as Record<string, unknown>) : {};
+  const normalizedUnitId =
+    normalizeString(raw.unit_id).trim() ||
+    normalizeString(raw.id).trim() ||
+    normalizeString(raw.uuid).trim();
+
+  return {
+    unit_id: normalizedUnitId,
+    snapshot_id: normalizeString(raw.snapshot_id),
+    status: normalizeString(raw.status) || 'pending',
+    difficulty: normalizeString(raw.difficulty) || undefined,
+    question_type: normalizeString(raw.question_type) || undefined,
+    unit_kind: normalizeString(raw.unit_kind) || undefined,
+    attempts: normalizeNumber(
+      raw.attempt_count ?? raw.attempts,
+      0
+    ),
+    max_attempts: normalizeNumber(raw.max_attempts, 0),
+    question_id:
+      raw.question_id == null
+        ? null
+        : normalizeString(raw.question_id),
+    last_error: raw.last_error == null ? null : normalizeString(raw.last_error),
+    created_at: normalizeString(raw.created_at) || undefined,
+    updated_at: normalizeString(raw.updated_at) || undefined,
+  };
+}
+
+function normalizeExecuteUnitResponse(data: unknown): ExecuteUnitResponse {
+  const raw = data && typeof data === 'object' && !Array.isArray(data) ? (data as Record<string, unknown>) : {};
+  const unitRaw =
+    raw.unit && typeof raw.unit === 'object' && !Array.isArray(raw.unit)
+      ? (raw.unit as Record<string, unknown>)
+      : null;
+  const unitId =
+    normalizeString(raw.unit_id).trim() ||
+    normalizeString(unitRaw?.id).trim() ||
+    normalizeString(unitRaw?.unit_id).trim();
+  const status =
+    normalizeString(raw.status).trim() ||
+    normalizeString(unitRaw?.status).trim() ||
+    'failed';
+
+  const rubricScoresRaw = raw.rubric_scores;
+  const rubricScores =
+    rubricScoresRaw && typeof rubricScoresRaw === 'object' && !Array.isArray(rubricScoresRaw)
+      ? (rubricScoresRaw as Record<string, number>)
+      : null;
+  const traceRaw = raw.trace;
+  const trace =
+    traceRaw && typeof traceRaw === 'object' && !Array.isArray(traceRaw)
+      ? (traceRaw as Record<string, unknown>)
+      : null;
+
+  return {
+    unit_id: unitId,
+    status,
+    message: normalizeString(raw.message) || undefined,
+    error: raw.error == null ? null : normalizeString(raw.error),
+    rubric_scores: rubricScores,
+    trace,
+  };
+}
+
+function normalizeSelectionStatus(value: unknown): SelectionStatus {
+  const status = normalizeString(value).trim().toLocaleLowerCase();
+  if (status === 'cancelled' || status === 'completed' || status === 'active') {
+    return status;
+  }
+  return 'active';
+}
+
+function normalizeSelectionResponse(data: unknown): SelectionResponse {
+  const raw = data && typeof data === 'object' && !Array.isArray(data) ? (data as Record<string, unknown>) : {};
+  const unitIds = normalizeStringArray(raw.unit_ids);
+
+  return {
+    selection_id: normalizeString(raw.selection_id),
+    snapshot_id: normalizeString(raw.snapshot_id),
+    status: normalizeSelectionStatus(raw.status),
+    requested_count: normalizeNumber(raw.requested_count, unitIds.length),
+    claimed_count: normalizeNumber(raw.claimed_count, unitIds.length),
+    filters:
+      raw.filters && typeof raw.filters === 'object' && !Array.isArray(raw.filters)
+        ? (raw.filters as Record<string, unknown>)
+        : {},
+    unit_ids: unitIds,
+    created_at: normalizeString(raw.created_at) || undefined,
+    updated_at: normalizeString(raw.updated_at) || undefined,
+  };
+}
+
+function normalizeSelectionProgressResponse(data: unknown): SelectionProgressResponse {
+  const selection = normalizeSelectionResponse(data);
+  const raw = data && typeof data === 'object' && !Array.isArray(data) ? (data as Record<string, unknown>) : {};
+  const total = normalizeNumber(raw.total_units, selection.claimed_count || selection.unit_ids.length);
+
+  return {
+    ...selection,
+    total_units: total,
+    ok_units: normalizeNumber(raw.ok_units, 0),
+    failed_units: normalizeNumber(raw.failed_units, 0),
+    in_progress_units: normalizeNumber(raw.in_progress_units, 0),
+    pending_units: normalizeNumber(raw.pending_units, Math.max(0, total)),
+  };
+}
+
+function normalizeGlobalProgressBucket(value: unknown): GlobalProgressBucket | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  const raw = value as Record<string, unknown>;
+  return {
+    key: normalizeString(raw.key),
+    total_units: normalizeNumber(raw.total_units, 0),
+    pending_units: normalizeNumber(raw.pending_units, 0),
+    in_progress_units: normalizeNumber(raw.in_progress_units, 0),
+    ok_units: normalizeNumber(raw.ok_units, 0),
+    failed_units: normalizeNumber(raw.failed_units, 0),
+    completion_ratio: normalizeNumber(raw.completion_ratio, 0),
+  };
+}
+
+function normalizeGlobalProgressCategoryDifficultyBucket(
+  value: unknown
+): GlobalProgressCategoryDifficultyBucket | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  const raw = value as Record<string, unknown>;
+  return {
+    category: normalizeString(raw.category),
+    difficulty: normalizeString(raw.difficulty),
+    total_units: normalizeNumber(raw.total_units, 0),
+    pending_units: normalizeNumber(raw.pending_units, 0),
+    in_progress_units: normalizeNumber(raw.in_progress_units, 0),
+    ok_units: normalizeNumber(raw.ok_units, 0),
+    failed_units: normalizeNumber(raw.failed_units, 0),
+    completion_ratio: normalizeNumber(raw.completion_ratio, 0),
+  };
+}
+
+function normalizeGlobalProgressResponse(data: unknown): GlobalProgressResponse {
+  const raw = data && typeof data === 'object' && !Array.isArray(data) ? (data as Record<string, unknown>) : {};
+  return {
+    snapshot_count: normalizeNumber(raw.snapshot_count, 0),
+    total_units: normalizeNumber(raw.total_units, 0),
+    pending_units: normalizeNumber(raw.pending_units, 0),
+    in_progress_units: normalizeNumber(raw.in_progress_units, 0),
+    ok_units: normalizeNumber(raw.ok_units, 0),
+    failed_units: normalizeNumber(raw.failed_units, 0),
+    completion_ratio: normalizeNumber(raw.completion_ratio, 0),
+    by_category: Array.isArray(raw.by_category)
+      ? raw.by_category.map((entry) => normalizeGlobalProgressBucket(entry)).filter((entry): entry is GlobalProgressBucket => entry !== null)
+      : [],
+    by_difficulty: Array.isArray(raw.by_difficulty)
+      ? raw.by_difficulty.map((entry) => normalizeGlobalProgressBucket(entry)).filter((entry): entry is GlobalProgressBucket => entry !== null)
+      : [],
+    by_category_difficulty: Array.isArray(raw.by_category_difficulty)
+      ? raw.by_category_difficulty
+          .map((entry) => normalizeGlobalProgressCategoryDifficultyBucket(entry))
+          .filter((entry): entry is GlobalProgressCategoryDifficultyBucket => entry !== null)
+      : [],
+  };
+}
+
+export async function createSnapshot(data: CreateSnapshotRequest): Promise<SnapshotResponse> {
+  const response = await axios.post(`${API_BASE}/generation/snapshots`, data, {
     headers: getAuthHeaders(),
     withCredentials: true,
   });
-  const body = response.data as Partial<GenerationJobState> & { job_id: string };
-  return normalizeGenerationJobState(body);
+  return normalizeSnapshotResponse(response.data);
+}
+
+export async function listSnapshots(limit = 50, skip = 0): Promise<ListSnapshotsResponse> {
+  const response = await axios.get(`${API_BASE}/generation/snapshots`, {
+    headers: getAuthHeaders(),
+    withCredentials: true,
+    params: { limit, skip },
+  });
+
+  const body = response.data;
+  if (Array.isArray(body)) {
+    const items = body.map((entry) => normalizeSnapshotResponse(entry));
+    return { items, total: items.length };
+  }
+
+  const raw = body && typeof body === 'object' && !Array.isArray(body) ? (body as Record<string, unknown>) : {};
+  const itemsRaw = Array.isArray(raw.items) ? raw.items : [];
+  const items = itemsRaw.map((entry) => normalizeSnapshotResponse(entry));
+  return {
+    items,
+    total: normalizeNumber(raw.total, items.length),
+  };
+}
+
+export async function refreshSnapshot(snapshotId: string): Promise<RefreshSnapshotResponse> {
+  const response = await axios.post(
+    `${API_BASE}/generation/snapshots/${snapshotId}/refresh`,
+    {},
+    {
+      headers: getAuthHeaders(),
+      withCredentials: true,
+    }
+  );
+  return normalizeRefreshSnapshotResponse(response.data);
+}
+
+export async function deleteSnapshot(snapshotId: string): Promise<DeleteSnapshotResponse> {
+  const normalizedSnapshotId = (snapshotId || '').trim();
+  if (!normalizedSnapshotId) {
+    throw new Error('snapshot_id inválido');
+  }
+  const response = await axios.delete(
+    `${API_BASE}/generation/snapshots/${encodeURIComponent(normalizedSnapshotId)}`,
+    {
+      headers: getAuthHeaders(),
+      withCredentials: true,
+    }
+  );
+  return normalizeDeleteSnapshotResponse(response.data);
+}
+
+export async function backfillGenerationOrigins(force = false): Promise<BackfillGenerationOriginsResponse> {
+  const response = await axios.post(
+    `${API_BASE}/generation/backfill/origins`,
+    {},
+    {
+      headers: getAuthHeaders(),
+      withCredentials: true,
+      params: { force },
+    }
+  );
+  return normalizeBackfillGenerationOriginsResponse(response.data);
+}
+
+export async function getSnapshotProgress(snapshotId: string): Promise<SnapshotProgressResponse> {
+  const response = await axios.get(`${API_BASE}/generation/snapshots/${snapshotId}/progress`, {
+    headers: getAuthHeaders(),
+    withCredentials: true,
+  });
+  return normalizeSnapshotProgressResponse(response.data);
+}
+
+export async function getGlobalGenerationProgress(): Promise<GlobalProgressResponse> {
+  const response = await axios.get(`${API_BASE}/generation/progress/global`, {
+    headers: getAuthHeaders(),
+    withCredentials: true,
+  });
+  return normalizeGlobalProgressResponse(response.data);
+}
+
+export async function getNextUnit(snapshotId: string): Promise<GenerationUnitResponse | null> {
+  const response = await axios.post(
+    `${API_BASE}/generation/units/next`,
+    { snapshot_id: snapshotId },
+    {
+      headers: getAuthHeaders(),
+      withCredentials: true,
+    }
+  );
+
+  if (!response.data) {
+    return null;
+  }
+
+  const unit = normalizeGenerationUnitResponse(response.data);
+  return unit.unit_id ? unit : null;
+}
+
+export async function createGenerationSelection(data: CreateSelectionRequest): Promise<SelectionResponse> {
+  const payload: Record<string, unknown> = {
+    snapshot_id: data.snapshot_id,
+    count: data.count,
+    include_failed: typeof data.include_failed === 'boolean' ? data.include_failed : true,
+  };
+
+  if (data.difficulties && data.difficulties.length > 0) {
+    payload.difficulties = data.difficulties;
+  }
+  if (data.question_types && data.question_types.length > 0) {
+    payload.question_types = data.question_types;
+  }
+  if (data.unit_kind) {
+    payload.unit_kind = data.unit_kind;
+  }
+  if (typeof data.search_text === 'string' && data.search_text.trim()) {
+    payload.search_text = data.search_text.trim();
+  }
+
+  const response = await axios.post(`${API_BASE}/generation/selections`, payload, {
+    headers: getAuthHeaders(),
+    withCredentials: true,
+  });
+  return normalizeSelectionResponse(response.data);
+}
+
+export async function getGenerationSelection(selectionId: string): Promise<SelectionProgressResponse> {
+  const normalizedSelectionId = (selectionId || '').trim();
+  if (!normalizedSelectionId) {
+    throw new Error('selection_id inválido');
+  }
+  const response = await axios.get(`${API_BASE}/generation/selections/${encodeURIComponent(normalizedSelectionId)}`, {
+    headers: getAuthHeaders(),
+    withCredentials: true,
+  });
+  return normalizeSelectionProgressResponse(response.data);
+}
+
+export async function cancelGenerationSelection(selectionId: string): Promise<SelectionProgressResponse> {
+  const normalizedSelectionId = (selectionId || '').trim();
+  if (!normalizedSelectionId) {
+    throw new Error('selection_id inválido');
+  }
+  const response = await axios.post(
+    `${API_BASE}/generation/selections/${encodeURIComponent(normalizedSelectionId)}/cancel`,
+    {},
+    {
+      headers: getAuthHeaders(),
+      withCredentials: true,
+    }
+  );
+  return normalizeSelectionProgressResponse(response.data);
+}
+
+export async function executeUnit(unitId: string, data?: UnitExecuteRequest): Promise<ExecuteUnitResponse> {
+  const normalizedUnitId = (unitId || '').trim();
+  if (!normalizedUnitId) {
+    throw new Error('unit_id inválido: no se puede ejecutar una unidad sin ID');
+  }
+  const response = await axios.post(
+    `${API_BASE}/generation/units/${encodeURIComponent(normalizedUnitId)}/execute`,
+    data || {},
+    {
+      headers: getAuthHeaders(),
+      withCredentials: true,
+    }
+  );
+  return normalizeExecuteUnitResponse(response.data);
+}
+
+export async function retryUnit(unitId: string): Promise<ExecuteUnitResponse> {
+  const normalizedUnitId = (unitId || '').trim();
+  if (!normalizedUnitId) {
+    throw new Error('unit_id inválido: no se puede reintentar una unidad sin ID');
+  }
+  const response = await axios.post(
+    `${API_BASE}/generation/units/${encodeURIComponent(normalizedUnitId)}/retry`,
+    {},
+    {
+    headers: getAuthHeaders(),
+    withCredentials: true,
+    }
+  );
+  return normalizeExecuteUnitResponse(response.data);
+}
+
+export async function listUnits(snapshotId: string, options?: ListUnitsRequest): Promise<ListUnitsResponse> {
+  const normalizedSnapshotId = (snapshotId || '').trim();
+  if (!normalizedSnapshotId) {
+    return { items: [], total: 0 };
+  }
+  const response = await axios.get(`${API_BASE}/generation/units`, {
+    headers: getAuthHeaders(),
+    withCredentials: true,
+    params: {
+      snapshot_id: normalizedSnapshotId,
+      ...(options?.status ? { status: options.status } : {}),
+      ...(typeof options?.limit === 'number' ? { limit: options.limit } : {}),
+      ...(typeof options?.skip === 'number' ? { skip: options.skip } : {}),
+    },
+  });
+
+  const body = response.data;
+  if (Array.isArray(body)) {
+    const items = body.map((entry) => normalizeGenerationUnitResponse(entry));
+    return { items, total: items.length };
+  }
+
+  const raw = body && typeof body === 'object' && !Array.isArray(body) ? (body as Record<string, unknown>) : {};
+  const itemsRaw = Array.isArray(raw.items) ? raw.items : Array.isArray(raw.units) ? raw.units : [];
+  const items = itemsRaw.map((entry) => normalizeGenerationUnitResponse(entry));
+  return {
+    items,
+    total: normalizeNumber(raw.total, items.length),
+  };
+}
+
+export async function getModelCatalog(baseUrl?: string): Promise<ModelCatalogResponse> {
+  const apiBase = resolveApiBase(baseUrl);
+  const response = await axios.get(`${apiBase}/models`, {
+    headers: getAuthHeaders(),
+    withCredentials: true,
+  });
+  return normalizeModelCatalogResponse(response.data);
 }
 
 export async function getGenerationConfig(baseUrl?: string): Promise<GenerationConfigResponse> {

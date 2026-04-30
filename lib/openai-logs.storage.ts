@@ -1,34 +1,40 @@
-import { GenerationQuestionRequest, GenerationQuestionResponse } from '@/lib/prompt-generation.api';
+import { readStorage, removeStorage, writeStorage } from '@/lib/client-storage';
 
-const OPENAI_LOGS_STORAGE_KEY = 'admin_openai_generation_logs_v1';
+const OPENAI_LOGS_STORAGE_KEY = 'admin:openai-generation-logs';
 const MAX_LOG_ENTRIES = 200;
+
+export interface OpenAILogResponseSnapshot {
+  questions?: unknown[];
+  generated_count?: number;
+  requested_count?: number;
+  discarded_count?: number;
+  discarded_question_indexes?: number[] | null;
+  semantic_total?: number;
+  used_model?: string;
+  final_prompt?: string;
+  raw_output: string;
+  failure_stage?: string | null;
+  validation_issues?: string[] | null;
+  status?: 'completed' | 'completed_partial' | 'failed';
+  error?: string | null;
+  message?: string | null;
+  meta?: Record<string, unknown>;
+}
 
 export interface OpenAILogEntry {
   id: string;
   created_at: string;
-  request: GenerationQuestionRequest;
-  response: GenerationQuestionResponse;
-}
-
-function canUseStorage() {
-  return typeof window !== 'undefined' && !!window.localStorage;
+  request: Record<string, unknown>;
+  response: OpenAILogResponseSnapshot;
 }
 
 export function getOpenAILogs(): OpenAILogEntry[] {
-  if (!canUseStorage()) return [];
-  try {
-    const raw = window.localStorage.getItem(OPENAI_LOGS_STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as OpenAILogEntry[];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
+  return readStorage<OpenAILogEntry[]>(OPENAI_LOGS_STORAGE_KEY, [], (value) =>
+    Array.isArray(value) ? (value as OpenAILogEntry[]) : []
+  );
 }
 
-export function addOpenAILog(payload: { request: GenerationQuestionRequest; response: GenerationQuestionResponse }) {
-  if (!canUseStorage()) return;
-
+export function addOpenAILog(payload: { request: Record<string, unknown>; response: OpenAILogResponseSnapshot }) {
   const currentLogs = getOpenAILogs();
   const nextEntry: OpenAILogEntry = {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
@@ -38,10 +44,9 @@ export function addOpenAILog(payload: { request: GenerationQuestionRequest; resp
   };
 
   const updatedLogs = [nextEntry, ...currentLogs].slice(0, MAX_LOG_ENTRIES);
-  window.localStorage.setItem(OPENAI_LOGS_STORAGE_KEY, JSON.stringify(updatedLogs));
+  writeStorage(OPENAI_LOGS_STORAGE_KEY, updatedLogs);
 }
 
 export function clearOpenAILogs() {
-  if (!canUseStorage()) return;
-  window.localStorage.removeItem(OPENAI_LOGS_STORAGE_KEY);
+  removeStorage(OPENAI_LOGS_STORAGE_KEY);
 }

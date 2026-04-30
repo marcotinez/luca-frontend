@@ -1,49 +1,63 @@
 "use client";
 
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { CircleCheckBig, CircleX } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface AnswerFeedbackPanelProps {
   isCorrect: boolean;
   feedback: string;
   correctOptionLabel?: string;
+  correctAnswerText?: string;
+  correctAnswerFeedback?: string;
 }
 
 export function AnswerFeedbackPanel({
   isCorrect,
   feedback,
   correctOptionLabel,
+  correctAnswerText,
+  correctAnswerFeedback,
 }: AnswerFeedbackPanelProps) {
   return (
-    <Card
-      className={
-        isCorrect
-          ? "border-emerald-500/30 bg-emerald-500/5"
-          : "border-red-500/30 bg-red-500/5"
-      }
+    <section
+      className={cn(
+        "overflow-hidden rounded-3xl border shadow-sm",
+        isCorrect ? "border-emerald-500/35 bg-emerald-500/5" : "border-rose-500/35 bg-rose-500/5",
+      )}
     >
-      <CardContent className="space-y-3 p-4">
-        <div className="flex items-center gap-2">
-          {isCorrect ? (
-            <>
-              <CircleCheckBig className="h-5 w-5 text-emerald-600" />
-              <Badge className="bg-emerald-600 hover:bg-emerald-600">Correcta</Badge>
-            </>
-          ) : (
-            <>
-              <CircleX className="h-5 w-5 text-red-600" />
-              <Badge variant="destructive">Incorrecta</Badge>
-            </>
-          )}
-        </div>
-        <p className="text-sm leading-relaxed text-foreground">{feedback}</p>
-        {!isCorrect && correctOptionLabel && (
-          <p className="text-xs text-muted-foreground">
-            Respuesta correcta: opción {correctOptionLabel}
-          </p>
+      <div
+        className={cn(
+          "grid gap-4 px-4 py-5 sm:grid-cols-[auto_1fr] sm:items-center sm:gap-5 sm:px-6 sm:py-6",
+          isCorrect ? "text-emerald-700" : "text-rose-700",
         )}
-      </CardContent>
-    </Card>
+      >
+        {isCorrect ? (
+          <CircleCheckBig className="h-12 w-12 sm:h-14 sm:w-14" />
+        ) : (
+          <CircleX className="h-12 w-12 sm:h-14 sm:w-14" />
+        )}
+
+        <div className="space-y-2 sm:space-y-3">
+          <p className="text-lg font-bold leading-tight text-foreground">
+            {isCorrect ? "Correcto" : "Incorrecto"}
+          </p>
+          <p className="text-sm leading-relaxed text-foreground sm:text-[15px]">{feedback}</p>
+        </div>
+      </div>
+
+      {!isCorrect && (correctOptionLabel || correctAnswerText) ? (
+        <div className="border-t border-rose-500/20 bg-rose-500/5 px-4 py-3 sm:px-6">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-rose-700/90">Respuesta correcta</p>
+          <p className="mt-1 text-sm leading-relaxed text-foreground">
+            {correctOptionLabel ? `Opción ${correctOptionLabel}` : ""}
+            {correctOptionLabel && correctAnswerText ? ": " : ""}
+            {correctAnswerText}
+          </p>
+          {correctAnswerFeedback ? (
+            <p className="mt-2 text-sm leading-relaxed text-foreground">{correctAnswerFeedback}</p>
+          ) : null}
+        </div>
+      ) : null}
+    </section>
   );
 }

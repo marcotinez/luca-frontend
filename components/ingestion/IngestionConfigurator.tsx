@@ -7,10 +7,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useDropzone } from 'react-dropzone';
-import * as pdfjsLib from 'pdfjs-dist';
-
-// Configurar worker de PDF.js
-pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 
 interface IngestionConfiguratorProps {
   onUpload: (file: File, chunks: number) => Promise<void>;
@@ -24,6 +20,13 @@ export function IngestionConfigurator({ onUpload, isUploading }: IngestionConfig
   const [pagesPerChunk, setPagesPerChunk] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
   const [isReadingPdf, setIsReadingPdf] = useState(false);
+  const [lastSubmittedFileKey, setLastSubmittedFileKey] = useState<string | null>(null);
+
+  const fileKey = file
+    ? `${file.name}:${file.size}:${file.lastModified}`
+    : null;
+  const isCurrentFileAlreadySubmitted =
+    fileKey !== null && lastSubmittedFileKey === fileKey;
 
   // Recalcular páginas por chunk y chunks reales cuando cambian las páginas totales o la cantidad de chunks deseada
   useEffect(() => {
@@ -42,6 +45,11 @@ export function IngestionConfigurator({ onUpload, isUploading }: IngestionConfig
     ? Math.ceil(totalPages / pagesPerChunk)
     : 0;
 
+  const loadPdfModule = useCallback(async () => {
+    const pdfjsLib = await import('pdfjs-dist');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
+    return pdfjsLib;
+  }, []);
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     setError(null);
@@ -57,6 +65,7 @@ export function IngestionConfigurator({ onUpload, isUploading }: IngestionConfig
     setIsReadingPdf(true);
 
     try {
+      const pdfjsLib = await loadPdfModule();
       const arrayBuffer = await selectedFile.arrayBuffer();
       const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
       setPages(pdf.numPages);
@@ -69,7 +78,7 @@ export function IngestionConfigurator({ onUpload, isUploading }: IngestionConfig
     } finally {
       setIsReadingPdf(false);
     }
-  }, []);
+  }, [loadPdfModule]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -80,7 +89,14 @@ export function IngestionConfigurator({ onUpload, isUploading }: IngestionConfig
 
   const handleSubmit = () => {
     if (!file) return;
-    onUpload(file, chunks);
+    if (isCurrentFileAlreadySubmitted) return;
+    onUpload(file, chunks)
+      .then(() => {
+        setLastSubmittedFileKey(fileKey);
+      })
+      .catch(() => {
+        // El manejo de error ya ocurre en la capa superior.
+      });
   };
 
   const handleRemoveFile = (e: React.MouseEvent) => {
@@ -89,6 +105,7 @@ export function IngestionConfigurator({ onUpload, isUploading }: IngestionConfig
     setPages(0);
     setChunks(1);
     setError(null);
+    setLastSubmittedFileKey(null);
   };
 
   return (
@@ -208,17 +225,33 @@ export function IngestionConfigurator({ onUpload, isUploading }: IngestionConfig
                 <Button
                   onClick={handleSubmit}
                   className="w-full h-12 text-base shadow-lg hover:shadow-xl transition-all"
-                  disabled={isUploading}
+                  disabled={isUploading || isCurrentFileAlreadySubmitted}
                 >
                   {isUploading ? (
                      <span className="flex items-center gap-2">
                        <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
                        Procesando Documento...
                      </span>
+                  ) : isCurrentFileAlreadySubmitted ? (
+                    'PDF ya enviado'
                   ) : (
                     'Iniciar Ingesta'
                   )}
                 </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleRemoveFile}
+                  disabled={isUploading}
+                  className="w-full mt-2"
+                >
+                  Limpiar
+                </Button>
+                {isCurrentFileAlreadySubmitted && (
+                  <p className="text-center text-xs text-muted-foreground mt-3">
+                    Este PDF ya fue enviado manualmente. Presiona Limpiar para habilitar otro envío.
+                  </p>
+                )}
                 <p className="text-center text-xs text-muted-foreground mt-3">
                   El documento será dividido y procesado según la configuración.
                 </p>

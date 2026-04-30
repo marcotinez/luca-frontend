@@ -1,11 +1,11 @@
 'use client';
 
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
-import { getIngestionRun, startIngestion } from "@/lib/ingestion.api";
+import dynamic from 'next/dynamic';
+import { getIngestionRun, retryIngestionRun, startIngestion } from "@/lib/ingestion.api";
 import { getGraphStats } from "@/lib/graph.api";
 import { wipeGraph } from "@/lib/admin.api";
 import type { IngestionRun, IngestionStatus } from "@/types/ingestion.types";
-import { IngestionConfigurator } from '@/components/ingestion/IngestionConfigurator';
 import { JobsHistoryTable } from '@/components/ingestion/JobsHistoryTable';
 import { BackupManager } from '@/components/admin/BackupManager';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -32,6 +32,22 @@ import {
   Trash2,
 } from "lucide-react";
 import { toast } from 'sonner';
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+
+const IngestionConfigurator = dynamic(
+  () => import('@/components/ingestion/IngestionConfigurator').then((module) => module.IngestionConfigurator),
+  {
+    ssr: false,
+    loading: () => (
+      <Card className="w-full">
+        <CardHeader>
+          <CardTitle>Nueva Ingesta</CardTitle>
+          <CardDescription>Cargando configurador de PDF...</CardDescription>
+        </CardHeader>
+      </Card>
+    ),
+  }
+);
 
 const POLLING_INTERVAL_MS = 2500;
 const FINAL_STATUSES: IngestionStatus[] = ["FINISHED", "PARTIAL", "FAILED"];
@@ -46,8 +62,12 @@ function getProgress(
   totalChunks: number,
   status: IngestionStatus,
 ): number {
+  if (status === "FINISHED") {
+    return 100;
+  }
+
   if (totalChunks <= 0) {
-    return status === "FINISHED" || status === "PARTIAL" ? 100 : 0;
+    return status === "PARTIAL" ? 100 : 0;
   }
 
   return Math.min(100, Math.round((processedChunks / totalChunks) * 100));
@@ -86,7 +106,7 @@ function formatDate(dateString: string): string {
   });
 }
 
-function deriveLiveStats(run: IngestionRun, requestedChunks?: number) {
+function deriveLiveStats(run: IngestionRun) {
   const processedChunkIds = new Set<number>();
   let derivedNodes = 0;
   let derivedRelations = 0;
@@ -150,17 +170,14 @@ function deriveLiveStats(run: IngestionRun, requestedChunks?: number) {
   }
 
   return {
-    processedChunks: Math.max(
-      run.processed_chunks,
-      processedChunkIds.size,
-      derivedProcessedChunks,
-    ),
-    totalChunks: Math.max(
-      run.total_chunks,
-      derivedTotalChunks,
-      maxChunkSeen,
-      requestedChunks ?? 0,
-    ),
+    processedChunks:
+      derivedProcessedChunks > 0
+        ? derivedProcessedChunks
+        : Math.max(run.processed_chunks, processedChunkIds.size),
+    totalChunks:
+      derivedTotalChunks > 0
+        ? derivedTotalChunks
+        : Math.max(run.total_chunks, processedChunkIds.size, maxChunkSeen),
     totalNodes: Math.max(run.total_nodes, derivedNodes),
     totalRelations: Math.max(run.total_relations, derivedRelations),
     totalErrors: Math.max(run.errors.length, derivedErrorEvents),
@@ -168,14 +185,15 @@ function deriveLiveStats(run: IngestionRun, requestedChunks?: number) {
 }
 
 export default function IngestaPage() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [isUploading, setIsUploading] = useState(false);
+  const [retryLoading, setRetryLoading] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [currentRunId, setCurrentRunId] = useState<string | null>(null);
   const [currentRun, setCurrentRun] = useState<IngestionRun | null>(null);
   const [monitorError, setMonitorError] = useState<string | null>(null);
-  const [requestedChunksByRun, setRequestedChunksByRun] = useState<
-    Record<string, number>
-  >({});
   const [stats, setStats] = useState<{ total_nodes: number; total_relationships: number } | null>(null);
   const [isWipeDialogOpen, setIsWipeDialogOpen] = useState(false);
   const [isWipingGraph, setIsWipingGraph] = useState(false);
@@ -185,9 +203,42 @@ export default function IngestaPage() {
     getGraphStats().then((s) => setStats(s)).catch(() => {});
   }, []);
 
+  const syncRunIdInUrl = useCallback((runId: string | null) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (runId) {
+      params.set("run_id", runId);
+    } else {
+      params.delete("run_id");
+    }
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  }, [pathname, router, searchParams]);
+
+  const reloadRuns = useCallback(async () => {
+    setRefreshTrigger((prev) => prev + 1);
+  }, []);
+
+  const startPollingRun = useCallback((runId: string) => {
+    setCurrentRunId(runId);
+    setCurrentRun(null);
+    setMonitorError(null);
+    syncRunIdInUrl(runId);
+  }, [syncRunIdInUrl]);
+
   useEffect(() => {
     fetchGraphStats();
   }, [fetchGraphStats]);
+
+  useEffect(() => {
+    const runIdFromQuery = searchParams.get("run_id");
+    if (!runIdFromQuery) {
+      return;
+    }
+
+    setCurrentRunId(runIdFromQuery);
+    setCurrentRun(null);
+    setMonitorError(null);
+  }, []);
 
   const handleUpload = useCallback(async (file: File, chunks: number) => {
     setIsUploading(true);
@@ -195,10 +246,7 @@ export default function IngestaPage() {
 
     try {
       const result = await startIngestion(file, chunks);
-      setCurrentRunId(result.run_id);
-      setCurrentRun(null);
-      setRequestedChunksByRun((prev) => ({ ...prev, [result.run_id]: chunks }));
-      setRefreshTrigger((prev) => prev + 1);
+      await reloadRuns();
       toast.success(result.message || "Ingesta encolada exitosamente.");
     } catch (error) {
       console.error(error);
@@ -210,20 +258,19 @@ export default function IngestaPage() {
     } finally {
       setIsUploading(false);
     }
-  }, []);
+  }, [reloadRuns]);
 
   const handleSelectRun = useCallback((runId: string) => {
-    setCurrentRunId(runId);
-    setCurrentRun(null);
-    setMonitorError(null);
-  }, []);
+    startPollingRun(runId);
+  }, [startPollingRun]);
 
   const handleBackToHistory = useCallback(() => {
     setCurrentRunId(null);
     setCurrentRun(null);
     setMonitorError(null);
-    setRefreshTrigger((prev) => prev + 1);
-  }, []);
+    syncRunIdInUrl(null);
+    void reloadRuns();
+  }, [reloadRuns, syncRunIdInUrl]);
 
   const handleConfirmWipeGraph = useCallback(async () => {
     try {
@@ -235,7 +282,8 @@ export default function IngestaPage() {
       setCurrentRunId(null);
       setCurrentRun(null);
       setMonitorError(null);
-      setRefreshTrigger((prev) => prev + 1);
+      syncRunIdInUrl(null);
+      await reloadRuns();
     } catch (error) {
       console.error(error);
       toast.error(
@@ -246,15 +294,42 @@ export default function IngestaPage() {
     } finally {
       setIsWipingGraph(false);
     }
-  }, [fetchGraphStats]);
+  }, [fetchGraphStats, reloadRuns, syncRunIdInUrl]);
 
   const handleDatabaseChanged = useCallback(async () => {
     await fetchGraphStats();
     setCurrentRunId(null);
     setCurrentRun(null);
     setMonitorError(null);
-    setRefreshTrigger((prev) => prev + 1);
-  }, [fetchGraphStats]);
+    syncRunIdInUrl(null);
+    await reloadRuns();
+  }, [fetchGraphStats, reloadRuns, syncRunIdInUrl]);
+
+  const handleRetryRun = useCallback(async (runId: string) => {
+    try {
+      setRetryLoading(true);
+      const retry = await retryIngestionRun(runId);
+      toast.success("Retry encolado");
+      startPollingRun(retry.run_id);
+      await reloadRuns();
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "No se pudo reintentar.";
+      if (
+        detail.includes("no tiene archivo fuente persistido para retry")
+        || detail.includes("No se encontró el archivo fuente para retry")
+      ) {
+        toast.error("Este run es antiguo y no soporta retry automático. Sube el PDF nuevamente.");
+        return;
+      }
+      if (detail.includes("Run de ingesta no encontrado")) {
+        toast.error("Run de ingesta no encontrado.");
+        return;
+      }
+      toast.error(detail);
+    } finally {
+      setRetryLoading(false);
+    }
+  }, [reloadRuns, startPollingRun]);
 
   useEffect(() => {
     if (!currentRunId) {
@@ -308,10 +383,14 @@ export default function IngestaPage() {
   useEffect(() => {
     if (!currentRunId) return;
 
-    executionCardRef.current?.scrollIntoView({
-      behavior: 'smooth',
-      block: 'start',
+    const frameId = requestAnimationFrame(() => {
+      executionCardRef.current?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      });
     });
+
+    return () => cancelAnimationFrame(frameId);
   }, [currentRunId]);
 
   const progressValue = useMemo(() => {
@@ -319,16 +398,13 @@ export default function IngestaPage() {
       return 0;
     }
 
-    const requestedChunks = currentRunId
-      ? requestedChunksByRun[currentRunId]
-      : undefined;
-    const liveStats = deriveLiveStats(currentRun, requestedChunks);
+    const liveStats = deriveLiveStats(currentRun);
     return getProgress(
       liveStats.processedChunks,
       liveStats.totalChunks,
       currentRun.status,
     );
-  }, [currentRun, currentRunId, requestedChunksByRun]);
+  }, [currentRun]);
 
   const orderedEvents = useMemo(() => {
     if (!currentRun?.events) {
@@ -349,11 +425,8 @@ export default function IngestaPage() {
     if (!currentRun) {
       return null;
     }
-    const requestedChunks = currentRunId
-      ? requestedChunksByRun[currentRunId]
-      : undefined;
-    return deriveLiveStats(currentRun, requestedChunks);
-  }, [currentRun, currentRunId, requestedChunksByRun]);
+    return deriveLiveStats(currentRun);
+  }, [currentRun]);
 
   return (
     <div className="space-y-8 p-4 sm:p-6">
@@ -448,8 +521,28 @@ export default function IngestaPage() {
                         <span className="text-xs text-muted-foreground">
                           Actualizado: {formatDate(currentRun.updated_at)}
                         </span>
+                        {currentRun.retry_of_run_id && (
+                          <span className="text-xs text-muted-foreground">
+                            Retry de: <span className="font-mono">{currentRun.retry_of_run_id}</span>
+                          </span>
+                        )}
                       </div>
-                      <span className="font-mono text-sm">{progressValue}%</span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-sm">{progressValue}%</span>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleRetryRun(currentRun.run_id)}
+                          disabled={
+                            retryLoading
+                            || currentRun.status === "RUNNING"
+                            || currentRun.status === "QUEUED"
+                            || (currentRun.status !== "PARTIAL" && currentRun.status !== "FAILED")
+                          }
+                        >
+                          {retryLoading ? "Reintentando..." : "Reintentar"}
+                        </Button>
+                      </div>
                     </div>
 
                     <Progress value={progressValue} className="h-2" />

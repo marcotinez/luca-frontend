@@ -74,9 +74,22 @@ export function PracticeHistoryTable({ history, tests }: PracticeHistoryTablePro
                       <p className="font-semibold">
                         {test.title || `Práctica ${practiceIdx + 1}`}
                       </p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatDateTime(test.created_at)}
-                      </p>
+                      <div className="mt-1 flex flex-wrap items-center gap-2">
+                        <p className="text-xs text-muted-foreground">
+                          {formatDateTime(test.created_at)}
+                        </p>
+                        {test.selection_mode ? (
+                          <Badge variant="outline">
+                            {test.selection_mode === "recommended" ? "Recomendada" : "Por categoría"}
+                          </Badge>
+                        ) : null}
+                        {test.target_category ? (
+                          <Badge variant="secondary">{test.target_category}</Badge>
+                        ) : null}
+                        {test.target_subtopic ? (
+                          <Badge variant="secondary">{test.target_subtopic}</Badge>
+                        ) : null}
+                      </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                       <Badge variant={test.status === "completed" ? "default" : "secondary"}>

@@ -1,6 +1,7 @@
 // Re-exportar todo desde user.types
-export { EducationLevel, FinancialTopic } from './user.types';
+export { EducationLevel } from './user.types';
 export type {
+  FinancialTopic,
   UserProfile,
   UserGamification,
   UserResponse,
@@ -46,15 +47,28 @@ export type {
 export type {
   PracticeTestStatus,
   PracticeDifficulty,
+  PracticeTestDifficulty,
   DomainKnowledge,
+  SubtopicKnowledge,
   PracticeHistoryEntry,
   PracticeHistorySummary,
   UserLearningProfile,
+  PracticeTestSelectionMode,
   PracticeTestCreateRequest,
+  CreateCategoryPracticeTestRequest,
+  CreateRecommendedPracticeTestRequest,
   PracticeTestQuestionPublic,
   PracticeTestDetailResponse,
   PracticeTestSummaryResponse,
   SubmitAnswerRequest,
   SubmitAnswerResponse,
   RegisterPracticeAttemptRequest,
+  PracticeAvailabilityBucket,
+  PracticeAvailabilityResponse,
+  AdaptiveContext,
+  AdaptiveQuestionTag,
+  AdaptiveCategoryAccuracy,
+  AdaptiveDifficultyDistribution,
+  AdaptiveWeeklyTrendPoint,
+  AdaptiveStatsResponse,
 } from './learning.types';

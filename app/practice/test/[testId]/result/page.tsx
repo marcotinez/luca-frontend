@@ -66,10 +66,15 @@ export default function PracticeTestResultPage() {
           ) : test ? (
             <TestResultSummary
               title={test.title}
+              selectionMode={test.selection_mode}
+              targetCategory={test.target_category}
+              targetSubtopic={test.target_subtopic}
+              recommendationReason={test.recommendation_reason}
+              adaptiveContext={test.adaptive_context}
               correctAnswers={test.correct_answers}
               totalQuestions={test.total_questions}
-              onViewProgress={() => router.push("/profile/progress")}
-              onNewTest={() => router.push("/practice/new")}
+              onViewProgress={() => router.push("/perfil")}
+              onGoHome={() => router.push("/dashboard")}
             />
           ) : (
             <Card>

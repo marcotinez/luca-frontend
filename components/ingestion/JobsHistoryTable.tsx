@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Eye, RefreshCw } from "lucide-react";
+import { ChevronLeft, ChevronRight, Eye, RefreshCw } from "lucide-react";
 import { getIngestionRuns } from "@/lib/ingestion.api";
 import type { IngestionRun, IngestionStatus } from "@/types/ingestion.types";
 
@@ -20,6 +20,9 @@ interface JobsHistoryTableProps {
   currentRunId?: string | null;
   onSelectRun?: (runId: string) => void;
 }
+
+const HISTORY_POLLING_INTERVAL_MS = 4000;
+const POST_UPLOAD_REFRESH_DELAY_MS = 1800;
 
 function formatDate(dateString: string): string {
   const date = new Date(dateString);
@@ -54,6 +57,25 @@ function getStatusBadge(status: IngestionStatus) {
   }
 }
 
+function getVisualStatusBadge(run: IngestionRun, runs: IngestionRun[]) {
+  const isResolvedByRetry =
+    (run.status === "PARTIAL" || run.status === "FAILED")
+    && runs.some(
+      (candidate) =>
+        candidate.retry_of_run_id === run.run_id && candidate.status === "FINISHED",
+    );
+
+  if (isResolvedByRetry) {
+    return (
+      <Badge className="bg-emerald-600 hover:bg-emerald-700">
+        Resuelto por retry
+      </Badge>
+    );
+  }
+
+  return getStatusBadge(run.status);
+}
+
 export function JobsHistoryTable({
   refreshTrigger,
   currentRunId,
@@ -61,27 +83,70 @@ export function JobsHistoryTable({
 }: JobsHistoryTableProps) {
   const [runs, setRuns] = useState<IngestionRun[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
-  const fetchRuns = useCallback(async () => {
+  const fetchRuns = useCallback(async (options?: { silent?: boolean; resetPage?: boolean }) => {
+    const silent = options?.silent ?? false;
+    const resetPage = options?.resetPage ?? false;
+
     try {
-      setLoading(true);
+      if (silent) {
+        setIsRefreshing(true);
+      } else {
+        setLoading(true);
+      }
       const data = await getIngestionRuns();
       const sortedRuns = [...data].sort(
         (a, b) =>
           new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
       );
       setRuns(sortedRuns);
+      if (resetPage) {
+        setPage(1);
+      }
     } catch (error) {
       console.error("Error fetching ingestion runs:", error);
       setRuns([]);
     } finally {
-      setLoading(false);
+      if (silent) {
+        setIsRefreshing(false);
+      } else {
+        setLoading(false);
+      }
     }
   }, []);
 
   useEffect(() => {
-    fetchRuns();
+    void fetchRuns({ resetPage: true });
+  }, [fetchRuns]);
+
+  useEffect(() => {
+    if (refreshTrigger === undefined) {
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      void fetchRuns({ silent: true, resetPage: true });
+    }, POST_UPLOAD_REFRESH_DELAY_MS);
+
+    return () => clearTimeout(timeoutId);
   }, [fetchRuns, refreshTrigger]);
+
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      void fetchRuns({ silent: true });
+    }, HISTORY_POLLING_INTERVAL_MS);
+
+    return () => clearInterval(intervalId);
+  }, [fetchRuns]);
+
+  const totalPages = Math.max(1, Math.ceil(runs.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const startIndex = (safePage - 1) * pageSize;
+  const endIndex = startIndex + pageSize;
+  const paginatedRuns = runs.slice(startIndex, endIndex);
 
   return (
     <div className="space-y-4">
@@ -92,11 +157,10 @@ export function JobsHistoryTable({
         <Button
           variant="ghost"
           size="sm"
-          onClick={fetchRuns}
-          disabled={loading}
+          onClick={() => void fetchRuns({ resetPage: true })}
         >
           <RefreshCw
-            className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`}
+            className={`w-4 h-4 mr-2 ${(loading || isRefreshing) ? "animate-spin" : ""}`}
           />
           Actualizar
         </Button>
@@ -125,7 +189,7 @@ export function JobsHistoryTable({
                 </TableCell>
               </TableRow>
             ) : (
-              runs.map((run) => {
+              paginatedRuns.map((run) => {
                 const isSelected = currentRunId === run.run_id;
 
                 return (
@@ -140,7 +204,7 @@ export function JobsHistoryTable({
                       {run.file_name}
                     </TableCell>
                     <TableCell className="text-center">
-                      {getStatusBadge(run.status)}
+                      {getVisualStatusBadge(run, runs)}
                     </TableCell>
                     <TableCell className="text-center">
                       {run.total_nodes}
@@ -169,6 +233,51 @@ export function JobsHistoryTable({
           </TableBody>
         </Table>
       </div>
+
+      {runs.length > 0 && (
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <p className="text-xs text-muted-foreground">
+            Mostrando {startIndex + 1}-{Math.min(endIndex, runs.length)} de {runs.length}
+          </p>
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-muted-foreground" htmlFor="history-page-size">
+              Filas
+            </label>
+            <select
+              id="history-page-size"
+              className="h-8 rounded-md border bg-background px-2 text-sm"
+              value={pageSize}
+              onChange={(event) => {
+                setPageSize(Number(event.target.value));
+                setPage(1);
+              }}
+            >
+              <option value={10}>10</option>
+              <option value={20}>20</option>
+              <option value={50}>50</option>
+            </select>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+              disabled={safePage <= 1}
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </Button>
+            <span className="text-sm min-w-16 text-center">
+              {safePage} / {totalPages}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+              disabled={safePage >= totalPages}
+            >
+              <ChevronRight className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
