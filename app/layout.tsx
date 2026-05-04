@@ -14,11 +14,8 @@ export const metadata: Metadata = {
   creator: "Luca",
   publisher: "Luca",
   icons: {
-    icon: [
-      { url: "/icon.svg", type: "image/svg+xml" },
-      { url: "/favicon.ico" },
-    ],
-    shortcut: ["/favicon.ico"],
+    icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
+    shortcut: ["/icon.svg"],
     apple: [{ url: "/icon.svg", type: "image/svg+xml" }],
   },
   openGraph: {
