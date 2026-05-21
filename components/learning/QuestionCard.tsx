@@ -16,7 +16,6 @@ export function QuestionCard({ question }: QuestionCardProps) {
             {question.category}
           </Badge>
           <Badge variant="outline">{question.subtopic}</Badge>
-          <Badge variant="outline">{question.difficulty}</Badge>
         </div>
         <h2 className="text-xl font-black leading-relaxed tracking-tight sm:text-2xl">{question.prompt}</h2>
       </div>
