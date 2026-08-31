@@ -1,14 +1,7 @@
-import axios from 'axios';
-import { getApiBaseUrl } from '@/lib/api-base';
-import { getStoredToken } from '@/lib/auth-session.storage';
-import type {
-  IngestionJob,
-  IngestionRun,
-  StartIngestionResponse,
-} from '@/types/ingestion.types';
+import { api } from '@/lib/api';
+import type { IngestionJob, IngestionRun, StartIngestionResponse } from '@/types/ingestion.types';
 
-const BASE_URL = getApiBaseUrl();
-const API_URL = `${BASE_URL}/api/v1/ingestion`;
+const API_URL = '/api/v1/ingestion';
 
 export type RetryIngestionRunResponse = {
   message: string;
@@ -18,97 +11,30 @@ export type RetryIngestionRunResponse = {
   status: 'QUEUED' | 'RUNNING' | 'PARTIAL' | 'FAILED' | 'FINISHED';
 };
 
-function getErrorMessage(error: unknown, fallback: string): string {
-  if (axios.isAxiosError(error)) {
-    const detail = error.response?.data?.detail;
-    if (typeof detail === 'string' && detail.trim().length > 0) {
-      return detail;
-    }
-    if (Array.isArray(detail) && detail.length > 0) {
-      const firstIssue = detail[0];
-      if (
-        typeof firstIssue === 'object' &&
-        firstIssue !== null &&
-        'msg' in firstIssue &&
-        typeof firstIssue.msg === 'string'
-      ) {
-        return firstIssue.msg;
-      }
-    }
-
-    const message = error.response?.data?.message;
-    if (typeof message === 'string' && message.trim().length > 0) {
-      return message;
-    }
-  }
-
-  if (error instanceof Error && error.message.trim().length > 0) {
-    return error.message;
-  }
-
-  return fallback;
-}
-
-function getAuthHeaders() {
-  const token = getStoredToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
 export async function startIngestion(file: File, chunks = 8): Promise<StartIngestionResponse> {
   const formData = new FormData();
   formData.append('file', file);
   formData.append('chunks', String(chunks));
 
-  try {
-    const response = await axios.post<StartIngestionResponse>(`${API_URL}/upload-pdf`, formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-        ...getAuthHeaders(),
-      },
-    });
-
-    return response.data;
-  } catch (error) {
-    throw new Error(getErrorMessage(error, 'No se pudo iniciar la ingesta.'));
-  }
+  const response = await api.post<StartIngestionResponse>(`${API_URL}/upload-pdf`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return response.data;
 }
 
 export async function getIngestionRuns(): Promise<IngestionRun[]> {
-  try {
-    const response = await axios.get<IngestionRun[]>(`${API_URL}/runs`, {
-      headers: getAuthHeaders(),
-    });
-    return response.data;
-  } catch (error) {
-    throw new Error(getErrorMessage(error, 'No se pudo obtener el historial de ingestas.'));
-  }
+  const response = await api.get<IngestionRun[]>(`${API_URL}/runs`);
+  return response.data;
 }
 
 export async function getIngestionRun(runId: string): Promise<IngestionRun> {
-  try {
-    const response = await axios.get<IngestionRun>(`${API_URL}/runs/${runId}`, {
-      headers: getAuthHeaders(),
-    });
-    return response.data;
-  } catch (error) {
-    throw new Error(getErrorMessage(error, 'No se pudo obtener el estado de la ingesta.'));
-  }
+  const response = await api.get<IngestionRun>(`${API_URL}/runs/${runId}`);
+  return response.data;
 }
 
 export async function retryIngestionRun(runId: string): Promise<RetryIngestionRunResponse> {
-  try {
-    const response = await axios.post<RetryIngestionRunResponse>(
-      `${API_URL}/runs/${encodeURIComponent(runId)}/retry`,
-      {},
-      {
-        headers: getAuthHeaders(),
-        withCredentials: true,
-      },
-    );
-    return response.data;
-  } catch (error) {
-    throw new Error(getErrorMessage(error, 'No se pudo reintentar la ingesta.'));
-  }
+  const response = await api.post<RetryIngestionRunResponse>(`${API_URL}/runs/${encodeURIComponent(runId)}/retry`);
+  return response.data;
 }
 
 function normalizeIngestionJob(candidate: unknown): IngestionJob | null {
@@ -136,19 +62,11 @@ function normalizeIngestionJob(candidate: unknown): IngestionJob | null {
 }
 
 export async function getIngestionJobs(): Promise<IngestionJob[]> {
-  try {
-    const response = await axios.get<unknown>(`${API_URL}/jobs`, {
-      headers: getAuthHeaders(),
-    });
+  const response = await api.get<unknown>(`${API_URL}/jobs`);
 
-    if (!Array.isArray(response.data)) {
-      return [];
-    }
-
-    return response.data
-      .map((item) => normalizeIngestionJob(item))
-      .filter((item): item is IngestionJob => item !== null);
-  } catch (error) {
-    throw new Error(getErrorMessage(error, 'No se pudo obtener el estado de jobs de ingesta.'));
+  if (!Array.isArray(response.data)) {
+    return [];
   }
+
+  return response.data.map((item) => normalizeIngestionJob(item)).filter((item): item is IngestionJob => item !== null);
 }

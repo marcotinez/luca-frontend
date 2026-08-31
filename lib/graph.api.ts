@@ -1,22 +1,20 @@
 import type {
-EntityResult,
+  EntityResult,
   RelationshipResult,
   SearchResponse,
   GraphStats,
   SemanticResult,
   SemanticSearchResponse,
 } from '@/types/graph.types';
-import axios from 'axios';
-import { getApiBaseUrl } from '@/lib/api-base';
+import { api } from '@/lib/api';
 
-const BASE_URL = getApiBaseUrl();
-const API_URL = `${BASE_URL}/api/v1/graph`;
+const API_URL = '/api/v1/graph';
 
 /**
  * Obtiene estadísticas generales del grafo Neo4j
  */
 export async function getGraphStats(): Promise<GraphStats> {
-  const response = await axios.get(`${API_URL}/stats`);
+  const response = await api.get(`${API_URL}/stats`);
   return response.data;
 }
 
@@ -24,10 +22,7 @@ export async function getGraphStats(): Promise<GraphStats> {
  * Compatibilidad: desde el refactor backend la búsqueda textual se unificó en /search.
  * Este helper mantiene la firma previa y extrae solo entidades.
  */
-export async function searchEntities(
-  query: string,
-  limit: number = 50
-): Promise<EntityResult[]> {
+export async function searchEntities(query: string, limit: number = 50): Promise<EntityResult[]> {
   const result = await searchGraph(query, limit);
   return result.entities ?? [];
 }
@@ -36,10 +31,7 @@ export async function searchEntities(
  * Compatibilidad: desde el refactor backend la búsqueda textual se unificó en /search.
  * Este helper mantiene la firma previa y extrae solo relaciones.
  */
-export async function searchRelationships(
-  query: string,
-  limit: number = 50
-): Promise<RelationshipResult[]> {
+export async function searchRelationships(query: string, limit: number = 50): Promise<RelationshipResult[]> {
   const result = await searchGraph(query, limit);
   return result.relationships ?? [];
 }
@@ -47,11 +39,8 @@ export async function searchRelationships(
 /**
  * Búsqueda textual combinada: entidades + relaciones
  */
-export async function searchGraph(
-  query: string,
-  limit: number = 50
-): Promise<SearchResponse> {
-  const response = await axios.get(`${API_URL}/search`, {
+export async function searchGraph(query: string, limit: number = 50): Promise<SearchResponse> {
+  const response = await api.get(`${API_URL}/search`, {
     params: { query, limit: Math.min(limit, 200) },
   });
   return response.data;
@@ -71,7 +60,7 @@ export async function semanticSearch(
   expandGraph: boolean = true,
   depth: number = 1
 ): Promise<SemanticSearchResponse> {
-  const response = await axios.post(`${API_URL}/semantic-search`, {
+  const response = await api.post(`${API_URL}/semantic-search`, {
     query,
     limit,
     expand_graph: expandGraph,

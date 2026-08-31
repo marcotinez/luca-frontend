@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Vendor assets served as-is; not source.
+    "public/**",
   ]),
 ]);
 
