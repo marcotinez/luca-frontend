@@ -1,0 +1,24 @@
+schema: spec-driven
+
+context: |
+  Luca Frontend — cliente web de la plataforma de educación financiera
+  adaptativa Luca.
+
+  Stack: Next.js (App Router) + React 19 + TypeScript, Tailwind CSS 4 con
+  componentes shadcn/ui sobre Radix, axios para el acceso a la API,
+  react-hook-form + zod en formularios, sonner para notificaciones.
+
+  Estructura: `app/` con dos áreas — estudiante (panel, práctica, perfil,
+  temario) y administración (`/admin`: usuarios, preguntas, evaluaciones,
+  generador, ingesta, grafo y configuración de IA) —, `components/` por dominio
+  más `components/ui/`, `lib/` para acceso a la API y utilidades, `hooks/` y
+  `types/`.
+
+  Convenciones: español en la interfaz y la documentación; código y nombres de
+  símbolos en inglés. Conventional Commits. Un change de OpenSpec equivale a una
+  rama y un PR contra `dev`.
+
+  Dirección técnica vigente: el backend es la fuente de verdad de catálogos y
+  contratos —el cliente no duplica reglas de validación ni ejecuta trabajo por
+  lotes en el navegador—, un único cliente HTTP y un único estado de sesión, y
+  se prefiere borrar antes que añadir.
