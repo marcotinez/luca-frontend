@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import axios from "axios";
 import * as z from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, type SubmitHandler } from "react-hook-form";
@@ -92,18 +91,7 @@ export default function PerfilPage() {
       setIsDialogOpen(false);
       form.reset();
     } catch (error) {
-      let errorMessage = "Error al actualizar la contraseña";
-      if (axios.isAxiosError(error) && error.response?.data?.detail) {
-        const detail = error.response.data.detail;
-        if (typeof detail === "string") {
-          errorMessage = detail;
-        } else if (Array.isArray(detail)) {
-          errorMessage = detail.map((err: { msg?: string }) => err.msg || "Error").join(", ");
-        } else if (typeof detail === "object" && detail?.msg) {
-          errorMessage = detail.msg;
-        }
-      }
-      toast.error(errorMessage);
+      toast.error(apiErrorMessage(error, "Error al actualizar la contraseña"));
     }
   };
 

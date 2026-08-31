@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import axios from "axios";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { RouteGuard } from "@/components/auth/RouteGuard";
@@ -9,6 +8,7 @@ import { DashboardNavbar } from "@/components/DashboardNavbar";
 import { Card, CardContent } from "@/components/ui/card";
 import { getPracticeTest } from "@/lib/learning.api";
 import { apiErrorMessage } from "@/lib/learning.utils";
+import { ApiError } from "@/lib/api";
 import type { PracticeTestDetailResponse } from "@/types";
 import { TestResultSummary } from "@/components/learning/TestResultSummary";
 import { useAuth } from "@/hooks/useAuth";
@@ -32,12 +32,12 @@ export default function PracticeTestResultPage() {
       setTest(response);
       await refreshUser();
     } catch (error) {
-      if (axios.isAxiosError(error) && error.response?.status === 403) {
+      if (error instanceof ApiError && error.status === 403) {
         toast.error("No tienes permisos para ver este resultado");
         router.replace("/dashboard");
         return;
       }
-      if (axios.isAxiosError(error) && error.response?.status === 404) {
+      if (error instanceof ApiError && error.status === 404) {
         toast.error("No se encontró el test");
         router.replace("/dashboard");
         return;
