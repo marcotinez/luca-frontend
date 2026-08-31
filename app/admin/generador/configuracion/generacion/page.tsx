@@ -1,13 +1,14 @@
 'use client';
 
-import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useState } from 'react';
+import { toast } from 'sonner';
 import {
   GenerationConfigPatchRequest,
   GenerationConfigResponse,
-  getGenerationConfig,
-  patchGenerationConfig,
 } from '@/lib/config.api';
+import { useConfigSection } from '@/hooks/useConfigSection';
+import { usePromptPlaceholders } from '@/hooks/usePromptPlaceholders';
+import { GuardedLink } from '@/components/generation/GuardedLink';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
@@ -21,14 +22,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { ArrowLeft, Loader2, Save, Settings2 } from 'lucide-react';
-import { toast } from 'sonner';
-import {
-  decodeEscapedSequences,
-  getConfigErrorMessage,
-  LARGE_TEXTAREA_CLASSNAME,
-  REQUIRED_PLACEHOLDERS,
-  validateTemplatePlaceholders,
-} from '../_lib/common';
+import { decodeEscapedSequences, LARGE_TEXTAREA_CLASSNAME, validateTemplatePlaceholders } from '../_lib/common';
 
 type PromptModalKey = 'stem' | 'distractor' | 'judge' | null;
 const LARGE_MODAL_CLASSNAME =
@@ -43,15 +37,6 @@ type GenerationPromptDraft = {
   generation_judge_user_prompt_template: string;
 };
 
-const EMPTY_DRAFT: GenerationPromptDraft = {
-  generation_stem_system_prompt: '',
-  generation_stem_user_prompt_template: '',
-  generation_distractor_system_prompt: '',
-  generation_distractor_user_prompt_template: '',
-  generation_judge_system_prompt: '',
-  generation_judge_user_prompt_template: '',
-};
-
 function clonePromptDraftFromConfig(config: GenerationConfigResponse): GenerationPromptDraft {
   return {
     generation_stem_system_prompt: decodeEscapedSequences(config.generation_stem_system_prompt),
@@ -63,24 +48,35 @@ function clonePromptDraftFromConfig(config: GenerationConfigResponse): Generatio
   };
 }
 
+// PATCH parcial: solo los campos que de verdad cambiaron respecto a la config cargada.
+function buildPatch(draft: GenerationPromptDraft, config: GenerationConfigResponse): GenerationConfigPatchRequest {
+  const original = clonePromptDraftFromConfig(config);
+  const patch: GenerationConfigPatchRequest = {};
+  (Object.keys(draft) as (keyof GenerationPromptDraft)[]).forEach((key) => {
+    const trimmed = draft[key].trim();
+    if (trimmed !== original[key].trim()) {
+      patch[key] = trimmed;
+    }
+  });
+  return patch;
+}
+
 function PromptFieldCard({
   title,
   variable,
   description,
   value,
   onChange,
-  placeholderKey,
+  requiredPlaceholders,
 }: {
   title: string;
   variable: string;
   description: string;
   value: string;
   onChange: (value: string) => void;
-  placeholderKey?: keyof typeof REQUIRED_PLACEHOLDERS;
+  requiredPlaceholders?: string[];
 }) {
-  const missing = placeholderKey
-    ? validateTemplatePlaceholders(value, REQUIRED_PLACEHOLDERS[placeholderKey])
-    : [];
+  const missing = requiredPlaceholders ? validateTemplatePlaceholders(value, requiredPlaceholders) : [];
 
   return (
     <div className="space-y-3 rounded-lg border bg-card/50 p-4">
@@ -96,7 +92,7 @@ function PromptFieldCard({
         rows={10}
         className={LARGE_TEXTAREA_CLASSNAME}
       />
-      {placeholderKey ? (
+      {requiredPlaceholders ? (
         <p className="text-xs text-muted-foreground">
           {missing.length === 0
             ? 'Placeholders completos.'
@@ -137,41 +133,18 @@ function StageRow({
 }
 
 export default function ConfiguracionGeneracionPage() {
-  const [config, setConfig] = useState<GenerationConfigResponse | null>(null);
-  const [draft, setDraft] = useState<GenerationPromptDraft>(EMPTY_DRAFT);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
+  const { config, draft, setDraft, isLoading, isSaving, isDirty, restore, save } = useConfigSection(
+    clonePromptDraftFromConfig,
+    buildPatch
+  );
+  const { placeholders } = usePromptPlaceholders();
   const [promptModal, setPromptModal] = useState<PromptModalKey>(null);
 
-  const isDirty = useMemo(() => {
-    if (!config) return false;
-    return JSON.stringify(clonePromptDraftFromConfig(config)) !== JSON.stringify(draft);
-  }, [config, draft]);
-
-  const loadConfig = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      const response = await getGenerationConfig();
-      setConfig(response);
-      setDraft(clonePromptDraftFromConfig(response));
-    } catch (error) {
-      toast.error(getConfigErrorMessage(error));
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadConfig();
-  }, [loadConfig]);
-
-  const handleRestore = () => {
-    if (!config) return;
-    setDraft(clonePromptDraftFromConfig(config));
-    toast.success('Cambios descartados');
-  };
+  const requiredFor = useCallback((path: string) => placeholders[path], [placeholders]);
 
   const handleSave = async () => {
+    if (!draft) return;
+
     const requiredPromptFields: Array<{ label: string; value: string }> = [
       { label: 'generation_stem_system_prompt', value: draft.generation_stem_system_prompt },
       { label: 'generation_stem_user_prompt_template', value: draft.generation_stem_user_prompt_template },
@@ -187,56 +160,23 @@ export default function ConfiguracionGeneracionPage() {
       return;
     }
 
-    const templateChecks: Array<{
-      key: keyof typeof REQUIRED_PLACEHOLDERS;
-      label: string;
-      value: string;
-    }> = [
-      {
-        key: 'generation_stem_user_prompt_template',
-        label: 'generation_stem_user_prompt_template',
-        value: draft.generation_stem_user_prompt_template,
-      },
-      {
-        key: 'generation_distractor_user_prompt_template',
-        label: 'generation_distractor_user_prompt_template',
-        value: draft.generation_distractor_user_prompt_template,
-      },
-      {
-        key: 'generation_judge_user_prompt_template',
-        label: 'generation_judge_user_prompt_template',
-        value: draft.generation_judge_user_prompt_template,
-      },
+    const templateChecks: Array<{ path: string; label: string; value: string }> = [
+      { path: 'generation.stem_user_prompt_template', label: 'generation_stem_user_prompt_template', value: draft.generation_stem_user_prompt_template },
+      { path: 'generation.distractor_user_prompt_template', label: 'generation_distractor_user_prompt_template', value: draft.generation_distractor_user_prompt_template },
+      { path: 'generation.judge_user_prompt_template', label: 'generation_judge_user_prompt_template', value: draft.generation_judge_user_prompt_template },
     ];
 
     for (const check of templateChecks) {
-      const missing = validateTemplatePlaceholders(check.value, REQUIRED_PLACEHOLDERS[check.key]);
+      const required = requiredFor(check.path);
+      if (!required) continue;
+      const missing = validateTemplatePlaceholders(check.value, required);
       if (missing.length > 0) {
         toast.error(`Faltan placeholders en ${check.label}: ${missing.map((item) => `{${item}}`).join(', ')}`);
         return;
       }
     }
 
-    const payload: GenerationConfigPatchRequest = {
-      generation_stem_system_prompt: draft.generation_stem_system_prompt.trim(),
-      generation_stem_user_prompt_template: draft.generation_stem_user_prompt_template.trim(),
-      generation_distractor_system_prompt: draft.generation_distractor_system_prompt.trim(),
-      generation_distractor_user_prompt_template: draft.generation_distractor_user_prompt_template.trim(),
-      generation_judge_system_prompt: draft.generation_judge_system_prompt.trim(),
-      generation_judge_user_prompt_template: draft.generation_judge_user_prompt_template.trim(),
-    };
-
-    try {
-      setIsSaving(true);
-      const updated = await patchGenerationConfig(payload);
-      setConfig(updated);
-      setDraft(clonePromptDraftFromConfig(updated));
-      toast.success('Prompts de generación actualizados');
-    } catch (error) {
-      toast.error(getConfigErrorMessage(error));
-    } finally {
-      setIsSaving(false);
-    }
+    await save();
   };
 
   return (
@@ -251,10 +191,10 @@ export default function ConfiguracionGeneracionPage() {
             <Badge variant="outline">Última actualización: {new Date(config.updated_at).toLocaleString('es-CL')}</Badge>
           ) : null}
           <Button asChild variant="outline">
-            <Link href="/admin/generador/configuracion">
+            <GuardedLink href="/admin/generador/configuracion" isDirty={isDirty}>
               <ArrowLeft className="mr-2 h-4 w-4" />
               Volver a configuración
-            </Link>
+            </GuardedLink>
           </Button>
         </div>
       </div>
@@ -265,7 +205,7 @@ export default function ConfiguracionGeneracionPage() {
           <CardDescription>Cada etapa se edita en su modal dedicado.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          {isLoading ? (
+          {isLoading || !draft ? (
             <div className="rounded-md border border-dashed p-6 text-sm text-muted-foreground">
               Cargando configuración...
             </div>
@@ -295,7 +235,7 @@ export default function ConfiguracionGeneracionPage() {
       </Card>
 
       <div className="flex flex-wrap justify-end gap-2 border-t pt-4">
-        <Button variant="outline" onClick={handleRestore} disabled={!isDirty || isSaving || isLoading}>
+        <Button variant="outline" onClick={restore} disabled={!isDirty || isSaving || isLoading}>
           Restaurar valores cargados
         </Button>
         <Button onClick={handleSave} disabled={!isDirty || isSaving || isLoading}>
@@ -310,120 +250,130 @@ export default function ConfiguracionGeneracionPage() {
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2">
           <Button asChild variant="outline" size="sm">
-            <Link href="/admin/generador/configuracion/modelos-pipeline">
+            <GuardedLink href="/admin/generador/configuracion/modelos-pipeline" isDirty={isDirty}>
               <Settings2 className="mr-2 h-4 w-4" />
               Modelos y pipeline
-            </Link>
+            </GuardedLink>
           </Button>
           <Button asChild variant="outline" size="sm">
-            <Link href="/admin/generador/configuracion/ingesta">
+            <GuardedLink href="/admin/generador/configuracion/ingesta" isDirty={isDirty}>
               <Settings2 className="mr-2 h-4 w-4" />
               Ir a ingesta
-            </Link>
+            </GuardedLink>
           </Button>
           <Button asChild variant="outline" size="sm">
-            <Link href="/admin/generador/configuracion/taxonomia">
+            <GuardedLink href="/admin/generador/configuracion/taxonomia" isDirty={isDirty}>
               <Settings2 className="mr-2 h-4 w-4" />
               Ir a taxonomía
-            </Link>
+            </GuardedLink>
           </Button>
         </CardContent>
       </Card>
 
-      <Dialog open={promptModal === 'stem'} onOpenChange={(open) => setPromptModal(open ? 'stem' : null)}>
-        <DialogContent className={LARGE_MODAL_CLASSNAME}>
-          <DialogHeader>
-            <DialogTitle>Editar Etapa Stem</DialogTitle>
-            <DialogDescription>Generación de enunciado + respuesta correcta.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <PromptFieldCard
-              title="Prompt de sistema de stem"
-              variable="generation_stem_system_prompt"
-              description="Instrucciones de sistema para la etapa stem."
-              value={draft.generation_stem_system_prompt}
-              onChange={(value) => setDraft((prev) => ({ ...prev, generation_stem_system_prompt: value }))}
-            />
-            <PromptFieldCard
-              title="Template de usuario de stem"
-              variable="generation_stem_user_prompt_template"
-              description="Plantilla de usuario para contexto de generación en etapa stem."
-              value={draft.generation_stem_user_prompt_template}
-              onChange={(value) => setDraft((prev) => ({ ...prev, generation_stem_user_prompt_template: value }))}
-              placeholderKey="generation_stem_user_prompt_template"
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPromptModal(null)}>
-              Cerrar
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {draft ? (
+        <>
+          <Dialog open={promptModal === 'stem'} onOpenChange={(open) => setPromptModal(open ? 'stem' : null)}>
+            <DialogContent className={LARGE_MODAL_CLASSNAME}>
+              <DialogHeader>
+                <DialogTitle>Editar Etapa Stem</DialogTitle>
+                <DialogDescription>Generación de enunciado + respuesta correcta.</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <PromptFieldCard
+                  title="Prompt de sistema de stem"
+                  variable="generation_stem_system_prompt"
+                  description="Instrucciones de sistema para la etapa stem."
+                  value={draft.generation_stem_system_prompt}
+                  onChange={(value) => setDraft((prev) => (prev ? { ...prev, generation_stem_system_prompt: value } : prev))}
+                />
+                <PromptFieldCard
+                  title="Template de usuario de stem"
+                  variable="generation_stem_user_prompt_template"
+                  description="Plantilla de usuario para contexto de generación en etapa stem."
+                  value={draft.generation_stem_user_prompt_template}
+                  onChange={(value) =>
+                    setDraft((prev) => (prev ? { ...prev, generation_stem_user_prompt_template: value } : prev))
+                  }
+                  requiredPlaceholders={requiredFor('generation.stem_user_prompt_template')}
+                />
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setPromptModal(null)}>
+                  Cerrar
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
-      <Dialog open={promptModal === 'distractor'} onOpenChange={(open) => setPromptModal(open ? 'distractor' : null)}>
-        <DialogContent className={LARGE_MODAL_CLASSNAME}>
-          <DialogHeader>
-            <DialogTitle>Editar Etapa Distractores</DialogTitle>
-            <DialogDescription>Generación de alternativas incorrectas plausibles.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <PromptFieldCard
-              title="Prompt de sistema de distractores"
-              variable="generation_distractor_system_prompt"
-              description="Instrucciones de sistema para distractores."
-              value={draft.generation_distractor_system_prompt}
-              onChange={(value) => setDraft((prev) => ({ ...prev, generation_distractor_system_prompt: value }))}
-            />
-            <PromptFieldCard
-              title="Template de usuario de distractores"
-              variable="generation_distractor_user_prompt_template"
-              description="Plantilla con pregunta, respuesta correcta y contexto semántico."
-              value={draft.generation_distractor_user_prompt_template}
-              onChange={(value) =>
-                setDraft((prev) => ({ ...prev, generation_distractor_user_prompt_template: value }))
-              }
-              placeholderKey="generation_distractor_user_prompt_template"
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPromptModal(null)}>
-              Cerrar
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          <Dialog open={promptModal === 'distractor'} onOpenChange={(open) => setPromptModal(open ? 'distractor' : null)}>
+            <DialogContent className={LARGE_MODAL_CLASSNAME}>
+              <DialogHeader>
+                <DialogTitle>Editar Etapa Distractores</DialogTitle>
+                <DialogDescription>Generación de alternativas incorrectas plausibles.</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <PromptFieldCard
+                  title="Prompt de sistema de distractores"
+                  variable="generation_distractor_system_prompt"
+                  description="Instrucciones de sistema para distractores."
+                  value={draft.generation_distractor_system_prompt}
+                  onChange={(value) =>
+                    setDraft((prev) => (prev ? { ...prev, generation_distractor_system_prompt: value } : prev))
+                  }
+                />
+                <PromptFieldCard
+                  title="Template de usuario de distractores"
+                  variable="generation_distractor_user_prompt_template"
+                  description="Plantilla con pregunta, respuesta correcta y contexto semántico."
+                  value={draft.generation_distractor_user_prompt_template}
+                  onChange={(value) =>
+                    setDraft((prev) => (prev ? { ...prev, generation_distractor_user_prompt_template: value } : prev))
+                  }
+                  requiredPlaceholders={requiredFor('generation.distractor_user_prompt_template')}
+                />
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setPromptModal(null)}>
+                  Cerrar
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
-      <Dialog open={promptModal === 'judge'} onOpenChange={(open) => setPromptModal(open ? 'judge' : null)}>
-        <DialogContent className={LARGE_MODAL_CLASSNAME}>
-          <DialogHeader>
-            <DialogTitle>Editar Etapa Judge</DialogTitle>
-            <DialogDescription>Evaluación final de calidad de alternativas.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <PromptFieldCard
-              title="Prompt de sistema de judge"
-              variable="generation_judge_system_prompt"
-              description="Instrucciones de sistema para evaluación de calidad."
-              value={draft.generation_judge_system_prompt}
-              onChange={(value) => setDraft((prev) => ({ ...prev, generation_judge_system_prompt: value }))}
-            />
-            <PromptFieldCard
-              title="Template de usuario de judge"
-              variable="generation_judge_user_prompt_template"
-              description="Plantilla con pregunta y alternativas para scoring."
-              value={draft.generation_judge_user_prompt_template}
-              onChange={(value) => setDraft((prev) => ({ ...prev, generation_judge_user_prompt_template: value }))}
-              placeholderKey="generation_judge_user_prompt_template"
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPromptModal(null)}>
-              Cerrar
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          <Dialog open={promptModal === 'judge'} onOpenChange={(open) => setPromptModal(open ? 'judge' : null)}>
+            <DialogContent className={LARGE_MODAL_CLASSNAME}>
+              <DialogHeader>
+                <DialogTitle>Editar Etapa Judge</DialogTitle>
+                <DialogDescription>Evaluación final de calidad de alternativas.</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <PromptFieldCard
+                  title="Prompt de sistema de judge"
+                  variable="generation_judge_system_prompt"
+                  description="Instrucciones de sistema para evaluación de calidad."
+                  value={draft.generation_judge_system_prompt}
+                  onChange={(value) => setDraft((prev) => (prev ? { ...prev, generation_judge_system_prompt: value } : prev))}
+                />
+                <PromptFieldCard
+                  title="Template de usuario de judge"
+                  variable="generation_judge_user_prompt_template"
+                  description="Plantilla con pregunta y alternativas para scoring."
+                  value={draft.generation_judge_user_prompt_template}
+                  onChange={(value) =>
+                    setDraft((prev) => (prev ? { ...prev, generation_judge_user_prompt_template: value } : prev))
+                  }
+                  requiredPlaceholders={requiredFor('generation.judge_user_prompt_template')}
+                />
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setPromptModal(null)}>
+                  Cerrar
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </>
+      ) : null}
     </div>
   );
 }

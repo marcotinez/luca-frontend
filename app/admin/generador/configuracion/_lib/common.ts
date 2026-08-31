@@ -1,38 +1,5 @@
-import { apiErrorMessage } from '@/lib/api';
-
 export const LARGE_TEXTAREA_CLASSNAME = 'min-h-[420px] resize-y font-mono text-sm leading-6';
 export const MAX_TERMS_PER_LIST = 30;
-
-export const REQUIRED_PLACEHOLDERS = {
-  generation_stem_user_prompt_template: [
-    'difficulty',
-    'question_type',
-    'context_json',
-  ],
-  generation_distractor_user_prompt_template: [
-    'difficulty',
-    'question_type',
-    'context_json',
-    'question',
-    'correct_answer',
-  ],
-  generation_judge_user_prompt_template: [
-    'difficulty',
-    'question_type',
-    'question',
-    'alternatives_json',
-  ],
-  ingestion_extraction_user_prompt_template: ['file_name', 'chunk_text'],
-  ingestion_refinement_user_prompt_template: ['entities_json', 'relationships_json'],
-  ingestion_taxonomy_classification_user_prompt_template: [
-    'taxonomy_version',
-    'max_labels_per_item',
-    'allow_fallback_other',
-    'taxonomy_json',
-    'entities_json',
-    'relationships_json',
-  ],
-} as const;
 
 export type TermListKey = 'include_terms' | 'exclude_terms' | 'examples';
 
@@ -78,8 +45,4 @@ export function validateTemplatePlaceholders(
   requiredKeys: readonly string[]
 ): string[] {
   return requiredKeys.filter((key) => !template.includes(`{${key}}`));
-}
-
-export function getConfigErrorMessage(error: unknown) {
-  return apiErrorMessage(error, 'No se pudo actualizar la configuración');
 }
