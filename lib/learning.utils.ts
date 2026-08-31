@@ -1,4 +1,7 @@
 import type { PracticeTestSummaryResponse } from "@/types";
+import { ApiError, apiErrorMessage } from "@/lib/api";
+
+export { apiErrorMessage };
 
 export const INITIAL_DIAGNOSTIC_CATEGORIES = [
   "Mi Primer Sueldo y Seguridad",
@@ -83,46 +86,6 @@ export function formatPracticeMinutes(totalMinutes: number): string {
   return `${hours} h ${minutes} min`;
 }
 
-export function scoreColorClasses(score: number): string {
-  if (score <= 39) return "bg-red-500";
-  if (score <= 69) return "bg-amber-500";
-  return "bg-emerald-500";
-}
-
-export function scoreTone(score: number): string {
-  if (score <= 39) return "text-red-600";
-  if (score <= 69) return "text-amber-600";
-  return "text-emerald-600";
-}
-
-export function toPercent(decimal: number): number {
-  return Math.round(decimal * 100);
-}
-
-export function apiErrorMessage(error: unknown, fallback: string): string {
-  if (typeof error !== "object" || error === null) return fallback;
-  const maybeAxios = error as {
-    response?: {
-      data?: { detail?: unknown };
-    };
-  };
-  const detail = maybeAxios.response?.data?.detail;
-  if (typeof detail === "string") return detail;
-  if (Array.isArray(detail)) {
-    return detail
-      .map((item) => {
-        if (typeof item === "string") return item;
-        if (typeof item === "object" && item !== null && "msg" in item) {
-          return String(item.msg);
-        }
-        return "";
-      })
-      .filter(Boolean)
-      .join(", ");
-  }
-  return fallback;
-}
-
 export interface LearningApiErrorSuggestion {
   category: string;
   subtopic?: string | null;
@@ -135,14 +98,11 @@ export interface LearningApiErrorDetail {
   suggestions: LearningApiErrorSuggestion[];
 }
 
+// Toda llamada a `api` rechaza con ApiError; el detalle estructurado que el
+// backend devuelve (código, mensaje, sugerencias) sobrevive en `.details`.
 export function getLearningApiErrorDetail(error: unknown): LearningApiErrorDetail | null {
-  if (typeof error !== "object" || error === null) return null;
-  const maybeAxios = error as {
-    response?: {
-      data?: { detail?: unknown };
-    };
-  };
-  const detail = maybeAxios.response?.data?.detail;
+  if (!(error instanceof ApiError)) return null;
+  const detail = error.details;
   if (typeof detail !== "object" || detail === null) return null;
 
   const detailObj = detail as {

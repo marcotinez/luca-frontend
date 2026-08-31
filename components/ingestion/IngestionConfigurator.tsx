@@ -45,6 +45,10 @@ export function IngestionConfigurator({ onUpload, isUploading }: IngestionConfig
     ? Math.ceil(totalPages / pagesPerChunk)
     : 0;
 
+  // pdfjs-dist se mantiene: no es solo un contador de páginas, maneja la
+  // configuración interactiva de chunks ANTES de subir (el conteo del backend
+  // solo existe después de procesar, demasiado tarde para este slider). Se
+  // carga en diferido — este import dinámico es el único en el proyecto.
   const loadPdfModule = useCallback(async () => {
     const pdfjsLib = await import('pdfjs-dist');
     pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';

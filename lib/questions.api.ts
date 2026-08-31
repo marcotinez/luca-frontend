@@ -1,5 +1,5 @@
 import { api } from '@/lib/api';
-import type { QuestionResponse, QuestionCreate, QuestionUpdate, Status } from '@/types';
+import type { QuestionResponse, QuestionUpdate, Status } from '@/types';
 import { Difficulty } from '@/types';
 
 const API_URL = '/api/v1/questions';
@@ -38,22 +38,6 @@ export async function listQuestions(filters: QuestionFilters): Promise<QuestionR
 export async function getQuestionCategoryCounts(): Promise<QuestionCategoryCount[]> {
   const { data } = await api.get(`${API_URL}/stats/category-counts`);
   return (data as QuestionCategoryCount[]) || [];
-}
-
-/**
- * Obtiene una pregunta por su ID
- */
-export async function getQuestion(id: string): Promise<QuestionResponse> {
-  const response = await api.get(`${API_URL}/${id}`);
-  return response.data;
-}
-
-/**
- * Crea una nueva pregunta
- */
-export async function createQuestion(data: QuestionCreate): Promise<QuestionResponse> {
-  const response = await api.post(API_URL, data);
-  return response.data;
 }
 
 /**

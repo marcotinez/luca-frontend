@@ -2,7 +2,6 @@ import { api } from '@/lib/api';
 import type {
   CreateCategoryPracticeTestRequest,
   CreateRecommendedPracticeTestRequest,
-  AdaptiveStatsResponse,
   PracticeAvailabilityResponse,
   PracticeTestDifficulty,
   PracticeTestCreateRequest,
@@ -65,10 +64,5 @@ export async function getPracticeTestAvailability(params: {
       question_count: params.question_count ?? 5,
     },
   });
-  return response.data;
-}
-
-export async function getAdaptiveStats(): Promise<AdaptiveStatsResponse> {
-  const response = await api.get(`${API_URL.replace('/tests', '')}/adaptive-stats`);
   return response.data;
 }

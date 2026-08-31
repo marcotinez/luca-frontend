@@ -35,14 +35,6 @@ export function writeStorage<T>(key: string, value: T) {
   window.localStorage.setItem(resolveKey(key), JSON.stringify(value));
 }
 
-export function removeStorage(key: string) {
-  if (!isStorageAvailable()) {
-    return;
-  }
-
-  window.localStorage.removeItem(resolveKey(key));
-}
-
 /** Borra todas las claves de la app en localStorage (prefijo `luca:`), no solo una lista puntual. */
 export function clearStorageNamespace() {
   if (!isStorageAvailable()) {
@@ -53,10 +45,6 @@ export function clearStorageNamespace() {
   for (const key of keys) {
     window.localStorage.removeItem(key);
   }
-}
-
-export function getStorageKey(key: string) {
-  return resolveKey(key);
 }
 
 export function readStringStorage(key: string) {

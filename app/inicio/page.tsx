@@ -1,5 +1,0 @@
-import { StudentDashboard } from "@/components/learning/StudentDashboard";
-
-export default function InicioPage() {
-  return <StudentDashboard />;
-}

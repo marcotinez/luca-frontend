@@ -1,11 +1,4 @@
-import type {
-  EntityResult,
-  RelationshipResult,
-  SearchResponse,
-  GraphStats,
-  SemanticResult,
-  SemanticSearchResponse,
-} from '@/types/graph.types';
+import type { SearchResponse, GraphStats, SemanticResult, SemanticSearchResponse } from '@/types/graph.types';
 import { api } from '@/lib/api';
 
 const API_URL = '/api/v1/graph';
@@ -16,24 +9,6 @@ const API_URL = '/api/v1/graph';
 export async function getGraphStats(): Promise<GraphStats> {
   const response = await api.get(`${API_URL}/stats`);
   return response.data;
-}
-
-/**
- * Compatibilidad: desde el refactor backend la búsqueda textual se unificó en /search.
- * Este helper mantiene la firma previa y extrae solo entidades.
- */
-export async function searchEntities(query: string, limit: number = 50): Promise<EntityResult[]> {
-  const result = await searchGraph(query, limit);
-  return result.entities ?? [];
-}
-
-/**
- * Compatibilidad: desde el refactor backend la búsqueda textual se unificó en /search.
- * Este helper mantiene la firma previa y extrae solo relaciones.
- */
-export async function searchRelationships(query: string, limit: number = 50): Promise<RelationshipResult[]> {
-  const result = await searchGraph(query, limit);
-  return result.relationships ?? [];
 }
 
 /**
