@@ -1,216 +1,168 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { toast } from 'sonner';
+import { apiErrorMessage } from '@/lib/api';
+import { listGenerationRuns, GenerationRunResponse } from '@/lib/generation.api';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import { clearOpenAILogs, getOpenAILogs, OpenAILogEntry } from '@/lib/openai-logs.storage';
-import { RefreshCcw, Trash2 } from 'lucide-react';
-import { toast } from 'sonner';
+import { ChevronLeft, ChevronRight, RefreshCcw } from 'lucide-react';
+import { TraceViewer } from '@/components/generation/TraceViewer';
 
-function prettyJson(value: unknown): string {
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
-}
+const PAGE_SIZE = 20;
 
-function prettyRawOutput(rawOutput: string): string {
-  const trimmed = rawOutput.trim();
-  const withoutFence = trimmed
-    .replace(/^```json\s*/i, '')
-    .replace(/^```\s*/i, '')
-    .replace(/\s*```$/, '');
+export default function GenerationRunsPage() {
+  const [runs, setRuns] = useState<GenerationRunResponse[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [snapshotIdFilter, setSnapshotIdFilter] = useState('');
+  const [unitIdFilter, setUnitIdFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [page, setPage] = useState(0);
 
-  try {
-    const parsed = JSON.parse(withoutFence);
-    return JSON.stringify(parsed, null, 2);
-  } catch {
-    return rawOutput;
-  }
-}
+  const loadRuns = useCallback(async () => {
+    setLoading(true);
+    try {
+      const response = await listGenerationRuns({
+        snapshot_id: snapshotIdFilter.trim() || undefined,
+        unit_id: unitIdFilter.trim() || undefined,
+        status: statusFilter !== 'all' ? statusFilter : undefined,
+        limit: PAGE_SIZE,
+        skip: page * PAGE_SIZE,
+      });
+      setRuns(response.items);
+      setTotal(response.total);
+    } catch (error) {
+      toast.error(apiErrorMessage(error, 'No se pudieron cargar las ejecuciones de generación'));
+    } finally {
+      setLoading(false);
+    }
+  }, [snapshotIdFilter, unitIdFilter, statusFilter, page]);
 
-export default function OpenAILogsPage() {
-  const [logs, setLogs] = useState<OpenAILogEntry[]>(() => getOpenAILogs());
+  useEffect(() => {
+    void loadRuns();
+  }, [loadRuns]);
 
-  const loadLogs = () => {
-    setLogs(getOpenAILogs());
+  const handleApplyFilters = () => {
+    setPage(0);
+    void loadRuns();
   };
 
-  const totalRequests = logs.length;
-  const totalGeneratedQuestions = useMemo(
-    () =>
-      logs.reduce((acc, log) => {
-        const generatedFromArray = Array.isArray(log.response.questions) ? log.response.questions.length : 0;
-        return acc + (log.response.generated_count ?? generatedFromArray);
-      }, 0),
-    [logs]
-  );
-
-  const handleClear = () => {
-    clearOpenAILogs();
-    setLogs([]);
-    toast.success('Historial local de trazas OpenAI limpiado');
-  };
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
     <div className="space-y-6 p-4 sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Trazas OpenAI</h1>
+          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Ejecuciones de generación</h1>
           <p className="text-muted-foreground mt-1">
-            Historial local de requests y raw outputs del generador de preguntas.
+            Historial de ejecuciones guardado por el servidor: prompts, modelos y trazas de cada unidad procesada.
           </p>
         </div>
-        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-          <Button variant="outline" onClick={loadLogs} className="w-full sm:w-auto">
-            <RefreshCcw className="w-4 h-4 mr-2" />
-            Refrescar
-          </Button>
-          <Button variant="destructive" onClick={handleClear} disabled={logs.length === 0} className="w-full sm:w-auto">
-            <Trash2 className="w-4 h-4 mr-2" />
-            Limpiar historial
-          </Button>
-        </div>
+        <Button variant="outline" onClick={() => void loadRuns()} disabled={loading}>
+          <RefreshCcw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+          Refrescar
+        </Button>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Filtros</CardTitle>
+          <CardDescription>Resueltos en el servidor, con paginación.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-4">
+          <div className="space-y-2">
+            <Label>Snapshot ID</Label>
+            <Input
+              value={snapshotIdFilter}
+              onChange={(e) => setSnapshotIdFilter(e.target.value)}
+              placeholder="snapshot_id"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Unit ID</Label>
+            <Input value={unitIdFilter} onChange={(e) => setUnitIdFilter(e.target.value)} placeholder="unit_id" />
+          </div>
+          <div className="space-y-2">
+            <Label>Estado</Label>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos</SelectItem>
+                <SelectItem value="ok">Correcta</SelectItem>
+                <SelectItem value="failed">Con error</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-end">
+            <Button onClick={handleApplyFilters} className="w-full">
+              Aplicar filtros
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="flex flex-wrap gap-2">
-        <Badge variant="outline">Requests: {totalRequests}</Badge>
-        <Badge variant="outline">Preguntas generadas: {totalGeneratedQuestions}</Badge>
+        <Badge variant="outline">Total: {total}</Badge>
+        <Badge variant="outline">
+          Página {page + 1}/{totalPages}
+        </Badge>
       </div>
 
-      {logs.length === 0 ? (
+      {loading ? (
+        <Card>
+          <CardContent className="p-6 text-sm text-muted-foreground">Cargando ejecuciones...</CardContent>
+        </Card>
+      ) : runs.length === 0 ? (
         <Card>
           <CardHeader>
-            <CardTitle>Sin trazas registradas</CardTitle>
-            <CardDescription>
-              Genera preguntas en la vista de generación para empezar a ver requests y outputs aquí.
-            </CardDescription>
+            <CardTitle>Sin ejecuciones</CardTitle>
+            <CardDescription>No hay ejecuciones registradas para estos filtros.</CardDescription>
           </CardHeader>
         </Card>
       ) : (
         <Accordion type="multiple" className="w-full border border-border rounded-md px-4">
-          {logs.map((log, index) => (
-            <AccordionItem key={log.id} value={log.id}>
+          {runs.map((run, index) => (
+            <AccordionItem key={run.id} value={run.id}>
               <AccordionTrigger className="hover:no-underline">
                 <div className="flex flex-wrap items-center gap-2 pr-3">
-                  <Badge variant="outline">#{index + 1}</Badge>
-                  <Badge variant="outline">{new Date(log.created_at).toLocaleString('es-CL')}</Badge>
-                  <Badge variant="outline">
-                    Estado: {log.response.status === 'failed'
-                      ? 'Fallida'
-                      : log.response.status === 'completed_partial'
-                        ? 'Parcial'
-                        : 'Completada'}
-                  </Badge>
-                  <Badge variant="outline">Modelo: {log.response.used_model || '-'}</Badge>
-                  <Badge variant="outline">
-                    Preguntas: {log.response.generated_count ?? (Array.isArray(log.response.questions) ? log.response.questions.length : 0)}
-                  </Badge>
+                  <Badge variant="outline">#{page * PAGE_SIZE + index + 1}</Badge>
+                  <Badge variant="outline">{new Date(run.created_at).toLocaleString('es-CL')}</Badge>
+                  <Badge variant={run.status === 'ok' ? 'secondary' : 'destructive'}>{run.status}</Badge>
                   <span className="text-sm text-muted-foreground line-clamp-1">
-                    {`${String(log.request.category ?? 'Sin categoría')} · ${String(log.request.subtopic ?? 'Cobertura general')}`}
+                    snapshot {run.snapshot_id} · unit {run.unit_id}
                   </span>
                 </div>
               </AccordionTrigger>
-              <AccordionContent className="space-y-4">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">Request</CardTitle>
-                    <CardDescription>Payload enviado al endpoint de generación</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <pre className="text-xs bg-muted/50 border border-border rounded-md p-3 overflow-x-auto">
-                      {prettyJson(log.request)}
-                    </pre>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">Raw Output</CardTitle>
-                    <CardDescription>Respuesta cruda devuelta por el modelo</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <pre className="text-xs bg-muted/50 border border-border rounded-md p-3 overflow-x-auto whitespace-pre-wrap">
-                      {prettyRawOutput(log.response.raw_output)}
-                    </pre>
-                  </CardContent>
-                </Card>
-
-                {log.response.final_prompt && (
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-base">Prompt Final</CardTitle>
-                      <CardDescription>Prompt consolidado enviado al modelo</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <pre className="text-xs bg-muted/50 border border-border rounded-md p-3 overflow-x-auto whitespace-pre-wrap">
-                        {log.response.final_prompt}
-                      </pre>
-                    </CardContent>
-                  </Card>
-                )}
-
-                {(log.response.failure_stage || (log.response.validation_issues?.length || 0) > 0) && (
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-base">Contexto del fallo</CardTitle>
-                      <CardDescription>
-                        Metadatos de validación devueltos por el backend cuando la generación no pudo completarse.
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      {log.response.failure_stage ? (
-                        <div>
-                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                            Etapa
-                          </p>
-                          <p className="text-sm">{log.response.failure_stage}</p>
-                        </div>
-                      ) : null}
-
-                      {(log.response.validation_issues?.length || 0) > 0 ? (
-                        <div>
-                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                            Validation Issues
-                          </p>
-                          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-foreground">
-                            {log.response.validation_issues?.map((issue, issueIndex) => (
-                              <li key={`${log.id}-issue-${issueIndex}`}>{issue}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      ) : null}
-                    </CardContent>
-                  </Card>
-                )}
-
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">Respuesta resumida</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <pre className="text-xs bg-muted/50 border border-border rounded-md p-3 overflow-x-auto">
-                      {prettyJson({
-                        status: log.response.status || 'completed',
-                        error: log.response.error || null,
-                        message: log.response.message || null,
-                        generated_count: log.response.generated_count,
-                        semantic_total: log.response.semantic_total,
-                        used_model: log.response.used_model,
-                        failure_stage: log.response.failure_stage || null,
-                        validation_issues: log.response.validation_issues || null,
-                      })}
-                    </pre>
-                  </CardContent>
-                </Card>
+              <AccordionContent>
+                <TraceViewer run={run} />
               </AccordionContent>
             </AccordionItem>
           ))}
         </Accordion>
       )}
+
+      <div className="flex items-center justify-end gap-2">
+        <Button variant="outline" onClick={() => setPage((prev) => Math.max(0, prev - 1))} disabled={page <= 0 || loading}>
+          <ChevronLeft className="mr-2 h-4 w-4" />
+          Anterior
+        </Button>
+        <Button
+          variant="outline"
+          onClick={() => setPage((prev) => Math.min(totalPages - 1, prev + 1))}
+          disabled={page >= totalPages - 1 || loading}
+        >
+          Siguiente
+          <ChevronRight className="ml-2 h-4 w-4" />
+        </Button>
+      </div>
     </div>
   );
 }

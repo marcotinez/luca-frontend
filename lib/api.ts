@@ -21,6 +21,11 @@ export class ApiError extends Error {
   }
 }
 
+/** Todo error de una llamada a `api` llega aquí como `ApiError`; extrae su mensaje o usa el fallback. */
+export function apiErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof ApiError && error.message ? error.message : fallback;
+}
+
 function toApiError(error: unknown): ApiError {
   if (!axios.isAxiosError(error)) {
     return error instanceof Error ? new ApiError(error.message) : new ApiError('Error inesperado.');
