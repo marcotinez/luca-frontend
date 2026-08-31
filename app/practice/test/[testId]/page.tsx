@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import axios from "axios";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ArrowRight, CheckCircle2, Flame, Loader2 } from "lucide-react";
@@ -11,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { getPracticeTest, submitPracticeTestAnswer } from "@/lib/learning.api";
 import { apiErrorMessage } from "@/lib/learning.utils";
+import { ApiError } from "@/lib/api";
 import type { PracticeTestDetailResponse } from "@/types";
 import { TestProgressBar } from "@/components/learning/TestProgressBar";
 import { QuestionCard } from "@/components/learning/QuestionCard";
@@ -62,12 +62,12 @@ export default function PracticeTestRunnerPage() {
       setBestStreak(0);
       questionStartRef.current = Date.now();
     } catch (error) {
-      if (axios.isAxiosError(error) && error.response?.status === 403) {
+      if (error instanceof ApiError && error.status === 403) {
         toast.error("No tienes permisos para abrir este test");
         router.replace("/dashboard");
         return;
       }
-      if (axios.isAxiosError(error) && error.response?.status === 404) {
+      if (error instanceof ApiError && error.status === 404) {
         toast.error("El test no existe");
         router.replace("/dashboard");
         return;
@@ -135,14 +135,13 @@ export default function PracticeTestRunnerPage() {
       }
       setPendingNextTest(response.test);
     } catch (error) {
-      if (axios.isAxiosError(error)) {
-        const status = error.response?.status;
-        if (status === 400) {
+      if (error instanceof ApiError) {
+        if (error.status === 400) {
           toast.error("Este test ya fue completado. Te llevamos al resultado.");
           router.replace(`/practice/test/${test.id}/result`);
           return;
         }
-        if (status === 422) {
+        if (error.status === 422) {
           toast.error("La opción enviada no es válida. Refrescando estado del test.");
           await loadTest();
           return;

@@ -17,15 +17,7 @@ import { getGenerationConfig } from '@/lib/config.api';
 import { getGlobalGenerationProgress, GlobalProgressResponse } from '@/lib/generation.api';
 import { Loader2, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
-import axios from 'axios';
-
-function getErrorMessage(error: unknown) {
-  if (axios.isAxiosError(error)) {
-    const backendMessage = error.response?.data?.detail || error.response?.data?.message;
-    return backendMessage || 'No se pudo cargar el progreso global';
-  }
-  return 'No se pudo cargar el progreso global';
-}
+import { apiErrorMessage } from '@/lib/api';
 
 function ratioToPercent(value: number) {
   return `${Math.round((value || 0) * 100)}%`;
@@ -62,7 +54,7 @@ export default function ProgresoGlobalGeneracionPage() {
       setData(response);
       setAllCategories(config.categories || []);
     } catch (error) {
-      toast.error(getErrorMessage(error));
+      toast.error(apiErrorMessage(error, 'No se pudo cargar el progreso global'));
     } finally {
       setLoading(false);
     }

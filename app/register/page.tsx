@@ -11,7 +11,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, SubmitHandler } from "react-hook-form";
 import * as z from "zod";
 import { toast } from "sonner";
-import axios from "axios";
+import { apiErrorMessage } from "@/lib/api";
 import { register as apiRegister } from "@/lib/auth.api";
 
 // Tipos
@@ -66,26 +66,7 @@ export default function RegisterPage() {
       } as RegisterRequest);
       router.push(`/login?registeredEmail=${encodeURIComponent(values.email)}`);
     } catch (error) {
-      let errorMessage = "Error al registrar el usuario. Intenta con otro email.";
-      if (axios.isAxiosError(error) && error.response?.data?.detail) {
-        const detail = error.response.data.detail;
-        if (typeof detail === 'string') {
-          errorMessage = detail;
-        } else if (Array.isArray(detail)) {
-          errorMessage = detail
-            .map((err) => {
-              if (!err || typeof err !== "object") return "";
-              const item = err as { loc?: unknown[]; msg?: string };
-              const location = Array.isArray(item.loc) ? item.loc.join(".") : "request";
-              return item.msg ? `${location}: ${item.msg}` : "";
-            })
-            .filter(Boolean)
-            .join(", ");
-        } else if (detail.msg) {
-          errorMessage = detail.msg;
-        }
-      }
-      toast.error(errorMessage);
+      toast.error(apiErrorMessage(error, "Error al registrar el usuario. Intenta con otro email."));
     }
   };
 
