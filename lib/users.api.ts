@@ -1,5 +1,5 @@
 import { api } from '@/lib/api';
-import type { UserLearningProfile, UserResponse, UserUpdate, RegisterRequest, RegisterPracticeAttemptRequest } from '@/types';
+import type { UserLearningProfile, UserResponse, UserUpdate, RegisterRequest } from '@/types';
 
 const USERS_API_URL = '/api/v1/users';
 
@@ -41,13 +41,5 @@ export async function toggleUserStatus(id: string): Promise<UserResponse> {
 
 export async function getLearningProfile(id: string): Promise<UserLearningProfile> {
   const response = await api.get(`${USERS_API_URL}/${id}/learning-profile`);
-  return response.data;
-}
-
-export async function registerPracticeAttempt(
-  id: string,
-  data: RegisterPracticeAttemptRequest,
-): Promise<UserLearningProfile> {
-  const response = await api.post(`${USERS_API_URL}/${id}/practice-attempt`, data);
   return response.data;
 }

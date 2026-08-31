@@ -35,10 +35,8 @@ export type {
 // Re-exportar todo desde ingestion.types
 export type {
   IngestionStatus,
-  IngestionJobStatus,
   IngestionEvent,
   IngestionRun,
-  IngestionJob,
   StartIngestionResponse,
 } from './ingestion.types';
 
@@ -62,13 +60,8 @@ export type {
   PracticeTestSummaryResponse,
   SubmitAnswerRequest,
   SubmitAnswerResponse,
-  RegisterPracticeAttemptRequest,
   PracticeAvailabilityBucket,
   PracticeAvailabilityResponse,
   AdaptiveContext,
   AdaptiveQuestionTag,
-  AdaptiveCategoryAccuracy,
-  AdaptiveDifficultyDistribution,
-  AdaptiveWeeklyTrendPoint,
-  AdaptiveStatsResponse,
 } from './learning.types';

@@ -17,6 +17,7 @@ La aplicacion queda disponible en `http://localhost:3000`.
 - `npm run build`: genera el build de produccion.
 - `npm run start`: sirve el build generado.
 - `npm run lint`: ejecuta validaciones de lint.
+- `npm run dead-code`: detecta archivos, exportaciones y dependencias sin consumidores (`knip`, configurado en `knip.json`). Antes de eliminar algo que reporte, confirma que de verdad no tiene consumidor interno — algunos tipos/funciones se usan solo dentro de su propio archivo y por eso quedan marcados igual; no es un `--fix` automático, cada hallazgo se revisa a mano.
 - `npm run types:api`: regenera `types/api.generated.ts` desde el `/openapi.json` del backend en marcha (usa `API_URL`, por defecto `http://localhost:8080`). No corre en cada build a propósito, para no acoplar la compilación a que el backend esté levantado; el archivo generado se versiona. Ejecútalo cuando el backend cambie contratos de la API y en el mismo PR que ese cambio.
 
 ## Estructura base

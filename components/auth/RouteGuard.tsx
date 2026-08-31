@@ -39,7 +39,7 @@ export function RouteGuard({ access, children }: RouteGuardProps) {
     }
 
     if (access === 'superuser' && !user?.is_superuser) {
-      router.push('/inicio');
+      router.push('/dashboard');
     }
   }, [access, status, user, router]);
 
