@@ -1,13 +1,12 @@
 'use client';
 
-import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   GenerationConfigPatchRequest,
   GenerationConfigResponse,
-  getGenerationConfig,
-  patchGenerationConfig,
 } from '@/lib/config.api';
+import { useConfigSection } from '@/hooks/useConfigSection';
+import { usePromptPlaceholders } from '@/hooks/usePromptPlaceholders';
+import { GuardedLink } from '@/components/generation/GuardedLink';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -15,13 +14,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { ArrowLeft, Loader2, Save, Settings2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { PromptEditorField } from '../_components/prompt-editor-field';
-import {
-  decodeEscapedSequences,
-  getConfigErrorMessage,
-  LARGE_TEXTAREA_CLASSNAME,
-  REQUIRED_PLACEHOLDERS,
-  validateTemplatePlaceholders,
-} from '../_lib/common';
+import { decodeEscapedSequences, LARGE_TEXTAREA_CLASSNAME, validateTemplatePlaceholders } from '../_lib/common';
 
 type IngestionDraft = {
   ingestion_extraction_system_prompt: string;
@@ -32,29 +25,12 @@ type IngestionDraft = {
   ingestion_taxonomy_classification_user_prompt_template: string;
 };
 
-const EMPTY_DRAFT: IngestionDraft = {
-  ingestion_extraction_system_prompt: '',
-  ingestion_extraction_user_prompt_template: '',
-  ingestion_refinement_system_prompt: '',
-  ingestion_refinement_user_prompt_template: '',
-  ingestion_taxonomy_classification_system_prompt: '',
-  ingestion_taxonomy_classification_user_prompt_template: '',
-};
-
 function cloneDraftFromConfig(config: GenerationConfigResponse): IngestionDraft {
   return {
-    ingestion_extraction_system_prompt: decodeEscapedSequences(
-      config.ingestion_extraction_system_prompt
-    ),
-    ingestion_extraction_user_prompt_template: decodeEscapedSequences(
-      config.ingestion_extraction_user_prompt_template
-    ),
-    ingestion_refinement_system_prompt: decodeEscapedSequences(
-      config.ingestion_refinement_system_prompt
-    ),
-    ingestion_refinement_user_prompt_template: decodeEscapedSequences(
-      config.ingestion_refinement_user_prompt_template
-    ),
+    ingestion_extraction_system_prompt: decodeEscapedSequences(config.ingestion_extraction_system_prompt),
+    ingestion_extraction_user_prompt_template: decodeEscapedSequences(config.ingestion_extraction_user_prompt_template),
+    ingestion_refinement_system_prompt: decodeEscapedSequences(config.ingestion_refinement_system_prompt),
+    ingestion_refinement_user_prompt_template: decodeEscapedSequences(config.ingestion_refinement_user_prompt_template),
     ingestion_taxonomy_classification_system_prompt: decodeEscapedSequences(
       config.ingestion_taxonomy_classification_system_prompt
     ),
@@ -64,12 +40,19 @@ function cloneDraftFromConfig(config: GenerationConfigResponse): IngestionDraft 
   };
 }
 
-type TemplatePlaceholdersProps = {
-  template: string;
-  requiredKeys: readonly string[];
-};
+function buildPatch(draft: IngestionDraft, config: GenerationConfigResponse): GenerationConfigPatchRequest {
+  const original = cloneDraftFromConfig(config);
+  const patch: GenerationConfigPatchRequest = {};
+  (Object.keys(draft) as (keyof IngestionDraft)[]).forEach((key) => {
+    const trimmed = draft[key].trim();
+    if (trimmed !== original[key].trim()) {
+      patch[key] = trimmed;
+    }
+  });
+  return patch;
+}
 
-function TemplatePlaceholders({ template, requiredKeys }: TemplatePlaceholdersProps) {
+function TemplatePlaceholders({ template, requiredKeys }: { template: string; requiredKeys: string[] }) {
   const missing = validateTemplatePlaceholders(template, requiredKeys);
 
   return (
@@ -82,73 +65,31 @@ function TemplatePlaceholders({ template, requiredKeys }: TemplatePlaceholdersPr
         ))}
       </div>
       <p className="text-xs text-muted-foreground">
-        {missing.length === 0
-          ? 'Placeholders completos.'
-          : `Faltan: ${missing.map((key) => `{${key}}`).join(', ')}`}
+        {missing.length === 0 ? 'Placeholders completos.' : `Faltan: ${missing.map((key) => `{${key}}`).join(', ')}`}
       </p>
     </div>
   );
 }
 
 export default function ConfiguracionIngestaPage() {
-  const [config, setConfig] = useState<GenerationConfigResponse | null>(null);
-  const [draft, setDraft] = useState<IngestionDraft>(EMPTY_DRAFT);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
-
-  const isDirty = useMemo(() => {
-    if (!config) return false;
-    return JSON.stringify(cloneDraftFromConfig(config)) !== JSON.stringify(draft);
-  }, [config, draft]);
-
-  const loadConfig = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      const response = await getGenerationConfig();
-      setConfig(response);
-      setDraft(cloneDraftFromConfig(response));
-    } catch (error) {
-      toast.error(getConfigErrorMessage(error));
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadConfig();
-  }, [loadConfig]);
+  const { config, draft, setDraft, isLoading, isSaving, isDirty, restore, save } = useConfigSection(
+    cloneDraftFromConfig,
+    buildPatch
+  );
+  const { placeholders } = usePromptPlaceholders();
 
   const handleFieldChange = (field: keyof IngestionDraft, value: string) => {
-    setDraft((prev) => ({
-      ...prev,
-      [field]: value,
-    }));
-  };
-
-  const handleRestore = () => {
-    if (!config) return;
-    setDraft(cloneDraftFromConfig(config));
-    toast.success('Cambios descartados');
+    setDraft((prev) => (prev ? { ...prev, [field]: value } : prev));
   };
 
   const handleSave = async () => {
+    if (!draft) return;
+
     const requiredPromptFields: Array<{ label: string; value: string }> = [
-      {
-        label: 'ingestion_extraction_system_prompt',
-        value: draft.ingestion_extraction_system_prompt,
-      },
-      {
-        label: 'ingestion_extraction_user_prompt_template',
-        value: draft.ingestion_extraction_user_prompt_template,
-      },
-      {
-        label: 'ingestion_refinement_system_prompt',
-        value: draft.ingestion_refinement_system_prompt,
-      },
-      {
-        label: 'ingestion_refinement_user_prompt_template',
-        value: draft.ingestion_refinement_user_prompt_template,
-      },
+      { label: 'ingestion_extraction_system_prompt', value: draft.ingestion_extraction_system_prompt },
+      { label: 'ingestion_extraction_user_prompt_template', value: draft.ingestion_extraction_user_prompt_template },
+      { label: 'ingestion_refinement_system_prompt', value: draft.ingestion_refinement_system_prompt },
+      { label: 'ingestion_refinement_user_prompt_template', value: draft.ingestion_refinement_user_prompt_template },
       {
         label: 'ingestion_taxonomy_classification_system_prompt',
         value: draft.ingestion_taxonomy_classification_system_prompt,
@@ -165,63 +106,23 @@ export default function ConfiguracionIngestaPage() {
       return;
     }
 
-    const extractionMissing = validateTemplatePlaceholders(
-      draft.ingestion_extraction_user_prompt_template,
-      REQUIRED_PLACEHOLDERS.ingestion_extraction_user_prompt_template
-    );
-    if (extractionMissing.length > 0) {
-      toast.error(
-        `Faltan placeholders en ingestion_extraction_user_prompt_template: ${extractionMissing.map((key) => `{${key}}`).join(', ')}`
-      );
-      return;
+    const templateChecks: Array<{ path: string; label: string; value: string }> = [
+      { path: 'ingestion.extraction_user_prompt_template', label: 'ingestion_extraction_user_prompt_template', value: draft.ingestion_extraction_user_prompt_template },
+      { path: 'ingestion.refinement_user_prompt_template', label: 'ingestion_refinement_user_prompt_template', value: draft.ingestion_refinement_user_prompt_template },
+      { path: 'ingestion.taxonomy_classification_user_prompt_template', label: 'ingestion_taxonomy_classification_user_prompt_template', value: draft.ingestion_taxonomy_classification_user_prompt_template },
+    ];
+
+    for (const check of templateChecks) {
+      const required = placeholders[check.path];
+      if (!required) continue;
+      const missing = validateTemplatePlaceholders(check.value, required);
+      if (missing.length > 0) {
+        toast.error(`Faltan placeholders en ${check.label}: ${missing.map((key) => `{${key}}`).join(', ')}`);
+        return;
+      }
     }
 
-    const refinementMissing = validateTemplatePlaceholders(
-      draft.ingestion_refinement_user_prompt_template,
-      REQUIRED_PLACEHOLDERS.ingestion_refinement_user_prompt_template
-    );
-    if (refinementMissing.length > 0) {
-      toast.error(
-        `Faltan placeholders en ingestion_refinement_user_prompt_template: ${refinementMissing.map((key) => `{${key}}`).join(', ')}`
-      );
-      return;
-    }
-
-    const taxonomyMissing = validateTemplatePlaceholders(
-      draft.ingestion_taxonomy_classification_user_prompt_template,
-      REQUIRED_PLACEHOLDERS.ingestion_taxonomy_classification_user_prompt_template
-    );
-    if (taxonomyMissing.length > 0) {
-      toast.error(
-        `Faltan placeholders en ingestion_taxonomy_classification_user_prompt_template: ${taxonomyMissing.map((key) => `{${key}}`).join(', ')}`
-      );
-      return;
-    }
-
-    const payload: GenerationConfigPatchRequest = {
-      ingestion_extraction_system_prompt: draft.ingestion_extraction_system_prompt.trim(),
-      ingestion_extraction_user_prompt_template:
-        draft.ingestion_extraction_user_prompt_template.trim(),
-      ingestion_refinement_system_prompt: draft.ingestion_refinement_system_prompt.trim(),
-      ingestion_refinement_user_prompt_template:
-        draft.ingestion_refinement_user_prompt_template.trim(),
-      ingestion_taxonomy_classification_system_prompt:
-        draft.ingestion_taxonomy_classification_system_prompt.trim(),
-      ingestion_taxonomy_classification_user_prompt_template:
-        draft.ingestion_taxonomy_classification_user_prompt_template.trim(),
-    };
-
-    try {
-      setIsSaving(true);
-      const updated = await patchGenerationConfig(payload);
-      setConfig(updated);
-      setDraft(cloneDraftFromConfig(updated));
-      toast.success('Configuración de ingesta actualizada');
-    } catch (error) {
-      toast.error(getConfigErrorMessage(error));
-    } finally {
-      setIsSaving(false);
-    }
+    await save();
   };
 
   return (
@@ -233,15 +134,13 @@ export default function ConfiguracionIngestaPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {config?.updated_at && (
-            <Badge variant="outline">
-              Última actualización: {new Date(config.updated_at).toLocaleString('es-CL')}
-            </Badge>
+            <Badge variant="outline">Última actualización: {new Date(config.updated_at).toLocaleString('es-CL')}</Badge>
           )}
           <Button asChild variant="outline">
-            <Link href="/admin/generador/configuracion">
+            <GuardedLink href="/admin/generador/configuracion" isDirty={isDirty}>
               <ArrowLeft className="mr-2 h-4 w-4" />
               Volver a configuración
-            </Link>
+            </GuardedLink>
           </Button>
         </div>
       </div>
@@ -252,15 +151,12 @@ export default function ConfiguracionIngestaPage() {
           <CardDescription>Ajusta únicamente variables de ingesta.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          {isLoading ? (
+          {isLoading || !draft ? (
             <div className="rounded-md border border-dashed p-6 text-sm text-muted-foreground">
               Cargando configuración...
             </div>
           ) : (
-            <Accordion
-              type="multiple"
-              className="rounded-lg border"
-            >
+            <Accordion type="multiple" className="rounded-lg border">
               <AccordionItem value="ingestion-extraction" className="px-4">
                 <AccordionTrigger className="text-base hover:no-underline">Extracción</AccordionTrigger>
                 <AccordionContent className="space-y-4 pb-6">
@@ -276,16 +172,16 @@ export default function ConfiguracionIngestaPage() {
                     label="Plantilla de usuario para extracción"
                     description="Estructura del mensaje con variables como archivo y bloque de texto."
                     value={draft.ingestion_extraction_user_prompt_template}
-                    onChange={(value) =>
-                      handleFieldChange('ingestion_extraction_user_prompt_template', value)
-                    }
+                    onChange={(value) => handleFieldChange('ingestion_extraction_user_prompt_template', value)}
                     rows={18}
                     className={LARGE_TEXTAREA_CLASSNAME}
                     footer={
-                      <TemplatePlaceholders
-                        template={draft.ingestion_extraction_user_prompt_template}
-                        requiredKeys={REQUIRED_PLACEHOLDERS.ingestion_extraction_user_prompt_template}
-                      />
+                      placeholders['ingestion.extraction_user_prompt_template'] ? (
+                        <TemplatePlaceholders
+                          template={draft.ingestion_extraction_user_prompt_template}
+                          requiredKeys={placeholders['ingestion.extraction_user_prompt_template']}
+                        />
+                      ) : null
                     }
                   />
                 </AccordionContent>
@@ -306,33 +202,29 @@ export default function ConfiguracionIngestaPage() {
                     label="Plantilla de usuario para refinamiento"
                     description="Mensaje con estructuras JSON de entrada para aplicar refinamiento."
                     value={draft.ingestion_refinement_user_prompt_template}
-                    onChange={(value) =>
-                      handleFieldChange('ingestion_refinement_user_prompt_template', value)
-                    }
+                    onChange={(value) => handleFieldChange('ingestion_refinement_user_prompt_template', value)}
                     rows={18}
                     className={LARGE_TEXTAREA_CLASSNAME}
                     footer={
-                      <TemplatePlaceholders
-                        template={draft.ingestion_refinement_user_prompt_template}
-                        requiredKeys={REQUIRED_PLACEHOLDERS.ingestion_refinement_user_prompt_template}
-                      />
+                      placeholders['ingestion.refinement_user_prompt_template'] ? (
+                        <TemplatePlaceholders
+                          template={draft.ingestion_refinement_user_prompt_template}
+                          requiredKeys={placeholders['ingestion.refinement_user_prompt_template']}
+                        />
+                      ) : null
                     }
                   />
                 </AccordionContent>
               </AccordionItem>
 
               <AccordionItem value="ingestion-classification" className="px-4">
-                <AccordionTrigger className="text-base hover:no-underline">
-                  Clasificación taxonómica
-                </AccordionTrigger>
+                <AccordionTrigger className="text-base hover:no-underline">Clasificación taxonómica</AccordionTrigger>
                 <AccordionContent className="space-y-4 pb-6">
                   <PromptEditorField
                     label="Prompt de sistema para clasificación taxonómica"
                     description="Reglas para asignar etiquetas de categoría y subtópico en la taxonomía."
                     value={draft.ingestion_taxonomy_classification_system_prompt}
-                    onChange={(value) =>
-                      handleFieldChange('ingestion_taxonomy_classification_system_prompt', value)
-                    }
+                    onChange={(value) => handleFieldChange('ingestion_taxonomy_classification_system_prompt', value)}
                     rows={18}
                     className={LARGE_TEXTAREA_CLASSNAME}
                   />
@@ -341,20 +233,17 @@ export default function ConfiguracionIngestaPage() {
                     description="Incluye taxonomía, límites de etiquetas y datos refinados para clasificar."
                     value={draft.ingestion_taxonomy_classification_user_prompt_template}
                     onChange={(value) =>
-                      handleFieldChange(
-                        'ingestion_taxonomy_classification_user_prompt_template',
-                        value
-                      )
+                      handleFieldChange('ingestion_taxonomy_classification_user_prompt_template', value)
                     }
                     rows={18}
                     className={LARGE_TEXTAREA_CLASSNAME}
                     footer={
-                      <TemplatePlaceholders
-                        template={draft.ingestion_taxonomy_classification_user_prompt_template}
-                        requiredKeys={
-                          REQUIRED_PLACEHOLDERS.ingestion_taxonomy_classification_user_prompt_template
-                        }
-                      />
+                      placeholders['ingestion.taxonomy_classification_user_prompt_template'] ? (
+                        <TemplatePlaceholders
+                          template={draft.ingestion_taxonomy_classification_user_prompt_template}
+                          requiredKeys={placeholders['ingestion.taxonomy_classification_user_prompt_template']}
+                        />
+                      ) : null
                     }
                   />
                 </AccordionContent>
@@ -363,15 +252,11 @@ export default function ConfiguracionIngestaPage() {
           )}
 
           <div className="flex flex-wrap justify-end gap-2 border-t pt-4">
-            <Button variant="outline" onClick={handleRestore} disabled={!isDirty || isSaving || isLoading}>
+            <Button variant="outline" onClick={restore} disabled={!isDirty || isSaving || isLoading}>
               Restaurar valores cargados
             </Button>
             <Button onClick={handleSave} disabled={!isDirty || isSaving || isLoading}>
-              {isSaving ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Save className="mr-2 h-4 w-4" />
-              )}
+              {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
               Guardar cambios
             </Button>
           </div>
@@ -384,16 +269,16 @@ export default function ConfiguracionIngestaPage() {
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2">
           <Button asChild variant="outline" size="sm">
-            <Link href="/admin/generador/configuracion/generacion">
+            <GuardedLink href="/admin/generador/configuracion/generacion" isDirty={isDirty}>
               <Settings2 className="mr-2 h-4 w-4" />
               Ir a generación
-            </Link>
+            </GuardedLink>
           </Button>
           <Button asChild variant="outline" size="sm">
-            <Link href="/admin/generador/configuracion/taxonomia">
+            <GuardedLink href="/admin/generador/configuracion/taxonomia" isDirty={isDirty}>
               <Settings2 className="mr-2 h-4 w-4" />
               Ir a taxonomía
-            </Link>
+            </GuardedLink>
           </Button>
         </CardContent>
       </Card>

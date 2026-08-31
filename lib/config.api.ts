@@ -80,3 +80,32 @@ export async function patchGenerationConfig(
   const response = await api.patch('/api/v1/admin/generation-config', data);
   return parseConfig(response.data);
 }
+
+// El contrato de placeholders requeridos por plantilla solo lo publica el
+// endpoint nuevo por secciones (`/admin/config`), no el legado. Las claves
+// son rutas "sección.campo" (p. ej. "generation.stem_user_prompt_template").
+export type PromptPlaceholders = Record<string, string[]>;
+
+const promptPlaceholdersSchema = z.record(z.string(), z.array(z.string()));
+
+export async function getPromptPlaceholders(): Promise<PromptPlaceholders> {
+  const response = await api.get('/api/v1/admin/config');
+  const raw = (response.data as { prompt_placeholders?: unknown } | undefined)?.prompt_placeholders;
+  const result = promptPlaceholdersSchema.safeParse(raw);
+  if (!result.success) {
+    throw new ApiError('El contrato de placeholders recibido del servidor no cumple lo esperado.', {
+      code: 'INVALID_PLACEHOLDERS_SHAPE',
+      details: result.error.flatten(),
+    });
+  }
+  return result.data;
+}
+
+// Secciones que el servidor declara activas en la configuración por secciones.
+const sectionsResponseSchema = z.object({ sections: z.array(z.string()) });
+
+export async function getConfigSections(): Promise<string[]> {
+  const response = await api.get('/api/v1/admin/config');
+  const result = sectionsResponseSchema.safeParse(response.data);
+  return result.success ? result.data.sections : [];
+}

@@ -1,14 +1,13 @@
 'use client';
 
-import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   GenerationConfigPatchRequest,
   GenerationConfigResponse,
-  getGenerationConfig,
-  patchGenerationConfig,
 } from '@/lib/config.api';
 import { ModelCatalogItem, getModelCatalog } from '@/lib/models.api';
+import { useConfigSection } from '@/hooks/useConfigSection';
+import { GuardedLink } from '@/components/generation/GuardedLink';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -18,7 +17,8 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ArrowLeft, Loader2, Plus, Save, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { getConfigErrorMessage, LARGE_TEXTAREA_CLASSNAME } from '../_lib/common';
+import { apiErrorMessage } from '@/lib/api';
+import { LARGE_TEXTAREA_CLASSNAME } from '../_lib/common';
 
 type ModelsPipelineDraft = {
   llm_default_model: string;
@@ -29,14 +29,6 @@ type ModelsPipelineDraft = {
 };
 
 const NO_DEFAULT_VALUE = '__NO_DEFAULT__';
-
-const EMPTY_DRAFT: ModelsPipelineDraft = {
-  llm_default_model: '',
-  llm_models: {},
-  llm_model_sections: [],
-  question_type_catalog: [],
-  rubric_config_json: '{\n  "weights": {},\n  "pass_threshold": 0\n}',
-};
 
 function parseJsonObject(value: string, fieldLabel: string): Record<string, unknown> {
   try {
@@ -67,15 +59,12 @@ function toPrettyJson(value: unknown): string {
 }
 
 function resolveSections(explicitSections: string[], modelsBySection: Record<string, string>): string[] {
-  if (explicitSections.length > 0) {
-    return explicitSections;
-  }
+  if (explicitSections.length > 0) return explicitSections;
   return Object.keys(modelsBySection);
 }
 
 function cloneDraftFromConfig(config: GenerationConfigResponse): ModelsPipelineDraft {
   const llmSections = resolveSections(config.llm_model_sections, config.llm_models);
-
   return {
     llm_default_model: config.llm_default_model,
     llm_model_sections: llmSections,
@@ -95,10 +84,6 @@ function normalizeModelMap(sections: string[], map: Record<string, string>): Rec
   }, {});
 }
 
-function hasChanged<T>(original: T, current: T): boolean {
-  return JSON.stringify(original) !== JSON.stringify(current);
-}
-
 function modelLabel(model: ModelCatalogItem): string {
   const publisher = model.publisher?.trim();
   return publisher ? `${model.display_name} (${publisher})` : model.display_name;
@@ -111,52 +96,79 @@ function applyDefaultModelToAllSections(sections: string[], modelKey: string): R
   }, {});
 }
 
+// PATCH parcial: solo lo que cambió respecto a la config cargada. Si la rúbrica
+// del borrador no es JSON válido, handleSave ya bloqueó el guardado antes de
+// llegar aquí, así que un fallo de parseo simplemente no incluye ese campo.
+function buildPatch(draft: ModelsPipelineDraft, config: GenerationConfigResponse): GenerationConfigPatchRequest {
+  const patch: GenerationConfigPatchRequest = {};
+
+  if (draft.llm_default_model.trim() !== config.llm_default_model) {
+    patch.llm_default_model = draft.llm_default_model.trim();
+  }
+
+  const normalizedLlmModels = normalizeModelMap(draft.llm_model_sections, draft.llm_models);
+  const normalizedOriginalLlm = normalizeModelMap(
+    resolveSections(config.llm_model_sections, config.llm_models),
+    config.llm_models
+  );
+  if (JSON.stringify(normalizedLlmModels) !== JSON.stringify(normalizedOriginalLlm)) {
+    patch.llm_models = normalizedLlmModels;
+  }
+
+  if (JSON.stringify(draft.question_type_catalog) !== JSON.stringify(config.question_type_catalog)) {
+    patch.question_type_catalog = draft.question_type_catalog;
+  }
+
+  try {
+    const parsedRubric = parseJsonObject(draft.rubric_config_json, 'rubric_config');
+    const rubricWeights = toStringNumberMap((parsedRubric.weights as Record<string, unknown>) || {}, 'rubric_config.weights');
+    const passThreshold = Number(parsedRubric.pass_threshold);
+    if (Number.isFinite(passThreshold)) {
+      const rubric = { weights: rubricWeights, pass_threshold: passThreshold };
+      if (JSON.stringify(rubric) !== JSON.stringify(config.rubric_config)) {
+        patch.rubric_config = rubric;
+      }
+    }
+  } catch {
+    // Validado antes de llamar a save(); si de todos modos falla, se omite.
+  }
+
+  return patch;
+}
+
 export default function ConfiguracionModelosPipelinePage() {
-  const [config, setConfig] = useState<GenerationConfigResponse | null>(null);
-  const [draft, setDraft] = useState<ModelsPipelineDraft>(EMPTY_DRAFT);
+  const { config, draft, setDraft, isLoading, isSaving, isDirty, restore, save } = useConfigSection(
+    cloneDraftFromConfig,
+    buildPatch
+  );
   const [allModels, setAllModels] = useState<ModelCatalogItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
   const [questionTypeInput, setQuestionTypeInput] = useState('');
+
+  useEffect(() => {
+    const loadModels = async () => {
+      try {
+        const response = await getModelCatalog();
+        setAllModels(response.models);
+      } catch (error) {
+        toast.error(apiErrorMessage(error, 'No se pudo cargar el catálogo de modelos'));
+      }
+    };
+    void loadModels();
+  }, []);
 
   const llmOptions = useMemo(() => allModels.filter((model) => model.type === 'llm'), [allModels]);
 
-  const isDirty = useMemo(() => {
-    if (!config) return false;
-    return JSON.stringify(cloneDraftFromConfig(config)) !== JSON.stringify(draft);
-  }, [config, draft]);
-
-  const loadConfig = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      const [configResponse, modelCatalogResponse] = await Promise.all([getGenerationConfig(), getModelCatalog()]);
-      setConfig(configResponse);
-      setDraft(cloneDraftFromConfig(configResponse));
-      setAllModels(modelCatalogResponse.models);
-    } catch (error) {
-      toast.error(getConfigErrorMessage(error));
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadConfig();
-  }, [loadConfig]);
-
   const handleRestore = () => {
-    if (!config) return;
-    setDraft(cloneDraftFromConfig(config));
+    restore();
     setQuestionTypeInput('');
-    toast.success('Cambios descartados');
   };
 
   const handleSave = async () => {
+    if (!draft) return;
     if (allModels.length === 0) {
       toast.error('No hay catálogo de modelos disponible. No se puede guardar.');
       return;
     }
-
     if (draft.question_type_catalog.length === 0) {
       toast.error('Debes configurar al menos un question_type_catalog.');
       return;
@@ -164,10 +176,7 @@ export default function ConfiguracionModelosPipelinePage() {
 
     try {
       const parsedRubric = parseJsonObject(draft.rubric_config_json, 'rubric_config');
-      const rubricWeights = toStringNumberMap(
-        (parsedRubric.weights as Record<string, unknown>) || {},
-        'rubric_config.weights'
-      );
+      toStringNumberMap((parsedRubric.weights as Record<string, unknown>) || {}, 'rubric_config.weights');
       const passThreshold = Number(parsedRubric.pass_threshold);
       if (!Number.isFinite(passThreshold)) {
         throw new Error('rubric_config.pass_threshold debe ser numérico.');
@@ -182,53 +191,12 @@ export default function ConfiguracionModelosPipelinePage() {
           );
         }
       }
-
-      const payload: GenerationConfigPatchRequest = {
-        llm_default_model: draft.llm_default_model.trim(),
-        llm_models: normalizedLlmModels,
-        question_type_catalog: draft.question_type_catalog,
-        rubric_config: {
-          weights: rubricWeights,
-          pass_threshold: passThreshold,
-        },
-      };
-
-      if (config) {
-        const normalizedOriginalLlm = normalizeModelMap(
-          resolveSections(config.llm_model_sections, config.llm_models),
-          config.llm_models
-        );
-        const patch: GenerationConfigPatchRequest = {};
-        if (hasChanged(config.llm_default_model, payload.llm_default_model)) patch.llm_default_model = payload.llm_default_model;
-        if (hasChanged(normalizedOriginalLlm, payload.llm_models)) patch.llm_models = payload.llm_models;
-        if (hasChanged(config.question_type_catalog, payload.question_type_catalog)) {
-          patch.question_type_catalog = payload.question_type_catalog;
-        }
-        if (hasChanged(config.rubric_config, payload.rubric_config)) patch.rubric_config = payload.rubric_config;
-
-        if (Object.keys(patch).length === 0) {
-          toast.info('No hay cambios para guardar.');
-          return;
-        }
-
-        setIsSaving(true);
-        const updated = await patchGenerationConfig(patch);
-        setConfig(updated);
-        setDraft(cloneDraftFromConfig(updated));
-        toast.success('Modelos y pipeline actualizados');
-        return;
-      }
-
-      setIsSaving(true);
-      const updated = await patchGenerationConfig(payload);
-      setConfig(updated);
-      setDraft(cloneDraftFromConfig(updated));
-      toast.success('Modelos y pipeline actualizados');
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : getConfigErrorMessage(error));
-    } finally {
-      setIsSaving(false);
+      toast.error(error instanceof Error ? error.message : 'No se pudo validar la configuración.');
+      return;
     }
+
+    await save();
   };
 
   return (
@@ -243,10 +211,10 @@ export default function ConfiguracionModelosPipelinePage() {
             <Badge variant="outline">Última actualización: {new Date(config.updated_at).toLocaleString('es-CL')}</Badge>
           ) : null}
           <Button asChild variant="outline">
-            <Link href="/admin/generador/configuracion">
+            <GuardedLink href="/admin/generador/configuracion" isDirty={isDirty}>
               <ArrowLeft className="mr-2 h-4 w-4" />
               Volver a configuración
-            </Link>
+            </GuardedLink>
           </Button>
         </div>
       </div>
@@ -257,7 +225,7 @@ export default function ConfiguracionModelosPipelinePage() {
           <CardDescription>Modelos por sección usando el catálogo real del backend.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {isLoading ? (
+          {isLoading || !draft ? (
             <div className="rounded-md border border-dashed p-6 text-sm text-muted-foreground">Cargando configuración...</div>
           ) : (
             <>
@@ -273,10 +241,10 @@ export default function ConfiguracionModelosPipelinePage() {
                   value={draft.llm_default_model || NO_DEFAULT_VALUE}
                   onValueChange={(value) =>
                     setDraft((prev) => {
+                      if (!prev) return prev;
                       if (value === NO_DEFAULT_VALUE) {
                         return { ...prev, llm_default_model: '' };
                       }
-
                       return {
                         ...prev,
                         llm_default_model: value,
@@ -317,13 +285,14 @@ export default function ConfiguracionModelosPipelinePage() {
                     <Select
                       value={draft.llm_models[section] || draft.llm_default_model || undefined}
                       onValueChange={(value) =>
-                        setDraft((prev) => ({
-                          ...prev,
-                          llm_models: {
-                            ...prev.llm_models,
-                            [section]: value,
-                          },
-                        }))
+                        setDraft((prev) =>
+                          prev
+                            ? {
+                                ...prev,
+                                llm_models: { ...prev.llm_models, [section]: value },
+                              }
+                            : prev
+                        )
                       }
                     >
                       <SelectTrigger className="w-full">
@@ -355,12 +324,16 @@ export default function ConfiguracionModelosPipelinePage() {
                     onClick={() => {
                       const candidate = questionTypeInput.trim();
                       if (!candidate) return;
-                      setDraft((prev) => ({
-                        ...prev,
-                        question_type_catalog: prev.question_type_catalog.includes(candidate)
-                          ? prev.question_type_catalog
-                          : [...prev.question_type_catalog, candidate],
-                      }));
+                      setDraft((prev) =>
+                        prev
+                          ? {
+                              ...prev,
+                              question_type_catalog: prev.question_type_catalog.includes(candidate)
+                                ? prev.question_type_catalog
+                                : [...prev.question_type_catalog, candidate],
+                            }
+                          : prev
+                      );
                       setQuestionTypeInput('');
                     }}
                   >
@@ -376,10 +349,11 @@ export default function ConfiguracionModelosPipelinePage() {
                       variant="ghost"
                       className="text-red-600 hover:text-red-700"
                       onClick={() =>
-                        setDraft((prev) => ({
-                          ...prev,
-                          question_type_catalog: prev.question_type_catalog.filter((_, idx) => idx !== index),
-                        }))
+                        setDraft((prev) =>
+                          prev
+                            ? { ...prev, question_type_catalog: prev.question_type_catalog.filter((_, idx) => idx !== index) }
+                            : prev
+                        )
                       }
                     >
                       <Trash2 className="mr-1 h-4 w-4" />
@@ -393,7 +367,7 @@ export default function ConfiguracionModelosPipelinePage() {
                 <Label>Rúbrica (rubric_config)</Label>
                 <Textarea
                   value={draft.rubric_config_json}
-                  onChange={(event) => setDraft((prev) => ({ ...prev, rubric_config_json: event.target.value }))}
+                  onChange={(event) => setDraft((prev) => (prev ? { ...prev, rubric_config_json: event.target.value } : prev))}
                   rows={8}
                   className={LARGE_TEXTAREA_CLASSNAME}
                 />

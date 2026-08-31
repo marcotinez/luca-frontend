@@ -1,14 +1,10 @@
 'use client';
 
-import Link from 'next/link';
-import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  GenerationConfigPatchRequest,
-  GenerationConfigResponse,
-  getGenerationConfig,
-  patchGenerationConfig,
-} from '@/lib/config.api';
+import { ChangeEvent, useMemo, useRef, useState } from 'react';
+import { GenerationConfigPatchRequest, GenerationConfigResponse } from '@/lib/config.api';
 import { deriveCatalogFromTaxonomy } from '@/lib/generation.utils';
+import { useConfigSection } from '@/hooks/useConfigSection';
+import { GuardedLink } from '@/components/generation/GuardedLink';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -28,14 +24,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { ArrowLeft, Download, Loader2, PencilLine, Plus, Save, Settings2, Trash2, Upload } from 'lucide-react';
 import { toast } from 'sonner';
-import {
-  decodeEscapedSequences,
-  getConfigErrorMessage,
-  MAX_TERMS_PER_LIST,
-  normalizeName,
-  TERM_LIST_CONFIG,
-  TermListKey,
-} from '../_lib/common';
+import { decodeEscapedSequences, MAX_TERMS_PER_LIST, normalizeName, TERM_LIST_CONFIG, TermListKey } from '../_lib/common';
 
 // Estado del editor: a diferencia del contrato del servidor (donde `subcategories`,
 // `include_terms`, etc. son opcionales), aquí siempre están poblados con `[]`.
@@ -87,13 +76,6 @@ type TaxonomyImportPreview = {
   taxonomy_categories: TaxonomyCategoryRule[];
   categoryCount: number;
   subcategoryCount: number;
-};
-
-const EMPTY_DRAFT: TaxonomyDraft = {
-  taxonomy_version: 'v1',
-  taxonomy_max_labels_per_item: 2,
-  taxonomy_allow_fallback_other: true,
-  taxonomy_categories: [],
 };
 
 function createEmptyTermInputs(): Record<TermListKey, string> {
@@ -191,6 +173,38 @@ function cloneDraftFromConfig(config: GenerationConfigResponse): TaxonomyDraft {
       })),
     })),
   };
+}
+
+// PATCH parcial: solo lo que cambió. Se envía únicamente la estructura
+// jerárquica (`taxonomy_categories`) — el backend deriva de ahí el catálogo
+// plano (`categories`/`subtopics`), ya no hace falta mandarlo también.
+function buildPatch(draft: TaxonomyDraft, config: GenerationConfigResponse): GenerationConfigPatchRequest {
+  const original = cloneDraftFromConfig(config);
+  const patch: GenerationConfigPatchRequest = {};
+
+  if (draft.taxonomy_version.trim() !== original.taxonomy_version.trim()) {
+    patch.taxonomy_version = draft.taxonomy_version.trim();
+  }
+  if (draft.taxonomy_max_labels_per_item !== original.taxonomy_max_labels_per_item) {
+    patch.taxonomy_max_labels_per_item = draft.taxonomy_max_labels_per_item;
+  }
+  if (draft.taxonomy_allow_fallback_other !== original.taxonomy_allow_fallback_other) {
+    patch.taxonomy_allow_fallback_other = draft.taxonomy_allow_fallback_other;
+  }
+  if (JSON.stringify(draft.taxonomy_categories) !== JSON.stringify(original.taxonomy_categories)) {
+    patch.taxonomy_categories = draft.taxonomy_categories;
+  }
+
+  return patch;
+}
+
+function findDuplicateNameError(name: string, siblings: { name: string }[]): string | null {
+  const trimmed = name.trim();
+  if (!trimmed) return 'El nombre no puede estar vacío.';
+  if (siblings.some((sibling) => normalizeName(sibling.name) === normalizeName(trimmed))) {
+    return `Ya existe "${trimmed}" en este nivel.`;
+  }
+  return null;
 }
 
 function createNewCategory(existing: TaxonomyCategoryRule[]): TaxonomyCategoryRule {
@@ -308,44 +322,22 @@ function ListEditor({
 }
 
 export default function ConfiguracionTaxonomiaPage() {
-  const [config, setConfig] = useState<GenerationConfigResponse | null>(null);
-  const [draft, setDraft] = useState<TaxonomyDraft>(EMPTY_DRAFT);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
+  const { config, draft, setDraft, isLoading, isSaving, isDirty, restore, save } = useConfigSection(
+    cloneDraftFromConfig,
+    buildPatch
+  );
   const [categoryModal, setCategoryModal] = useState<CategoryModalState | null>(null);
   const [subcategoryModal, setSubcategoryModal] = useState<SubcategoryModalState | null>(null);
   const [importPreview, setImportPreview] = useState<TaxonomyImportPreview | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const derivedCatalog = useMemo(
-    () => deriveCatalogFromTaxonomy(draft.taxonomy_categories),
-    [draft.taxonomy_categories]
+    () => deriveCatalogFromTaxonomy(draft?.taxonomy_categories ?? []),
+    [draft]
   );
 
-  const isDirty = useMemo(() => {
-    if (!config) return false;
-    return JSON.stringify(cloneDraftFromConfig(config)) !== JSON.stringify(draft);
-  }, [config, draft]);
-
-  const loadConfig = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      const response = await getGenerationConfig();
-      setConfig(response);
-      setDraft(cloneDraftFromConfig(response));
-    } catch (error) {
-      toast.error(getConfigErrorMessage(error));
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadConfig();
-  }, [loadConfig]);
-
   const openCategoryModal = (categoryIndex: number) => {
-    const category = draft.taxonomy_categories[categoryIndex];
+    const category = draft?.taxonomy_categories[categoryIndex];
     if (!category) return;
 
     setCategoryModal({
@@ -356,7 +348,7 @@ export default function ConfiguracionTaxonomiaPage() {
   };
 
   const openSubcategoryModal = (categoryIndex: number, subcategoryIndex: number) => {
-    const subcategory = draft.taxonomy_categories[categoryIndex]?.subcategories[subcategoryIndex];
+    const subcategory = draft?.taxonomy_categories[categoryIndex]?.subcategories[subcategoryIndex];
     if (!subcategory) return;
 
     setSubcategoryModal({
@@ -372,14 +364,13 @@ export default function ConfiguracionTaxonomiaPage() {
   };
 
   const handleRestore = () => {
-    if (!config) return;
-    setDraft(cloneDraftFromConfig(config));
+    restore();
     setCategoryModal(null);
     setSubcategoryModal(null);
-    toast.success('Cambios descartados');
   };
 
   const handleExportTaxonomy = () => {
+    if (!draft) return;
     const payload = {
       taxonomy_version: draft.taxonomy_version,
       taxonomy_max_labels_per_item: draft.taxonomy_max_labels_per_item,
@@ -435,11 +426,15 @@ export default function ConfiguracionTaxonomiaPage() {
   const handleConfirmImportTaxonomy = () => {
     if (!importPreview) return;
 
-    setDraft((prev) => ({
-      ...prev,
-      taxonomy_version: importPreview.taxonomy_version ?? prev.taxonomy_version,
-      taxonomy_categories: importPreview.taxonomy_categories,
-    }));
+    setDraft((prev) =>
+      prev
+        ? {
+            ...prev,
+            taxonomy_version: importPreview.taxonomy_version ?? prev.taxonomy_version,
+            taxonomy_categories: importPreview.taxonomy_categories,
+          }
+        : prev
+    );
 
     setCategoryModal(null);
     setSubcategoryModal(null);
@@ -448,87 +443,85 @@ export default function ConfiguracionTaxonomiaPage() {
   };
 
   const handleSave = async () => {
-    const payload: GenerationConfigPatchRequest = {
-      taxonomy_version: draft.taxonomy_version.trim(),
-      taxonomy_max_labels_per_item: draft.taxonomy_max_labels_per_item,
-      taxonomy_allow_fallback_other: draft.taxonomy_allow_fallback_other,
-      taxonomy_categories: draft.taxonomy_categories,
-      categories: derivedCatalog.categories,
-      subtopics: derivedCatalog.subtopics,
-    };
-
-    try {
-      setIsSaving(true);
-      const updated = await patchGenerationConfig(payload);
-      setConfig(updated);
-      setDraft(cloneDraftFromConfig(updated));
+    const updated = await save();
+    if (updated) {
       setCategoryModal(null);
       setSubcategoryModal(null);
-      toast.success('Configuración de taxonomía actualizada');
-    } catch (error) {
-      toast.error(getConfigErrorMessage(error));
-    } finally {
-      setIsSaving(false);
     }
   };
 
   const handleAddCategory = () => {
-    setDraft((prev) => ({
-      ...prev,
-      taxonomy_categories: [...prev.taxonomy_categories, createNewCategory(prev.taxonomy_categories)],
-    }));
+    setDraft((prev) =>
+      prev ? { ...prev, taxonomy_categories: [...prev.taxonomy_categories, createNewCategory(prev.taxonomy_categories)] } : prev
+    );
   };
 
   const handleRemoveCategory = (categoryIndex: number) => {
     setCategoryModal(null);
     setSubcategoryModal(null);
-    setDraft((prev) => ({
-      ...prev,
-      taxonomy_categories: prev.taxonomy_categories.filter((_, idx) => idx !== categoryIndex),
-    }));
+    setDraft((prev) =>
+      prev
+        ? { ...prev, taxonomy_categories: prev.taxonomy_categories.filter((_, idx) => idx !== categoryIndex) }
+        : prev
+    );
   };
 
   const handleAddSubcategory = (categoryIndex: number) => {
-    setDraft((prev) => ({
-      ...prev,
-      taxonomy_categories: prev.taxonomy_categories.map((category, idx) => {
-        if (idx !== categoryIndex) return category;
-        return {
-          ...category,
-          subcategories: [...category.subcategories, createNewSubcategory(category.subcategories)],
-        };
-      }),
-    }));
+    setDraft((prev) =>
+      prev
+        ? {
+            ...prev,
+            taxonomy_categories: prev.taxonomy_categories.map((category, idx) => {
+              if (idx !== categoryIndex) return category;
+              return {
+                ...category,
+                subcategories: [...category.subcategories, createNewSubcategory(category.subcategories)],
+              };
+            }),
+          }
+        : prev
+    );
   };
 
   const handleRemoveSubcategory = (categoryIndex: number, subcategoryIndex: number) => {
     setSubcategoryModal(null);
-    setDraft((prev) => ({
-      ...prev,
-      taxonomy_categories: prev.taxonomy_categories.map((category, idx) => {
-        if (idx !== categoryIndex) return category;
-        return {
-          ...category,
-          subcategories: category.subcategories.filter((_, subIdx) => subIdx !== subcategoryIndex),
-        };
-      }),
-    }));
+    setDraft((prev) =>
+      prev
+        ? {
+            ...prev,
+            taxonomy_categories: prev.taxonomy_categories.map((category, idx) => {
+              if (idx !== categoryIndex) return category;
+              return {
+                ...category,
+                subcategories: category.subcategories.filter((_, subIdx) => subIdx !== subcategoryIndex),
+              };
+            }),
+          }
+        : prev
+    );
   };
 
   const handleSaveCategoryModal = () => {
-    if (!categoryModal) return;
+    if (!categoryModal || !draft) return;
 
-    setDraft((prev) => ({
-      ...prev,
-      taxonomy_categories: prev.taxonomy_categories.map((category, idx) => {
-        if (idx !== categoryModal.categoryIndex) return category;
-        return {
-          ...category,
-          name: categoryModal.name,
-          description: categoryModal.description,
-        };
-      }),
-    }));
+    const siblings = draft.taxonomy_categories.filter((_, idx) => idx !== categoryModal.categoryIndex);
+    const nameError = findDuplicateNameError(categoryModal.name, siblings);
+    if (nameError) {
+      toast.error(nameError);
+      return;
+    }
+
+    setDraft((prev) =>
+      prev
+        ? {
+            ...prev,
+            taxonomy_categories: prev.taxonomy_categories.map((category, idx) => {
+              if (idx !== categoryModal.categoryIndex) return category;
+              return { ...category, name: categoryModal.name.trim(), description: categoryModal.description };
+            }),
+          }
+        : prev
+    );
 
     setCategoryModal(null);
   };
@@ -587,31 +580,37 @@ export default function ConfiguracionTaxonomiaPage() {
   };
 
   const handleSaveSubcategoryModal = () => {
-    if (!subcategoryModal) return;
+    if (!subcategoryModal || !draft) return;
 
     const { categoryIndex, subcategoryIndex, name, description, include_terms, exclude_terms, examples } =
       subcategoryModal;
 
-    setDraft((prev) => ({
-      ...prev,
-      taxonomy_categories: prev.taxonomy_categories.map((category, idx) => {
-        if (idx !== categoryIndex) return category;
-        return {
-          ...category,
-          subcategories: category.subcategories.map((subcategory, subIdx) => {
-            if (subIdx !== subcategoryIndex) return subcategory;
-            return {
-              ...subcategory,
-              name,
-              description,
-              include_terms,
-              exclude_terms,
-              examples,
-            };
-          }),
-        };
-      }),
-    }));
+    const siblings = (draft.taxonomy_categories[categoryIndex]?.subcategories ?? []).filter(
+      (_, idx) => idx !== subcategoryIndex
+    );
+    const nameError = findDuplicateNameError(name, siblings);
+    if (nameError) {
+      toast.error(nameError);
+      return;
+    }
+
+    setDraft((prev) =>
+      prev
+        ? {
+            ...prev,
+            taxonomy_categories: prev.taxonomy_categories.map((category, idx) => {
+              if (idx !== categoryIndex) return category;
+              return {
+                ...category,
+                subcategories: category.subcategories.map((subcategory, subIdx) => {
+                  if (subIdx !== subcategoryIndex) return subcategory;
+                  return { ...subcategory, name: name.trim(), description, include_terms, exclude_terms, examples };
+                }),
+              };
+            }),
+          }
+        : prev
+    );
 
     setSubcategoryModal(null);
   };
@@ -630,10 +629,10 @@ export default function ConfiguracionTaxonomiaPage() {
             </Badge>
           )}
           <Button asChild variant="outline">
-            <Link href="/admin/generador/configuracion">
+            <GuardedLink href="/admin/generador/configuracion" isDirty={isDirty}>
               <ArrowLeft className="mr-2 h-4 w-4" />
               Volver a configuración
-            </Link>
+            </GuardedLink>
           </Button>
         </div>
       </div>
@@ -652,7 +651,7 @@ export default function ConfiguracionTaxonomiaPage() {
             onChange={handleImportTaxonomyFile}
           />
 
-          {isLoading ? (
+          {isLoading || !draft ? (
             <div className="rounded-md border border-dashed p-6 text-sm text-muted-foreground">
               Cargando configuración...
             </div>
@@ -673,7 +672,7 @@ export default function ConfiguracionTaxonomiaPage() {
                         id="taxonomy-version"
                         value={draft.taxonomy_version}
                         onChange={(event) =>
-                          setDraft((prev) => ({ ...prev, taxonomy_version: event.target.value }))
+                          setDraft((prev) => (prev ? { ...prev, taxonomy_version: event.target.value } : prev))
                         }
                       />
                     </div>
@@ -693,10 +692,7 @@ export default function ConfiguracionTaxonomiaPage() {
                           const clamped = Number.isFinite(nextValue)
                             ? Math.max(1, Math.min(2, Math.round(nextValue)))
                             : 2;
-                          setDraft((prev) => ({
-                            ...prev,
-                            taxonomy_max_labels_per_item: clamped,
-                          }));
+                          setDraft((prev) => (prev ? { ...prev, taxonomy_max_labels_per_item: clamped } : prev));
                         }}
                       />
                     </div>
@@ -707,10 +703,7 @@ export default function ConfiguracionTaxonomiaPage() {
                       id="taxonomy-fallback"
                       checked={draft.taxonomy_allow_fallback_other}
                       onCheckedChange={(checked) =>
-                        setDraft((prev) => ({
-                          ...prev,
-                          taxonomy_allow_fallback_other: checked === true,
-                        }))
+                        setDraft((prev) => (prev ? { ...prev, taxonomy_allow_fallback_other: checked === true } : prev))
                       }
                     />
                     <Label htmlFor="taxonomy-fallback">{'Permitir fallback "Other"'}</Label>
@@ -891,16 +884,16 @@ export default function ConfiguracionTaxonomiaPage() {
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2">
           <Button asChild variant="outline" size="sm">
-            <Link href="/admin/generador/configuracion/ingesta">
+            <GuardedLink href="/admin/generador/configuracion/ingesta" isDirty={isDirty}>
               <Settings2 className="mr-2 h-4 w-4" />
               Ir a ingesta
-            </Link>
+            </GuardedLink>
           </Button>
           <Button asChild variant="outline" size="sm">
-            <Link href="/admin/generador/configuracion/generacion">
+            <GuardedLink href="/admin/generador/configuracion/generacion" isDirty={isDirty}>
               <Settings2 className="mr-2 h-4 w-4" />
               Ir a generación
-            </Link>
+            </GuardedLink>
           </Button>
         </CardContent>
       </Card>
