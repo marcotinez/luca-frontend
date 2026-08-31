@@ -20,9 +20,8 @@ import {
 } from "lucide-react";
 import { DashboardNavbar } from "@/components/DashboardNavbar";
 import { UserInfoItem } from "@/components/UserInfoItem";
-import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { RouteGuard } from "@/components/auth/RouteGuard";
 import { useAuth } from "@/hooks/useAuth";
-import { updatePassword } from "@/lib/auth.api";
 import { getLearningProfile } from "@/lib/users.api";
 import { getPracticeTests } from "@/lib/learning.api";
 import { apiErrorMessage, formatRelativeDate, formatPracticeMinutes, isDiagnosticPhaseFromTests } from "@/lib/learning.utils";
@@ -72,7 +71,7 @@ const passwordSchema = z
 type PasswordFormValues = z.infer<typeof passwordSchema>;
 
 export default function PerfilPage() {
-  const { user } = useAuth();
+  const { user, updatePassword } = useAuth();
   const router = useRouter();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const panelClassName = "min-h-[144px] rounded-2xl border border-border/70 bg-background/80 p-6";
@@ -88,8 +87,7 @@ export default function PerfilPage() {
 
   const onSubmit: SubmitHandler<PasswordFormValues> = async (values) => {
     try {
-      const response = await updatePassword(values);
-      localStorage.setItem("token", response.access_token);
+      await updatePassword(values);
       toast.success("Contraseña actualizada correctamente");
       setIsDialogOpen(false);
       form.reset();
@@ -192,10 +190,11 @@ export default function PerfilPage() {
   }, [profile?.domain_knowledge, profile?.subtopic_knowledge, user]);
 
 
-  if (!user) return null;
+  // RouteGuard debe montarse siempre: es quien redirige a /login si la sesión no es válida.
+  if (!user) return <RouteGuard access="authenticated">{null}</RouteGuard>;
 
   return (
-    <ProtectedRoute>
+    <RouteGuard access="authenticated">
       <div className="min-h-screen bg-grid-soft pb-16">
         <DashboardNavbar />
 
@@ -535,6 +534,6 @@ export default function PerfilPage() {
           </Tabs>
         </main>
       </div>
-    </ProtectedRoute>
+    </RouteGuard>
   );
 }

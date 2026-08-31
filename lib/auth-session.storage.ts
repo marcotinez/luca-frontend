@@ -29,5 +29,5 @@ export function setStoredUser(user: UserResponse) {
 }
 
 export function clearStoredSession() {
-  clearStorageNamespace([AUTH_TOKEN_STORAGE_KEY, AUTH_USER_STORAGE_KEY]);
+  clearStorageNamespace();
 }

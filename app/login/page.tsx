@@ -1,7 +1,7 @@
 'use client';
 
 import { Navbar } from "@/components/Navbar";
-import { PublicRoute } from '@/components/PublicRoute';
+import { RouteGuard } from '@/components/auth/RouteGuard';
 import { useAuth } from '@/hooks/useAuth';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -76,7 +76,7 @@ export default function LoginPage() {
   };
 
   return (
-    <PublicRoute>
+    <RouteGuard access="public">
       <div className="min-h-screen flex flex-col bg-background">
         <Navbar />
         <div className="flex-1 flex flex-col items-center justify-center px-6 pt-16 pb-10 sm:pt-24 sm:px-4">
@@ -155,6 +155,6 @@ export default function LoginPage() {
         </Card>
         </div>
       </div>
-    </PublicRoute>
+    </RouteGuard>
   );
 }

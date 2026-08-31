@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import axios from "axios";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { RouteGuard } from "@/components/auth/RouteGuard";
 import { DashboardNavbar } from "@/components/DashboardNavbar";
 import { Card, CardContent } from "@/components/ui/card";
 import { getPracticeTest } from "@/lib/learning.api";
@@ -53,7 +53,7 @@ export default function PracticeTestResultPage() {
   }, [loadResult]);
 
   return (
-    <ProtectedRoute>
+    <RouteGuard access="authenticated">
       <div className="min-h-screen bg-background pb-14">
         <DashboardNavbar />
         <main className="mx-auto max-w-3xl space-y-6 px-4 py-10 sm:px-6 lg:px-8">
@@ -85,6 +85,6 @@ export default function PracticeTestResultPage() {
           )}
         </main>
       </div>
-    </ProtectedRoute>
+    </RouteGuard>
   );
 }
