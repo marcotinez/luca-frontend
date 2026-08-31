@@ -5,11 +5,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   GenerationConfigPatchRequest,
   GenerationConfigResponse,
-  ModelCatalogItem,
   getGenerationConfig,
-  getModelCatalog,
   patchGenerationConfig,
-} from '@/lib/prompt-generation.api';
+} from '@/lib/config.api';
+import { ModelCatalogItem, getModelCatalog } from '@/lib/models.api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';

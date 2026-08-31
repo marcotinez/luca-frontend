@@ -7,7 +7,7 @@ import {
   GenerationConfigResponse,
   getGenerationConfig,
   patchGenerationConfig,
-} from '@/lib/prompt-generation.api';
+} from '@/lib/config.api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';

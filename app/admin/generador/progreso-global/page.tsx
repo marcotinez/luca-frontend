@@ -13,7 +13,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { getGenerationConfig, getGlobalGenerationProgress, GlobalProgressResponse } from '@/lib/prompt-generation.api';
+import { getGenerationConfig } from '@/lib/config.api';
+import { getGlobalGenerationProgress, GlobalProgressResponse } from '@/lib/generation.api';
 import { Loader2, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import axios from 'axios';
