@@ -3,18 +3,16 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Difficulty } from '@/types';
+import { GenerationConfigResponse, getGenerationConfig } from '@/lib/config.api';
 import {
   backfillGenerationOrigins,
-  buildSnapshotViewModel,
   cancelGenerationSelection,
   createGenerationSelection,
   createSnapshot,
   deleteSnapshot,
   executeUnit,
   getGenerationSelection,
-  GenerationConfigResponse,
   GenerationUnitResponse,
-  getGenerationConfig,
   getSnapshotProgress,
   listUnits,
   listSnapshots,
@@ -23,8 +21,8 @@ import {
   retryUnit,
   SnapshotProgressResponse,
   SnapshotResponse,
-  SnapshotViewModel,
-} from '@/lib/prompt-generation.api';
+} from '@/lib/generation.api';
+import { buildSnapshotViewModel, SnapshotViewModel } from '@/lib/generation.utils';
 import { addOpenAILog } from '@/lib/openai-logs.storage';
 import { readStorage, removeStorage, writeStorage } from '@/lib/client-storage';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -104,6 +102,7 @@ const EMPTY_PROGRESS: SnapshotProgressResponse = {
   pending_units: 0,
   in_progress_units: 0,
   total_units: 0,
+  missing_combinations: 0,
 };
 
 function parsePersistedState(value: unknown): PersistedState | null {
@@ -351,10 +350,18 @@ export default function GeneradorPreguntasPage() {
     return [
       {
         snapshot_id: activeSnapshotId,
+        category: '',
+        subtopic: null,
+        target_difficulties: [],
+        include_entities: true,
+        include_relations: true,
+        question_types: [],
         entity_count: 0,
         relation_count: 0,
         unit_count: 0,
         refresh_count: 0,
+        created_at: '',
+        updated_at: '',
       },
       ...snapshots,
     ];
@@ -432,15 +439,15 @@ export default function GeneradorPreguntasPage() {
       const selection = await getGenerationSelection(selectionId);
       const selectedUnitIds = new Set(selection.unit_ids);
       const primary = await listUnits(snapshotId, { limit: 500, skip: 0 });
-      let items = primary.items.filter((item) => selectedUnitIds.has(item.unit_id));
+      let items = primary.items.filter((item) => selectedUnitIds.has(item.id));
 
       if (items.length === 0 && selection.total_units > 0) {
         const statuses = ['pending', 'in_progress', 'ok', 'failed'] as const;
         const chunks = await Promise.all(statuses.map((status) => listUnits(snapshotId, { status, limit: 500, skip: 0 })));
-        const merged = chunks.flatMap((chunk) => chunk.items).filter((item) => selectedUnitIds.has(item.unit_id));
+        const merged = chunks.flatMap((chunk) => chunk.items).filter((item) => selectedUnitIds.has(item.id));
         const uniqueById = new Map<string, GenerationUnitResponse>();
         for (const item of merged) {
-          const key = (item.unit_id || '').trim();
+          const key = (item.id || '').trim();
           if (!key) continue;
           uniqueById.set(key, item);
         }
@@ -674,13 +681,13 @@ export default function GeneradorPreguntasPage() {
         const existing = previous.find((item) => item.snapshot_id === refreshed.snapshot_id);
         const merged: SnapshotResponse = {
           snapshot_id: refreshed.snapshot_id,
-          category: existing?.category || draft.category || undefined,
+          category: existing?.category || draft.category || '',
           subtopic:
             existing?.subtopic !== undefined
               ? existing.subtopic
               : draft.subtopic === '__ALL__'
               ? null
-              : draft.subtopic || undefined,
+              : draft.subtopic || null,
           target_difficulties: existing?.target_difficulties || [],
           include_entities: existing?.include_entities ?? true,
           include_relations: existing?.include_relations ?? true,
@@ -689,8 +696,8 @@ export default function GeneradorPreguntasPage() {
           relation_count: refreshed.relation_count,
           unit_count: Math.max(existing?.unit_count || 0, (existing?.unit_count || 0) + (refreshed.added_units || 0)),
           refresh_count: refreshed.refresh_count,
-          created_at: existing?.created_at,
-          updated_at: refreshed.updated_at || existing?.updated_at,
+          created_at: existing?.created_at || '',
+          updated_at: refreshed.updated_at || existing?.updated_at || '',
         };
         return [merged, ...previous.filter((item) => item.snapshot_id !== refreshed.snapshot_id)].slice(0, 20);
       });
@@ -758,7 +765,8 @@ export default function GeneradorPreguntasPage() {
 
     try {
       const result = await executeUnit(unitId);
-      toast.success(`Unit ${unitId} ejecutada: ${result.status}.`);
+      const status = result.unit.status;
+      toast.success(`Unit ${unitId} ejecutada: ${status}.`);
       addOpenAILog({
         request: {
           endpoint: `/generation/units/${unitId}/execute`,
@@ -770,17 +778,16 @@ export default function GeneradorPreguntasPage() {
           mode: 'v2_unit_execute_manual',
         },
         response: {
-          status: result.status === 'ok' ? 'completed' : 'failed',
-          generated_count: result.status === 'ok' ? 1 : 0,
+          status: status === 'ok' ? 'completed' : 'failed',
+          generated_count: status === 'ok' ? 1 : 0,
           semantic_total: 0,
           used_model: config?.llm_default_model || '',
           raw_output: JSON.stringify(result, null, 2),
-          error: result.error || null,
-          message: result.message || null,
+          error: result.unit.last_error,
           meta: {
             snapshot_id: activeSnapshotId,
             unit_id: unitId,
-            unit_status: result.status,
+            unit_status: status,
           },
         },
       });
@@ -877,8 +884,8 @@ export default function GeneradorPreguntasPage() {
       return;
     }
     const failedUnitIds = units
-      .filter((unit) => unit.status === 'failed' && !!unit.unit_id)
-      .map((unit) => unit.unit_id);
+      .filter((unit) => unit.status === 'failed' && !!unit.id)
+      .map((unit) => unit.id);
     if (failedUnitIds.length === 0) {
       toast.info('No hay unidades fallidas para reintentar.');
       return;
@@ -952,15 +959,15 @@ export default function GeneradorPreguntasPage() {
 
       const statusById: Record<string, string> = {};
       for (const unit of unitsResponse.items) {
-        if (unit.unit_id) {
-          statusById[unit.unit_id] = unit.status;
+        if (unit.id) {
+          statusById[unit.id] = unit.status;
         }
       }
 
       setLocalUnitStatuses(statusById);
       const unitIds = selection.unit_ids || [];
       const selectedIdSet = new Set(unitIds);
-      setUnits(unitsResponse.items.filter((unit) => selectedIdSet.has(unit.unit_id)));
+      setUnits(unitsResponse.items.filter((unit) => selectedIdSet.has(unit.id)));
       const queue = unitIds.filter((unitId) => {
         const status = statusById[unitId];
         return status !== 'ok' && status !== 'failed';
@@ -993,7 +1000,7 @@ export default function GeneradorPreguntasPage() {
             if (selectionRunTokenRef.current !== runToken) {
               return;
             }
-            const status = result.status || 'failed';
+            const status = result.unit.status || 'failed';
             setSelectionLastRunInfo({
               unitId,
               status,
@@ -1024,8 +1031,7 @@ export default function GeneradorPreguntasPage() {
                 semantic_total: 0,
                 used_model: config?.llm_default_model || '',
                 raw_output: JSON.stringify(result, null, 2),
-                error: result.error || null,
-                message: result.message || null,
+                error: result.unit.last_error,
                 meta: {
                   snapshot_id: activeSnapshotId,
                   selection_id: activeSelectionId,
@@ -1904,13 +1910,13 @@ export default function GeneradorPreguntasPage() {
             <div className="space-y-2">
               {filteredUnits.map((unit, index) => (
                 <div
-                  key={`${unit.unit_id || 'unit'}-${unit.snapshot_id || 'snapshot'}-${unit.question_type || unit.unit_kind || 'kind'}-${index}`}
+                  key={`${unit.id || 'unit'}-${unit.snapshot_id || 'snapshot'}-${unit.question_type || unit.unit_kind || 'kind'}-${index}`}
                   className="grid gap-3 rounded-lg border p-3 md:grid-cols-[1.4fr_0.9fr_0.9fr_0.9fr_auto] md:items-center"
                 >
                   <div className="space-y-1">
-                    <p className="font-medium text-sm">{unit.unit_id}</p>
+                    <p className="font-medium text-sm">{unit.id}</p>
                     <p className="text-xs text-muted-foreground">
-                      intentos: {unit.attempts ?? 0}/{unit.max_attempts ?? 0}
+                      intentos: {unit.attempt_count}
                     </p>
                     {unit.last_error ? <p className="text-xs text-destructive">{unit.last_error}</p> : null}
                   </div>
@@ -1927,16 +1933,16 @@ export default function GeneradorPreguntasPage() {
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => handleExecuteUnit(unit.unit_id)}
-                      disabled={!activeSnapshotId || !unit.unit_id}
+                      onClick={() => handleExecuteUnit(unit.id)}
+                      disabled={!activeSnapshotId || !unit.id}
                     >
                       Ejecutar
                     </Button>
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => handleRetryUnit(unit.unit_id)}
-                      disabled={!activeSnapshotId || !unit.unit_id}
+                      onClick={() => handleRetryUnit(unit.id)}
+                      disabled={!activeSnapshotId || !unit.id}
                     >
                       Reintentar
                     </Button>

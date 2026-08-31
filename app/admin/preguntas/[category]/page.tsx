@@ -8,7 +8,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Difficulty, QuestionCreate, QuestionResponse, Status } from '@/types';
 import { deleteQuestion, listQuestions, updateQuestion } from '@/lib/questions.api';
-import { getGenerationConfig } from '@/lib/prompt-generation.api';
+import { getGenerationConfig } from '@/lib/config.api';
 import { readStorage, writeStorage } from '@/lib/client-storage';
 import { normalizeRuntimeTaxonomy, type RuntimeTaxonomy } from '@/lib/taxonomy.utils';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';

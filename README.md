@@ -17,6 +17,7 @@ La aplicacion queda disponible en `http://localhost:3000`.
 - `npm run build`: genera el build de produccion.
 - `npm run start`: sirve el build generado.
 - `npm run lint`: ejecuta validaciones de lint.
+- `npm run types:api`: regenera `types/api.generated.ts` desde el `/openapi.json` del backend en marcha (usa `API_URL`, por defecto `http://localhost:8080`). No corre en cada build a propósito, para no acoplar la compilación a que el backend esté levantado; el archivo generado se versiona. Ejecútalo cuando el backend cambie contratos de la API y en el mismo PR que ese cambio.
 
 ## Estructura base
 

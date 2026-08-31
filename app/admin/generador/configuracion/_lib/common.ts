@@ -1,5 +1,4 @@
 import axios from 'axios';
-import { GenerationDifficultyKey, GENERATION_DIFFICULTY_KEYS } from '@/lib/prompt-generation.api';
 
 export const LARGE_TEXTAREA_CLASSNAME = 'min-h-[420px] resize-y font-mono text-sm leading-6';
 export const MAX_TERMS_PER_LIST = 30;
@@ -79,10 +78,6 @@ export function validateTemplatePlaceholders(
   requiredKeys: readonly string[]
 ): string[] {
   return requiredKeys.filter((key) => !template.includes(`{${key}}`));
-}
-
-export function isGenerationDifficultyKey(value: string): value is GenerationDifficultyKey {
-  return GENERATION_DIFFICULTY_KEYS.includes(value as GenerationDifficultyKey);
 }
 
 export function getConfigErrorMessage(error: unknown) {

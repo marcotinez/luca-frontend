@@ -3,14 +3,12 @@
 import Link from 'next/link';
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  deriveCatalogFromTaxonomy,
   GenerationConfigPatchRequest,
   GenerationConfigResponse,
   getGenerationConfig,
   patchGenerationConfig,
-  TaxonomyCategoryRule,
-  TaxonomySubcategoryRule,
-} from '@/lib/prompt-generation.api';
+} from '@/lib/config.api';
+import { deriveCatalogFromTaxonomy } from '@/lib/generation.utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -38,6 +36,22 @@ import {
   TERM_LIST_CONFIG,
   TermListKey,
 } from '../_lib/common';
+
+// Estado del editor: a diferencia del contrato del servidor (donde `subcategories`,
+// `include_terms`, etc. son opcionales), aquí siempre están poblados con `[]`.
+type TaxonomySubcategoryRule = {
+  name: string;
+  description: string;
+  include_terms: string[];
+  exclude_terms: string[];
+  examples: string[];
+};
+
+type TaxonomyCategoryRule = {
+  name: string;
+  description: string;
+  subcategories: TaxonomySubcategoryRule[];
+};
 
 type TaxonomyDraft = {
   taxonomy_version: string;
@@ -168,12 +182,12 @@ function cloneDraftFromConfig(config: GenerationConfigResponse): TaxonomyDraft {
     taxonomy_categories: config.taxonomy_categories.map((category) => ({
       name: decodeEscapedSequences(category.name),
       description: decodeEscapedSequences(category.description),
-      subcategories: category.subcategories.map((subcategory) => ({
+      subcategories: (category.subcategories ?? []).map((subcategory) => ({
         name: decodeEscapedSequences(subcategory.name),
         description: decodeEscapedSequences(subcategory.description),
-        include_terms: subcategory.include_terms.map((item) => decodeEscapedSequences(item)),
-        exclude_terms: subcategory.exclude_terms.map((item) => decodeEscapedSequences(item)),
-        examples: subcategory.examples.map((item) => decodeEscapedSequences(item)),
+        include_terms: (subcategory.include_terms ?? []).map((item) => decodeEscapedSequences(item)),
+        exclude_terms: (subcategory.exclude_terms ?? []).map((item) => decodeEscapedSequences(item)),
+        examples: (subcategory.examples ?? []).map((item) => decodeEscapedSequences(item)),
       })),
     })),
   };

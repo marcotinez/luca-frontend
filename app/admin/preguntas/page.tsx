@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import { getGenerationConfig } from '@/lib/prompt-generation.api';
+import { getGenerationConfig } from '@/lib/config.api';
 import { getQuestionCategoryCounts } from '@/lib/questions.api';
 import { normalizeRuntimeTaxonomy, type RuntimeTaxonomy } from '@/lib/taxonomy.utils';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
