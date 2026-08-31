@@ -67,7 +67,7 @@ export function AdminLayoutShell({ children }: { children: React.ReactNode }) {
           icon: <Sparkles className="w-4 h-4" />,
         },
         {
-          label: "Trazas OpenAI",
+          label: "Ejecuciones de generación",
           href: "/admin/openai-logs",
           icon: <FileSearch className="w-4 h-4" />,
         },

@@ -1,4 +1,4 @@
-import axios from 'axios';
+import { apiErrorMessage } from '@/lib/api';
 
 export const LARGE_TEXTAREA_CLASSNAME = 'min-h-[420px] resize-y font-mono text-sm leading-6';
 export const MAX_TERMS_PER_LIST = 30;
@@ -81,20 +81,5 @@ export function validateTemplatePlaceholders(
 }
 
 export function getConfigErrorMessage(error: unknown) {
-  if (axios.isAxiosError(error)) {
-    const statusCode = error.response?.status;
-    const backendMessage = error.response?.data?.detail || error.response?.data?.message;
-
-    if (statusCode === 400 && backendMessage) {
-      return backendMessage;
-    }
-
-    if (statusCode === 500) {
-      return backendMessage || 'Error interno del servidor al actualizar la configuración.';
-    }
-
-    return backendMessage || 'No se pudo actualizar la configuración';
-  }
-
-  return 'No se pudo actualizar la configuración';
+  return apiErrorMessage(error, 'No se pudo actualizar la configuración');
 }

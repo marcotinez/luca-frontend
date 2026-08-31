@@ -17,6 +17,11 @@ export type CreateSelectionRequest = components['schemas']['CreateSelectionReque
 export type SelectionResponse = components['schemas']['SelectionResponse'];
 export type SelectionProgressResponse = components['schemas']['SelectionProgressResponse'];
 
+export type StartSelectionRunRequest = components['schemas']['StartSelectionRunRequest'];
+export type SelectionRunResponse = components['schemas']['SelectionRunResponse'];
+export type GenerationRunResponse = components['schemas']['GenerationRunResponse'];
+export type ListRunsResponse = components['schemas']['ListRunsResponse'];
+
 export type BackfillGenerationOriginsResponse = components['schemas']['BackfillGenerationOriginsResponse'];
 export type GlobalProgressResponse = components['schemas']['GlobalProgressResponse'];
 export type GlobalProgressBucket = components['schemas']['GlobalProgressBucket'];
@@ -140,6 +145,35 @@ export async function retryUnit(unitId: string): Promise<GenerationUnitResponse>
     {}
   );
   return response.data.unit;
+}
+
+/** El ejecutor corre en el servidor: cerrar la pestaña no lo detiene. */
+export async function startSelectionRun(
+  selectionId: string,
+  data?: StartSelectionRunRequest
+): Promise<SelectionRunResponse> {
+  const normalizedSelectionId = (selectionId || '').trim();
+  if (!normalizedSelectionId) {
+    throw new Error('selection_id inválido');
+  }
+  const response = await api.post<SelectionRunResponse>(
+    `/api/v1/generation/selections/${encodeURIComponent(normalizedSelectionId)}/run`,
+    data || {}
+  );
+  return response.data;
+}
+
+export type ListRunsRequest = {
+  snapshot_id?: string;
+  unit_id?: string;
+  status?: string;
+  limit?: number;
+  skip?: number;
+};
+
+export async function listGenerationRuns(options?: ListRunsRequest): Promise<ListRunsResponse> {
+  const response = await api.get<ListRunsResponse>('/api/v1/generation/runs', { params: options });
+  return response.data;
 }
 
 export async function listUnits(snapshotId: string, options?: ListUnitsRequest): Promise<ListUnitsResponse> {
