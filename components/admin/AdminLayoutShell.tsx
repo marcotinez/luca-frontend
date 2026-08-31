@@ -1,6 +1,6 @@
 'use client';
 
-import { AdminRoute } from "@/components/AdminRoute";
+import { RouteGuard } from "@/components/auth/RouteGuard";
 import { DashboardNavbar } from "@/components/DashboardNavbar";
 import {
   ShieldCheck,
@@ -112,7 +112,7 @@ export function AdminLayoutShell({ children }: { children: React.ReactNode }) {
   const flatNavItems = navSections.flatMap((section) => section.items);
 
   return (
-    <AdminRoute>
+    <RouteGuard access="superuser">
       <div className="min-h-screen bg-background flex flex-col">
         <DashboardNavbar />
         <div className="md:hidden border-b border-border bg-card/90 backdrop-blur">
@@ -180,6 +180,6 @@ export function AdminLayoutShell({ children }: { children: React.ReactNode }) {
           </main>
         </div>
       </div>
-    </AdminRoute>
+    </RouteGuard>
   );
 }

@@ -3,14 +3,14 @@
 import { useRouter } from "next/navigation";
 import { ArrowRight } from "lucide-react";
 import { DashboardNavbar } from "@/components/DashboardNavbar";
-import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { RouteGuard } from "@/components/auth/RouteGuard";
 import { Button } from "@/components/ui/button";
 
 export default function TemarioPage() {
   const router = useRouter();
 
   return (
-    <ProtectedRoute>
+    <RouteGuard access="authenticated">
       <div className="min-h-screen bg-grid-soft pb-20">
         <DashboardNavbar />
         <main className="mx-auto max-w-5xl space-y-6 px-4 py-6 sm:px-6 lg:px-8">
@@ -142,6 +142,6 @@ export default function TemarioPage() {
           </div>
         </main>
       </div>
-    </ProtectedRoute>
+    </RouteGuard>
   );
 }

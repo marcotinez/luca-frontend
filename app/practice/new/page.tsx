@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { RouteGuard } from "@/components/auth/RouteGuard";
 import { DashboardNavbar } from "@/components/DashboardNavbar";
 import { CreateTestForm } from "@/components/learning/CreateTestForm";
 import {
@@ -99,7 +99,7 @@ export default function NewPracticeTestPage() {
   };
 
   return (
-    <ProtectedRoute>
+    <RouteGuard access="authenticated">
       <div className="min-h-screen bg-background pb-14">
         <DashboardNavbar />
         <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
@@ -174,6 +174,6 @@ export default function NewPracticeTestPage() {
           </div>
         </main>
       </div>
-    </ProtectedRoute>
+    </RouteGuard>
   );
 }

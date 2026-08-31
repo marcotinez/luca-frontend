@@ -43,13 +43,15 @@ export function removeStorage(key: string) {
   window.localStorage.removeItem(resolveKey(key));
 }
 
-export function clearStorageNamespace(keys: string[]) {
+/** Borra todas las claves de la app en localStorage (prefijo `luca:`), no solo una lista puntual. */
+export function clearStorageNamespace() {
   if (!isStorageAvailable()) {
     return;
   }
 
+  const keys = Object.keys(window.localStorage).filter((key) => key.startsWith(STORAGE_PREFIX));
   for (const key of keys) {
-    window.localStorage.removeItem(resolveKey(key));
+    window.localStorage.removeItem(key);
   }
 }
 

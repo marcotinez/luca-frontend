@@ -5,7 +5,7 @@ import axios from "axios";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ArrowRight, CheckCircle2, Flame, Loader2 } from "lucide-react";
-import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { RouteGuard } from "@/components/auth/RouteGuard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -194,7 +194,7 @@ export default function PracticeTestRunnerPage() {
   };
 
   return (
-    <ProtectedRoute>
+    <RouteGuard access="authenticated">
       <div className="min-h-screen bg-grid-soft pb-14">
         <main className="mx-auto max-w-5xl space-y-5 px-4 py-8 sm:px-6 lg:px-8">
 
@@ -311,6 +311,6 @@ export default function PracticeTestRunnerPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </ProtectedRoute>
+    </RouteGuard>
   );
 }

@@ -19,7 +19,7 @@ import { EducationLevel, RegisterRequest } from "@/types";
 
 // Componentes míos
 import { Navbar } from "@/components/Navbar";
-import { PublicRoute } from '@/components/PublicRoute';
+import { RouteGuard } from '@/components/auth/RouteGuard';
 import { PasswordField, passwordValidation } from "@/components/PasswordField";
 
 // Componentes Shadcn
@@ -90,7 +90,7 @@ export default function RegisterPage() {
   };
 
   return (
-    <PublicRoute>
+    <RouteGuard access="public">
       <div className="min-h-screen flex flex-col bg-background">
         <Navbar />
         <div className="flex-1 flex flex-col items-center justify-center px-5 pt-20 pb-8 sm:pt-32 sm:px-4 sm:pb-10">
@@ -171,6 +171,6 @@ export default function RegisterPage() {
           </Card>
         </div>
       </div>
-    </PublicRoute>
+    </RouteGuard>
   );
 }

@@ -12,7 +12,7 @@ import {
 import { DashboardNavbar } from "@/components/DashboardNavbar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { RouteGuard } from "@/components/auth/RouteGuard";
 import { useAuth } from "@/hooks/useAuth";
 import { getLearningProfile } from "@/lib/users.api";
 import { createPracticeTest, getPracticeTestAvailability, getPracticeTests } from "@/lib/learning.api";
@@ -163,10 +163,11 @@ export function StudentDashboard() {
     }
   };
 
-  if (!user) return null;
+  // RouteGuard debe montarse siempre: es quien redirige a /login si la sesión no es válida.
+  if (!user) return <RouteGuard access="authenticated">{null}</RouteGuard>;
 
   return (
-    <ProtectedRoute>
+    <RouteGuard access="authenticated">
       <div className="min-h-screen bg-grid-soft pb-20">
         <DashboardNavbar />
         <main className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
@@ -393,6 +394,6 @@ export function StudentDashboard() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </ProtectedRoute>
+    </RouteGuard>
   );
 }
