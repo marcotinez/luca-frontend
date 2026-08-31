@@ -1,18 +1,5 @@
-import axios from 'axios';
-import { getApiBaseUrl } from '@/lib/api-base';
+import { api } from '@/lib/api';
 import { Difficulty } from '@/types';
-import { getStoredToken } from '@/lib/auth-session.storage';
-
-const DEFAULT_BASE_URL = getApiBaseUrl();
-
-function resolveApiBase(baseUrl?: string) {
-  const rawBaseUrl = baseUrl || process.env.NEXT_PUBLIC_API_URL || DEFAULT_BASE_URL;
-  const withoutTrailingSlash = rawBaseUrl.replace(/\/+$/, '');
-  const withoutApiVersion = withoutTrailingSlash.replace(/\/api\/v1$/i, '');
-  return `${withoutApiVersion}/api/v1`;
-}
-
-const API_BASE = resolveApiBase();
 
 export const GENERATION_DIFFICULTY_KEYS = ['Fácil', 'Medio', 'Difícil'] as const;
 export type GenerationDifficultyKey = (typeof GENERATION_DIFFICULTY_KEYS)[number];
@@ -298,14 +285,6 @@ export type BackfillGenerationOriginsResponse = {
   skipped_already_present: number;
 };
 
-function getAuthHeaders() {
-  const token = getStoredToken();
-
-  return {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-}
 
 function normalizeString(value: unknown): string {
   return typeof value === 'string' ? value : '';
@@ -955,17 +934,12 @@ function normalizeGlobalProgressResponse(data: unknown): GlobalProgressResponse 
 }
 
 export async function createSnapshot(data: CreateSnapshotRequest): Promise<SnapshotResponse> {
-  const response = await axios.post(`${API_BASE}/generation/snapshots`, data, {
-    headers: getAuthHeaders(),
-    withCredentials: true,
-  });
+  const response = await api.post(`/api/v1/generation/snapshots`, data);
   return normalizeSnapshotResponse(response.data);
 }
 
 export async function listSnapshots(limit = 50, skip = 0): Promise<ListSnapshotsResponse> {
-  const response = await axios.get(`${API_BASE}/generation/snapshots`, {
-    headers: getAuthHeaders(),
-    withCredentials: true,
+  const response = await api.get(`/api/v1/generation/snapshots`, {
     params: { limit, skip },
   });
 
@@ -985,13 +959,9 @@ export async function listSnapshots(limit = 50, skip = 0): Promise<ListSnapshots
 }
 
 export async function refreshSnapshot(snapshotId: string): Promise<RefreshSnapshotResponse> {
-  const response = await axios.post(
-    `${API_BASE}/generation/snapshots/${snapshotId}/refresh`,
-    {},
-    {
-      headers: getAuthHeaders(),
-      withCredentials: true,
-    }
+  const response = await api.post(
+    `/api/v1/generation/snapshots/${snapshotId}/refresh`,
+    {}
   );
   return normalizeRefreshSnapshotResponse(response.data);
 }
@@ -1001,23 +971,16 @@ export async function deleteSnapshot(snapshotId: string): Promise<DeleteSnapshot
   if (!normalizedSnapshotId) {
     throw new Error('snapshot_id inválido');
   }
-  const response = await axios.delete(
-    `${API_BASE}/generation/snapshots/${encodeURIComponent(normalizedSnapshotId)}`,
-    {
-      headers: getAuthHeaders(),
-      withCredentials: true,
-    }
-  );
+  const response = await api.delete(
+    `/api/v1/generation/snapshots/${encodeURIComponent(normalizedSnapshotId)}`);
   return normalizeDeleteSnapshotResponse(response.data);
 }
 
 export async function backfillGenerationOrigins(force = false): Promise<BackfillGenerationOriginsResponse> {
-  const response = await axios.post(
-    `${API_BASE}/generation/backfill/origins`,
+  const response = await api.post(
+    `/api/v1/generation/backfill/origins`,
     {},
     {
-      headers: getAuthHeaders(),
-      withCredentials: true,
       params: { force },
     }
   );
@@ -1025,29 +988,19 @@ export async function backfillGenerationOrigins(force = false): Promise<Backfill
 }
 
 export async function getSnapshotProgress(snapshotId: string): Promise<SnapshotProgressResponse> {
-  const response = await axios.get(`${API_BASE}/generation/snapshots/${snapshotId}/progress`, {
-    headers: getAuthHeaders(),
-    withCredentials: true,
-  });
+  const response = await api.get(`/api/v1/generation/snapshots/${snapshotId}/progress`);
   return normalizeSnapshotProgressResponse(response.data);
 }
 
 export async function getGlobalGenerationProgress(): Promise<GlobalProgressResponse> {
-  const response = await axios.get(`${API_BASE}/generation/progress/global`, {
-    headers: getAuthHeaders(),
-    withCredentials: true,
-  });
+  const response = await api.get(`/api/v1/generation/progress/global`);
   return normalizeGlobalProgressResponse(response.data);
 }
 
 export async function getNextUnit(snapshotId: string): Promise<GenerationUnitResponse | null> {
-  const response = await axios.post(
-    `${API_BASE}/generation/units/next`,
-    { snapshot_id: snapshotId },
-    {
-      headers: getAuthHeaders(),
-      withCredentials: true,
-    }
+  const response = await api.post(
+    `/api/v1/generation/units/next`,
+    { snapshot_id: snapshotId }
   );
 
   if (!response.data) {
@@ -1078,10 +1031,7 @@ export async function createGenerationSelection(data: CreateSelectionRequest): P
     payload.search_text = data.search_text.trim();
   }
 
-  const response = await axios.post(`${API_BASE}/generation/selections`, payload, {
-    headers: getAuthHeaders(),
-    withCredentials: true,
-  });
+  const response = await api.post(`/api/v1/generation/selections`, payload);
   return normalizeSelectionResponse(response.data);
 }
 
@@ -1090,10 +1040,7 @@ export async function getGenerationSelection(selectionId: string): Promise<Selec
   if (!normalizedSelectionId) {
     throw new Error('selection_id inválido');
   }
-  const response = await axios.get(`${API_BASE}/generation/selections/${encodeURIComponent(normalizedSelectionId)}`, {
-    headers: getAuthHeaders(),
-    withCredentials: true,
-  });
+  const response = await api.get(`/api/v1/generation/selections/${encodeURIComponent(normalizedSelectionId)}`);
   return normalizeSelectionProgressResponse(response.data);
 }
 
@@ -1102,13 +1049,9 @@ export async function cancelGenerationSelection(selectionId: string): Promise<Se
   if (!normalizedSelectionId) {
     throw new Error('selection_id inválido');
   }
-  const response = await axios.post(
-    `${API_BASE}/generation/selections/${encodeURIComponent(normalizedSelectionId)}/cancel`,
-    {},
-    {
-      headers: getAuthHeaders(),
-      withCredentials: true,
-    }
+  const response = await api.post(
+    `/api/v1/generation/selections/${encodeURIComponent(normalizedSelectionId)}/cancel`,
+    {}
   );
   return normalizeSelectionProgressResponse(response.data);
 }
@@ -1118,13 +1061,9 @@ export async function executeUnit(unitId: string, data?: UnitExecuteRequest): Pr
   if (!normalizedUnitId) {
     throw new Error('unit_id inválido: no se puede ejecutar una unidad sin ID');
   }
-  const response = await axios.post(
-    `${API_BASE}/generation/units/${encodeURIComponent(normalizedUnitId)}/execute`,
-    data || {},
-    {
-      headers: getAuthHeaders(),
-      withCredentials: true,
-    }
+  const response = await api.post(
+    `/api/v1/generation/units/${encodeURIComponent(normalizedUnitId)}/execute`,
+    data || {}
   );
   return normalizeExecuteUnitResponse(response.data);
 }
@@ -1134,13 +1073,9 @@ export async function retryUnit(unitId: string): Promise<ExecuteUnitResponse> {
   if (!normalizedUnitId) {
     throw new Error('unit_id inválido: no se puede reintentar una unidad sin ID');
   }
-  const response = await axios.post(
-    `${API_BASE}/generation/units/${encodeURIComponent(normalizedUnitId)}/retry`,
-    {},
-    {
-    headers: getAuthHeaders(),
-    withCredentials: true,
-    }
+  const response = await api.post(
+    `/api/v1/generation/units/${encodeURIComponent(normalizedUnitId)}/retry`,
+    {}
   );
   return normalizeExecuteUnitResponse(response.data);
 }
@@ -1150,9 +1085,7 @@ export async function listUnits(snapshotId: string, options?: ListUnitsRequest):
   if (!normalizedSnapshotId) {
     return { items: [], total: 0 };
   }
-  const response = await axios.get(`${API_BASE}/generation/units`, {
-    headers: getAuthHeaders(),
-    withCredentials: true,
+  const response = await api.get(`/api/v1/generation/units`, {
     params: {
       snapshot_id: normalizedSnapshotId,
       ...(options?.status ? { status: options.status } : {}),
@@ -1176,32 +1109,19 @@ export async function listUnits(snapshotId: string, options?: ListUnitsRequest):
   };
 }
 
-export async function getModelCatalog(baseUrl?: string): Promise<ModelCatalogResponse> {
-  const apiBase = resolveApiBase(baseUrl);
-  const response = await axios.get(`${apiBase}/models`, {
-    headers: getAuthHeaders(),
-    withCredentials: true,
-  });
+export async function getModelCatalog(): Promise<ModelCatalogResponse> {
+  const response = await api.get(`/api/v1/models`);
   return normalizeModelCatalogResponse(response.data);
 }
 
-export async function getGenerationConfig(baseUrl?: string): Promise<GenerationConfigResponse> {
-  const apiBase = resolveApiBase(baseUrl);
-  const response = await axios.get(`${apiBase}/admin/generation-config`, {
-    headers: getAuthHeaders(),
-    withCredentials: true,
-  });
+export async function getGenerationConfig(): Promise<GenerationConfigResponse> {
+  const response = await api.get(`/api/v1/admin/generation-config`);
   return normalizeGenerationConfig(response.data);
 }
 
 export async function patchGenerationConfig(
-  data: GenerationConfigPatchRequest,
-  baseUrl?: string
+  data: GenerationConfigPatchRequest
 ): Promise<GenerationConfigResponse> {
-  const apiBase = resolveApiBase(baseUrl);
-  const response = await axios.patch(`${apiBase}/admin/generation-config`, data, {
-    headers: getAuthHeaders(),
-    withCredentials: true,
-  });
+  const response = await api.patch(`/api/v1/admin/generation-config`, data);
   return normalizeGenerationConfig(response.data);
 }
